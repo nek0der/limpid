@@ -10,6 +10,8 @@
 // so a terminal answer remains observable across controller startup delays.
 // `watch-codex-failures <codex pid> <offset> <session> <rollout>` runs the watcher a Codex
 // session start leaves (`CodexTurnFailureWatch`).
+// `statusline <provider> [settings <relay command>]` is Claude Code's status
+// line and the shim's setting for it (`StatusLineRelay`).
 
 import Foundation
 
@@ -210,6 +212,10 @@ func publishCodexLifecycleFallback(input: Data) {
 if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == CodexTurnFailureWatch.subcommand {
     CodexTurnFailureWatch.run(arguments: CommandLine.arguments.dropFirst(2), environment: ProcessInfo.processInfo.environment)
     exit(0)
+}
+
+if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == StatusLineRelay.subcommand {
+    StatusLineRelay.run(provider: CommandLine.arguments[2], arguments: Array(CommandLine.arguments.dropFirst(3)))
 }
 
 if CommandLine.arguments.count >= 3, CommandLine.arguments[1] == "hook" {

@@ -10,9 +10,10 @@ import Foundation
 @MainActor
 enum WindowProjectSwitch {
     /// The window's layers a switch closes (`WindowLayer`): every one but
-    /// the notification history, which lists every project's events and
-    /// hangs from the window's own rail.
-    static let layersLeft = Set(WindowLayer.allCases).subtracting([.notificationHistory])
+    /// the notification history and the plan usage panel, which show every
+    /// project's events and the accounts' usage, and hang from the window's
+    /// own rail.
+    static let layersLeft = Set(WindowLayer.allCases).subtracting([.notificationHistory, .planUsage])
 
     /// Lets go of what `window` has open over `from`, the project it
     /// leaves: the title bar's dropdown, the palette, the panels over the

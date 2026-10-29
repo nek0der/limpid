@@ -16,9 +16,9 @@ import SwiftUI
 struct UpdatePopover: View {
     let updater: SPUUpdater
     let dismiss: () -> Void
-    /// Caller-supplied width. A main window's update control opens it as a
-    /// fixed 340pt bubble; the Settings pane lets the form column size it.
-    var width: CGFloat? = 340
+    /// Caller-supplied width. A main window's update control opens it at the
+    /// rail panels' width; the Settings pane lets the form column size it.
+    var width: CGFloat? = LimpidLayout.Supervision.railPanelWidth
 
     @Environment(UpdateStateModel.self) private var model
 

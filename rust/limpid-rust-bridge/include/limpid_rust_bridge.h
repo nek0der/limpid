@@ -121,6 +121,25 @@ typedef enum limpid_turn_result {
   LIMPID_TURN_UNREADABLE = 6,
 } limpid_turn_result;
 
+// Status codes returned by the plan usage ABI functions, reported as
+// `int32_t` for the same reason as `limpid_provider_result`.
+typedef enum limpid_usage_result {
+  // The call ran and the output buffer holds its JSON body.
+  LIMPID_USAGE_OK = 0,
+  // A required pointer was null.
+  LIMPID_USAGE_NULL_POINTER = 1,
+  // The input exceeded `MAX_USAGE_REQUEST_BYTES`.
+  LIMPID_USAGE_INPUT_TOO_LARGE = 2,
+  // The input was not UTF-8 or not the JSON shape the call expects.
+  LIMPID_USAGE_INVALID_INPUT = 3,
+  // The provider id is not registered in this build.
+  LIMPID_USAGE_UNKNOWN_PROVIDER = 4,
+  // The result could not be serialized.
+  LIMPID_USAGE_INTERNAL = 5,
+  // Rust caught a panic at the FFI boundary.
+  LIMPID_USAGE_PANIC = 6,
+} limpid_usage_result;
+
 // Opaque service handle. Multiple sessions share its approval state.
 typedef struct limpid_approval_service_v1 limpid_approval_service_v1;
 
@@ -600,6 +619,48 @@ int32_t limpid_stopped_turn_end_v1(const uint8_t *request,
                                    size_t request_len,
                                    uint8_t **out,
                                    size_t *out_len);
+
+// Runs the status line relay on one input: keeps the plan usage it reports
+// and names the person's own status line command. The request is
+// `{"provider","input","environment"}`; the body is `{"command":...}`, null
+// when there is nothing to run.
+//
+// Reads and writes small files, so it does touch the disk.
+//
+// # Safety
+//
+// The input pointer must be readable for its length (or null with length
+// zero), and the output pointers must be writable. On `LIMPID_USAGE_OK` the
+// caller owns the body and frees it with `limpid_approval_bytes_free_v1`.
+int32_t limpid_status_line_run_v1(const uint8_t *request,
+                                  size_t request_len,
+                                  uint8_t **out,
+                                  size_t *out_len);
+
+// The status line setting the shim launches the provider with. The request
+// is `{"provider","environment","workingDirectory","relayCommand"}`; the
+// body is `{"statusLine":{...}}`, null when the person has no status line of
+// their own and the slot stays empty.
+//
+// # Safety
+//
+// Same contract as `limpid_status_line_run_v1`.
+int32_t limpid_status_line_setting_v1(const uint8_t *request,
+                                      size_t request_len,
+                                      uint8_t **out,
+                                      size_t *out_len);
+
+// Reads a provider's answer to a plan usage request (Codex's
+// `account/rateLimits/read`). The request is `{"provider","answer"}`; the
+// body is the answer's outcome (`PlanUsageAnswerBody`).
+//
+// # Safety
+//
+// Same contract as `limpid_status_line_run_v1`.
+int32_t limpid_plan_usage_answer_v1(const uint8_t *request,
+                                    size_t request_len,
+                                    uint8_t **out,
+                                    size_t *out_len);
 
 #ifdef __cplusplus
 }  // extern "C"

@@ -258,6 +258,10 @@ pub enum RecipePlaceholder {
     /// The arguments the provider's hook command needs, as the platform builds
     /// them.
     HookArguments,
+    /// Where the plan usage the agent reports goes, one file per provider.
+    /// Shared by every provider rather than one of each provider's own
+    /// directories, because the interface reads it as one list.
+    UsageDirectory,
 }
 
 impl RecipePlaceholder {
@@ -271,6 +275,7 @@ impl RecipePlaceholder {
             Self::CwdEventsDirectory => "@@CWD_EVENTS_DIRECTORY@@",
             Self::BundleId => "@@BUNDLE_ID@@",
             Self::HookArguments => "@@HOOK_ARGUMENTS@@",
+            Self::UsageDirectory => "@@USAGE_DIRECTORY@@",
         }
     }
 }

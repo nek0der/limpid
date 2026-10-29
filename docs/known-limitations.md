@@ -176,6 +176,30 @@ as they are fixed or confirmed.
   after a turn, but its `Stop` does not list them and no hook reports their
   end.
 
+## Plan usage
+
+- **Claude Code's usage is only as fresh as its last reply in Limpid.**
+  Claude Code gives it to its status line and nowhere else, so Limpid sees it
+  when a Claude Code session in a Limpid pane replies. Use in another
+  terminal or on claude.ai counts toward the plan but reaches the panel only
+  with the next reply in Limpid.
+- **Claude Code's usage needs a status line of your own.** Claude Code keeps
+  a row for a status line even when it prints nothing, so Limpid takes the
+  slot only when you have set one up, and runs yours in it.
+- **A status line your organization sets through managed-settings drop-in
+  files or a device management profile is not seen.** Limpid reads
+  `managed-settings.json` itself, and otherwise runs the status line from
+  your own settings in its place.
+- **One Claude Code account at a time.** Sessions with different
+  `CLAUDE_CONFIG_DIR`s write the same record, so the panel shows whichever
+  answered last.
+- **Codex's usage is read for the account in `~/.codex`.** Limpid asks
+  Codex from its own environment, so a `CODEX_HOME` your shell sets for
+  another account does not reach that request, and the panel shows the
+  default account, or no plan when that one is signed out.
+- **Claude Code's per-model weekly limits and extra usage are not shown.**
+  Its status line carries only the 5-hour and weekly windows.
+
 ## Codex
 
 - **A failed Codex turn shows as failed up to ten seconds late.** Codex runs

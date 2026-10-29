@@ -13,6 +13,10 @@ enum RailBadge: Equatable {
     /// mark at zero.
     case count(Int)
     case dot
+    /// A plan usage window near its limit, drawn as the unread dot in the
+    /// waiting color; or at it, drawn larger and in the stopped color, so the
+    /// two differ by more than hue.
+    case usage(isAtLimit: Bool)
 
     /// A count, or nothing at zero.
     static func counting(_ count: Int) -> RailBadge? {

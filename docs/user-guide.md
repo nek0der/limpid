@@ -31,7 +31,25 @@ The project and worktree menus, back and forward, the command palette field
 
 **Worktrees** (shows or hides the sidebar), **All Projects**, and
 **Notification History**; below them,
-updates (when one is available), keyboard shortcuts, and **Settings**.
+updates (when one is available), **Plan Usage**, keyboard shortcuts, and
+**Settings**.
+
+**Plan Usage** opens a panel beside the rail that shows how much of each
+agent's plan limits your account has used: each limit window the agent
+reports (the 5-hour and weekly ones, as a rule), and when each resets. A dot
+on the icon says a window is at 80% or more; a larger red one says a window
+is used up. A click outside the panel or Escape closes it.
+
+- **Claude Code** reports its usage to its status line, so Limpid reads it
+  there: the values are the ones from the last reply of a Claude Code
+  session in a Limpid pane, and the panel says how old they are. Limpid runs
+  your own status line in its place with the same input, so what you see
+  does not change. Without a status line of your own (`/statusline` sets one
+  up), Limpid leaves the slot empty and has nothing to show.
+- **Codex** is asked for its usage once when Limpid starts, and every
+  minute while the panel is open. It answers when you are signed in to Codex
+  with ChatGPT. When your account has limit resets to spend, the panel says
+  how many are left and when the first one lapses.
 
 ### Sidebar
 

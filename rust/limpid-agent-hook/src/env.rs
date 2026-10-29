@@ -119,6 +119,18 @@ impl HookEnv {
         })
     }
 
+    /// The directory the recipe names for plan usage, when it names one and
+    /// the shim set it.
+    #[must_use]
+    pub fn usage_directory(&self, recipe: &InstallRecipe) -> Option<PathBuf> {
+        recipe
+            .environment
+            .iter()
+            .find(|variable| variable.value == RecipePlaceholder::UsageDirectory)
+            .and_then(|variable| self.get(&variable.name))
+            .map(PathBuf::from)
+    }
+
     /// The provider's configuration directory: what `variable` names when
     /// the provider has one and it is set, else the descriptor's default
     /// home under `HOME`. `None` when neither is set.

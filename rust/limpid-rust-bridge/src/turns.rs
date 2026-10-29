@@ -6,15 +6,12 @@
 //! the side that unpins them agree on the names, and a stopped turn ends as
 //! the hook would end it.
 
-use crate::transfer;
+use crate::frame::{self, FrameCodes, call_with_codes};
 use limpid_agent_hook::{
     GitSnapshots, HookLog, StoppedTurnRequest, delete_turns, end_stopped_turn, format_utc_seconds,
 };
 use serde::Serialize;
-use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::Path;
-use std::ptr;
-use std::slice;
 
 /// Largest input one call accepts: a batch of turn ids and a path.
 const MAX_TURN_INPUT_BYTES: usize = 1024 * 1024;
@@ -155,6 +152,13 @@ pub unsafe extern "C" fn limpid_stopped_turn_end_v1(
     unsafe { call_with_output(out, out_len, body) }
 }
 
+const TURN_FRAME: FrameCodes = FrameCodes {
+    ok: TURN_OK,
+    null_pointer: TURN_NULL_POINTER,
+    input_too_large: TURN_INPUT_TOO_LARGE,
+    panic: TURN_PANIC,
+};
+
 /// Runs `body` inside the output half of the frame every turn call shares:
 /// the output pointers are checked and cleared before anything runs, the body
 /// is handed over, and a panic is caught at the boundary. `body` reads and
@@ -171,40 +175,18 @@ pub(crate) unsafe fn call_with_output(
     out_len: *mut usize,
     body: impl FnOnce() -> Result<Vec<u8>, i32>,
 ) -> i32 {
-    if out.is_null() || out_len.is_null() {
-        return TURN_NULL_POINTER;
-    }
-    // SAFETY: Both output pointers were checked non-null above, and the
-    // caller guarantees they are writable.
-    unsafe {
-        ptr::write(out, ptr::null_mut());
-        ptr::write(out_len, 0);
-    }
-    let status = catch_unwind(AssertUnwindSafe(|| {
-        let bytes = body()?;
-        // SAFETY: The output pointers are writable, and the bytes are owned
-        // by the caller until it frees them.
-        unsafe { transfer(bytes, out, out_len) };
-        Ok(TURN_OK)
-    }));
-    match status {
-        Ok(Ok(code) | Err(code)) => code,
-        Err(_) => TURN_PANIC,
-    }
+    // SAFETY: We pass the pointers on under the caller's guarantees.
+    unsafe { call_with_codes(out, out_len, TURN_FRAME, body) }
 }
 
+/// The input region a turn call was handed, within the turn calls' limit.
+///
+/// # Safety
+///
+/// Same contract as `frame::input_bytes`.
 pub(crate) unsafe fn input_bytes<'a>(pointer: *const u8, length: usize) -> Result<&'a [u8], i32> {
-    if length == 0 {
-        return Ok(&[]);
-    }
-    if pointer.is_null() {
-        return Err(TURN_NULL_POINTER);
-    }
-    if length > MAX_TURN_INPUT_BYTES {
-        return Err(TURN_INPUT_TOO_LARGE);
-    }
-    // SAFETY: The caller guarantees a readable input region of this length.
-    Ok(unsafe { slice::from_raw_parts(pointer, length) })
+    // SAFETY: We pass the region on under the caller's guarantees.
+    unsafe { frame::input_bytes(pointer, length, MAX_TURN_INPUT_BYTES, TURN_FRAME) }
 }
 
 #[cfg(test)]
@@ -212,6 +194,7 @@ mod tests {
     use super::*;
     use crate::test_support::take_bytes;
     use serde_json::Value;
+    use std::ptr;
 
     fn apply(directory: &str, turn_ids: &[u8]) -> (i32, Option<Value>) {
         let mut out: *mut u8 = ptr::dangling_mut();

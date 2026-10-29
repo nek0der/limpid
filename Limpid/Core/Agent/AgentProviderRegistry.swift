@@ -41,6 +41,13 @@ enum AgentProviderRegistry {
         descriptors[kind.rawValue]?.processNames ?? []
     }
 
+    /// Where the plan usage the agents report goes under `root`: one
+    /// directory for every provider, since the usage panel reads them as one
+    /// list (`PlanUsageStore`).
+    static func usageDirectory(under root: URL) -> URL {
+        root.appendingPathComponent("usage", isDirectory: true)
+    }
+
     /// Where each provider keeps its records under `root`, as its descriptor
     /// declares. Claude keeps legacy directory names so existing records
     /// survive an upgrade, which is why this is read rather than derived.
@@ -139,6 +146,7 @@ struct AgentInstallRecipe: Decodable {
         case cwdEventsDirectory = "cwd_events_directory"
         case bundleID = "bundle_id"
         case hookArguments = "hook_arguments"
+        case usageDirectory = "usage_directory"
         case unknown
 
         init(from decoder: any Decoder) throws {
@@ -187,6 +195,7 @@ extension AgentProviderRegistry {
         state: URL,
         sessions: URL,
         cwdEvents: URL?,
+        usage: URL = usageDirectory(under: LimpidPaths.applicationSupportDirectory()),
         writesRecords: Bool = true
     ) -> [String: String] {
         var environment: [String: String] = [:]
@@ -200,6 +209,7 @@ extension AgentProviderRegistry {
                     environment[variable.name] = path(cwdEvents)
                 }
             case .bundleID: environment[variable.name] = LimpidPaths.bundleID
+            case .usageDirectory: environment[variable.name] = path(usage)
             // The hook's own arguments are assembled where the hook path is
             // known, which is not here.
             case .hookArguments, .unknown: continue

@@ -124,6 +124,8 @@ final class AppState {
     // these via explicit constructor injection instead of `.shared`.
     let notificationManager: LimpidNotificationManager
     let historyStore: NotificationHistoryStore
+    /// The agents' plan usage the rail's usage panel shows.
+    let planUsageStore: PlanUsageStore
     let dragState: LimpidDragState
     /// Toast bus with one slot per window: a transient banner, often with
     /// an Undo button, in place of a blocking confirmation (hiding a
@@ -397,6 +399,7 @@ final class AppState {
 
         let historyStore = NotificationHistoryStore(writesFiles: writesUserFiles)
         self.historyStore = historyStore
+        planUsageStore = Self.makePlanUsageStore(readsUsage: writesUserFiles)
         attention.onPaneFocused = { [weak historyStore] in historyStore?.markRead(forPanes: [$0]) }
         self.frecencyStore = FrecencyStore(writesFiles: writesUserFiles)
         self.turnReads = TurnReadStore(writesFiles: writesUserFiles)

@@ -19,6 +19,7 @@ mod hunks;
 mod process;
 mod records;
 pub mod restore;
+mod status_line;
 mod stopped_turns;
 mod swap;
 mod tmux;
@@ -33,6 +34,7 @@ pub use git::{GitSnapshots, LARGE_FILE_BYTES, NoSnapshots, SnapshotRunner, TurnS
 pub use limpid_agent_model::TURNS_DIRECTORY;
 pub use limpid_agent_model::format_utc_seconds;
 pub use records::{HookLog, atomic_write, ensure_user_only_directory, with_record_lock};
+pub use status_line::{run_status_line, status_line_setting};
 pub use stopped_turns::{StoppedTurnEnd, StoppedTurnRequest, end_stopped_turn};
 pub use turn_gc::{TurnDeletion, delete_turns, delete_turns_waiting};
 pub use worktree::{InterceptResult, WORKTREE_ROUTING_FILE};

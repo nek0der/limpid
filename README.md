@@ -44,7 +44,7 @@ The [user guide](docs/user-guide.md#the-workflow) has each step in full.
 Each window shows one project at a time. From left to right in the screenshot:
 
 - **Title bar.** Project and worktree menus, the command palette, and **Needs Attention**.
-- **Left rail.** Show or hide the **Worktrees** sidebar, and open **All Projects**, **Notification History**, and **Settings**.
+- **Left rail.** Show or hide the **Worktrees** sidebar, and open **All Projects**, **Notification History**, **Plan Usage**, and **Settings**.
 - **Sidebar.** Every project's worktrees, one row each, with what each agent is doing.
 - **Session area.** The worktree's commits and changes, its tabs, and the terminal.
 - **Decision bar.** Under each agent pane: what the unviewed turns did, and what to do about them.
@@ -59,6 +59,7 @@ The [user guide](docs/user-guide.md#the-window) covers each part in detail.
 - **Session restore.** Projects, worktrees, tabs, splits, windows, and scrollback come back after a relaunch, and agent panes resume their conversations.
 - **Quick Terminal.** A system-wide hotkey drops a terminal over any app; set one in **Settings → Quick Terminal**.
 - **All Projects** (⌥⌘O) and **Notification History** (⇧⌘N). Every project at once, sorted by state, and the notifications Limpid sent.
+- **Plan Usage.** How much of each agent's plan limits your account has used, and when each limit resets: Claude Code's from its status line, Codex's from Codex itself.
 - **Languages.** English and Japanese; choose in **Settings → General → Display Language**.
 
 ## Privacy and data
@@ -70,14 +71,15 @@ Limpid has no account, analytics, or telemetry.
 - **Update checks.** Sparkle fetches `https://nek0der.github.io/limpid/appcast.xml` once a day and downloads a release only when you choose to install it. Turn the daily check off with **Settings → General → Software Update → Automatically check for updates**; **Check for Updates…** still works by hand.
 - **`git fetch`.** When **New Worktree** starts a new branch from a remote branch or checks out a PR, Limpid fetches it from that remote with your own Git credentials.
 - **`gh` and `glab`.** Limpid runs the copies you installed, which talk to the forge with their own credentials: `gh pr view` or `glab mr view` for the sidebar's PR status (when the app comes back to the front, every 5 minutes, and every 45 seconds while checks run), `gh auth token` or `glab auth status` once per host to tell which forge an unfamiliar host is and before **New Worktree** offers to check out a PR, `gh pr list`/`view` or `glab mr list`/`view` when **New Worktree** checks out a PR, and `gh pr create --fill` when you press **Create PR**.
+- **`codex app-server`.** For **Plan Usage**, Limpid starts the `codex` you installed once at launch and every minute while the panel is open, and asks it for your plan's usage. Codex answers with its own sign-in; Limpid reads none of its credentials.
 
 **What Limpid writes or installs.**
 
 - **Codex hooks.** Nothing is written to `~/.codex/`. Limpid's `codex` shim, first on the `PATH` of Limpid's panes, passes the hooks as `-c` flags on each launch, with the trust Codex needs to run them and two terminal-title and notification settings, so they work whatever `CODEX_HOME` is. Earlier builds kept one `[hooks.state."/<session-flags>/config.toml:…"]` table per hook in `~/.codex/config.toml`, between `# BEGIN limpid` and `# END limpid` markers; at launch Limpid takes those tables and markers out, and every other line, including a table Codex added between the markers, stays as it is.
-- **Claude Code hooks.** Nothing is written to `~/.claude/`. Limpid's `claude` shim, first on the `PATH` of Limpid's panes, passes the hooks with `--settings` on each launch, filled in from a template the build copies into the app. It merges a `--settings` of your own, and keeps links to the hook commands in a `limpid-claude-shim-*` folder in your temporary directory.
+- **Claude Code hooks.** Nothing is written to `~/.claude/`. Limpid's `claude` shim, first on the `PATH` of Limpid's panes, passes the hooks with `--settings` on each launch, filled in from a template the build copies into the app. It merges a `--settings` of your own, and keeps links to the hook commands in a `limpid-claude-shim-*` folder in your temporary directory. When you have a status line of your own, the same `--settings` puts Limpid's relay in its place: the relay keeps the plan usage Claude Code hands it, then runs your status line on the same input.
 - **Approval service.** A build signed with a Team ID, such as the release DMG, registers a per-user launchd agent, `dev.limpid.agent-integration-service`, from inside the app. It is listed in **System Settings → General → Login Items & Extensions**.
 - **Turn snapshots.** In each repository, the snapshots live in the Git directory as refs under `refs/limpid/` and files under `limpid/`. A turn and its refs are deleted after 14 days or past 200 turns per conversation (change this in **Settings → Advanced → Turn History**), or when a repository's snapshots pass 500 MB or all turns pass 8,000; Git can then reclaim the space. Unviewed turns of open sessions are exempt from the day limit for up to 90 days.
-- **Under `~/Library`.** `Application Support/Limpid/` (`Limpid Dev/` for a Debug build) holds the session, settings, notification history, scrollback, review drafts, and turn records. Preferences are in `Preferences/dev.limpid.Limpid.plist`.
+- **Under `~/Library`.** `Application Support/Limpid/` (`Limpid Dev/` for a Debug build) holds the session, settings, notification history, scrollback, review drafts, turn records, and Claude Code's last plan usage. Preferences are in `Preferences/dev.limpid.Limpid.plist`.
 
 **Uninstalling.** Quit Limpid and move `Limpid.app` to the Trash. Then remove by hand: `~/Library/Application Support/Limpid/` and `~/Library/Preferences/dev.limpid.Limpid.plist`; and in each repository, the refs (`git for-each-ref --format='%(refname)' refs/limpid/ | xargs -n1 git update-ref -d`) and the `limpid` folder in its Git directories. If **Login Items & Extensions** still lists Limpid, turn it off there. Worktrees Limpid made are ordinary Git worktrees; remove them with `git worktree remove` if you no longer want them.
 
