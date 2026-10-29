@@ -126,7 +126,7 @@ release that came just before the change being described.
 | `turn-deletions.json` | new | — |
 | `restore-pending-stops.json` | new | — |
 | `pane-path-<project ID>.txt` | new: the `PATH` the last shell of a pane of that project ended up with, where an agent is looked up for that project | — |
-| Codex's `~/.codex/config.toml` (the person's own) | same keys; our tables are rewritten in place instead of the whole span between our markers | none |
+| Codex's `~/.codex/config.toml` (the person's own) | our tables and markers are taken out | none |
 | Refs and files in each repository's Git directory | new, and one no longer written | — |
 
 ### `state.json`: version 5 to 6
@@ -924,44 +924,38 @@ The previous release does not know the file and leaves it alone.
 ### Codex's `config.toml`
 
 Not Limpid's file: the person's own `~/.codex/config.toml`, which Codex
-edits too (`CodexUserConfig`, `CodexHookInstaller`). Limpid keeps a
-`[hooks.state."<key>"]` table in it for each hook it passes Codex. Each table
-has two keys: `enabled = true`, and `trusted_hash`, the hash Codex compares
-before it runs that hook. The key names and their format are the ones the
-previous release wrote. What changed is how they are written:
+edits too (`CodexUserConfig`, `CodexHookInstaller`). Earlier builds kept a
+`[hooks.state."<key>"]` table in it for each hook they passed Codex, with two
+keys, `enabled = true` and `trusted_hash`, between `# BEGIN limpid …` and
+`# END limpid`. This release passes that trust in the `-c` flags that carry
+the hooks, and at launch takes out what the earlier builds wrote:
 
-- A table is ours only when its header is one Limpid would write, wherever
-  it stands in the file. In it, only `enabled` and `trusted_hash` are set;
-  a key Codex added to it, a comment, or a blank line stays. Everything
-  else stays as it is, including a table Codex appended between our
-  markers (a folder trust it recorded lands there, after the last table in
-  the file). The previous release replaced the whole span between
-  `# BEGIN limpid …` and `# END limpid` on every launch, which dropped
-  such a table.
-- A missing table goes just before `# END limpid`, or after
-  `# BEGIN limpid …` when the closing marker is gone. In a file that has
-  neither marker, the markers and the tables are appended at the end. The
-  file is written only when something in it changes.
+- In a table whose header is one Limpid wrote (`/<session-flags>/config.toml`
+  keys for the events Limpid subscribes to), wherever it stands in the file,
+  the `enabled` and `trusted_hash` lines go. The header goes too when only
+  blank lines are left under it; a key Codex added to it, or a comment,
+  keeps it. A trust table with any other key stays, even of the same form.
+- Both markers go. A table Codex appended between them (a folder trust it
+  recorded lands there, after the last table in the file) stays.
+- Where two blank lines would end up in a row, one goes; at the end of the
+  file, the blank lines before what was removed go.
 - A line inside a multi-line string (`"""` or `'''`) belongs to the string,
   even when it reads like one of our headers, keys, or markers.
-- A file saved with CRLF line endings keeps them. Lines are compared without
-  their ending, each line keeps the one it had, and a line Limpid adds takes
-  the ending most of the file's lines have.
-- A UTF-8 byte order mark at the start is kept.
+- A file saved with CRLF line endings keeps them, and a UTF-8 byte order
+  mark at the start is kept.
 - A `config.toml` that is a symbolic link (a dotfiles checkout) is written
   through to the file it names, so the link stays a link. A link to nothing
-  is left alone, as is a file that cannot be read or is not UTF-8: read as
-  empty, it would be replaced by our tables alone.
+  is left alone, as is a file that cannot be read, is not UTF-8, or would
+  not load once edited. The file is written only when something of ours is
+  in it, so this happens once.
 
-Limpid takes no copy before writing. The keys it sets are its own, and a
-`trusted_hash` left from an earlier hook command would only stop Codex from
-running that hook.
+Limpid takes no copy before writing: the lines it removes are its own, and
+a `trusted_hash` left in the file only names a hook command of an earlier
+build.
 
-The previous release goes back to replacing the span between the markers
-on its next launch, so a table Codex added inside it is lost again, as it
-was before. It also writes in place of a symbolic link rather than through
-it, appends a second block to a CRLF file (where it does not find its
-markers), and replaces a file it cannot read as UTF-8 with its block alone.
+An earlier build writes its tables back on its next launch. That is
+harmless here: a hash in the flags takes the place of the one in the file,
+and this release takes the tables out again at its next launch.
 
 ### Git directories
 

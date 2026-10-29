@@ -17,10 +17,8 @@
 # from the agent's environment so the hooks record the ordinary non-hosted
 # shape; pass --tmux-hosted to keep them for the tmux-hosted case.
 #
-# Codex refuses hooks whose trust hash is not in ~/.codex/config.toml, and only
-# the app writes that block. Launch the Debug app once before recording Codex
-# so the block matches the Debug bundle; this script checks and stops early
-# when it does not.
+# Codex runs a hook only when its trust hash is recorded; the Codex flags carry
+# that record with the hooks, as the app's do (scripts/codex-hook-args.py).
 set -euo pipefail
 
 usage() {
@@ -129,7 +127,7 @@ fi
 
 if [[ "$provider" == "codex" ]]; then
   hook_args="$(python3 "$repo_root/scripts/codex-hook-args.py" "$shim_dir")" || {
-    echo "error: could not build LIMPID_CODEX_HOOK_ARGS; launch the Debug app once so ~/.codex/config.toml trusts its hooks" >&2
+    echo "error: could not build LIMPID_CODEX_HOOK_ARGS" >&2
     exit 1
   }
   env_args+=("LIMPID_CODEX_HOOK_ARGS=$hook_args")

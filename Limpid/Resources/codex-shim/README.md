@@ -6,15 +6,14 @@ the user's `~/.codex/` directory.
 
 Codex resolves hooks from several sources and composes them, so the
 flags this shim adds sit alongside the user's own configuration rather
-than replacing it. The one thing a flag cannot carry is trust: Codex
-refuses to run a hook whose hash it has not recorded, and it ignores a
-trust entry supplied by the same flags that define the hook. So we write
-our hook trust tables into the user's `~/.codex/config.toml`: wherever
-one of our tables already stands, we set only its `enabled` and
-`trusted_hash` keys in place, and a table that is missing is added inside
-a marked block. Apart from removing duplicate copies of our tables that
-an earlier build appended, nothing else in the file is touched.
-`CodexUserConfig` owns that splice.
+than replacing it. Codex refuses to run a hook whose hash it has not
+recorded, and it reads that record from the flags as well as from the
+user's own `config.toml`, so the trust travels in the same flags
+(`CodexHookInjection`) and a Codex with any `CODEX_HOME` runs our hooks.
+The record has to be one inline table, `hooks.state={…}`: Codex splits a
+flag's key at each dot, and our keys hold one. Earlier builds wrote the
+trust tables into `~/.codex/config.toml` instead; `CodexUserConfig` takes
+them out again.
 
 ## Files
 

@@ -61,8 +61,8 @@ struct CodexShimScriptTests {
     }
 
     /// The flags arrive through the environment rather than being built
-    /// in shell: the same Swift that writes the trust block has to
-    /// produce them, or the hashes stop covering what is actually passed.
+    /// in shell: the same Swift that hashes their trust has to produce
+    /// them, or the hashes stop covering what is actually passed.
     @Test("splices the hook flags in ahead of the user's arguments")
     func splicesHookArgumentsBeforeUserArguments() throws {
         let handoff = try runShim(

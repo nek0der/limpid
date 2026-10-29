@@ -2,13 +2,12 @@
 // Limpid — reads the names in a `config.toml` line the way TOML does, and
 // checks a config we are about to save for what Codex would refuse.
 //
-// `CodexUserConfig` finds its own tables by name. A name compared as text
-// misses the same table written another way: a header that carries a
-// trailing comment (`[hooks.state."…"]  # note`), a segment in the other
-// quote (`'a'` for `"a"`), or spaces around a dot. A table we fail to find
-// is one we append again, and a TOML file that defines a table twice is one
-// Codex refuses to start with. So headers and keys are read here into the
-// names they mean, and nothing else of the file is.
+// `CodexUserConfig` finds the tables earlier builds wrote by name. A name
+// compared as text misses the same table written another way: a header
+// that carries a trailing comment (`[hooks.state."…"]  # note`), a segment
+// in the other quote (`'a'` for `"a"`), or spaces around a dot. A table we
+// fail to find is one we leave behind. So headers and keys are read here
+// into the names they mean, and nothing else of the file is.
 
 import Foundation
 
@@ -110,21 +109,13 @@ enum CodexConfigSyntax {
     /// for a comment, a blank line, a header, or a line that is not a key.
     /// An `=` or `#` inside a quoted segment is the segment's.
     static func key(of line: String) -> Name? {
-        keyAndValue(of: line)?.key
-    }
-
-    /// The key of a `key = value` line and the text after its `=`, trimmed
-    /// of the whitespace around it. The value is not read: it is the text
-    /// as written, a trailing comment included, so two lines with the same
-    /// value text certainly set the same value, and two without may not.
-    static func keyAndValue(of line: String) -> (key: Name, value: String)? {
         var scanner = Scanner(line)
         scanner.skipWhitespace()
         guard !scanner.isAtEndOrComment(), !scanner.peek("["),
               let name = scanner.name(),
               scanner.take("=")
         else { return nil }
-        return (name, scanner.rest().trimmingCharacters(in: .whitespaces))
+        return name
     }
 
     // MARK: - Validation
@@ -283,11 +274,6 @@ enum CodexConfigSyntax {
                 skipWhitespace()
             } while take(".")
             return Name(segments)
-        }
-
-        /// What remains of the line.
-        func rest() -> String {
-            String(String.UnicodeScalarView(scalars[index...]))
         }
 
         private mutating func segment() -> String? {

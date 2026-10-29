@@ -5,10 +5,7 @@ Usage: scripts/codex-hook-args.py <codex-shim-directory>
 
 Mirrors `CodexHookInjection.arguments` and `CodexTrustHash.compute` so that
 fixture recording outside the app runs the same hook definitions the app
-installs. Codex only runs a hook whose trust hash is recorded in
-~/.codex/config.toml, and only the app writes that block, so this exits with
-status 1 when a required hash is missing; launching the Debug app once
-refreshes the block. The config file is only read.
+installs, with the trust Codex needs to run them passed in the same flags.
 """
 
 import hashlib
@@ -16,7 +13,7 @@ import json
 import os
 import sys
 
-# Label, Codex event key, timeout. Must match `CodexHookInstaller.subscribedEvents`.
+# Label, Codex event key, timeout. Must match `CodexHookInjection.subscribedEvents`.
 SUBSCRIBED_EVENTS = [
     ("session_start", "SessionStart", 600),
     ("session_end", "SessionEnd", 1),
@@ -70,15 +67,8 @@ def main(argv):
     helper = os.path.join(shim_dir, "..", "..", "MacOS", "AgentIntegrationHookHelper")
     approval = shell_quoted(helper) + " permission-request codex" if os.access(helper, os.X_OK) else None
 
-    config_path = os.path.join(os.path.expanduser("~"), ".codex", "config.toml")
-    try:
-        with open(config_path, encoding="utf-8") as handle:
-            config = handle.read()
-    except OSError:
-        config = ""
-
     arguments = []
-    missing = []
+    trust = []
     for label, key, timeout in SUBSCRIBED_EVENTS:
         command = (approval or lifecycle) if key == "PermissionRequest" else lifecycle
         groups = [(command, None)]
@@ -89,17 +79,12 @@ def main(argv):
             rendered.append(group(group_command, matcher, timeout))
             trust_key = "%s:%s:%d:0" % (SESSION_FLAGS_PATH, label, index)
             expected = trust_hash(label, group_command, timeout, matcher)
-            entry = '[hooks.state.%s]\nenabled = true\ntrusted_hash = %s' % (toml_string(trust_key), toml_string(expected))
-            if entry not in config:
-                missing.append(trust_key)
+            trust.append("%s={enabled=true,trusted_hash=%s}" % (toml_string(trust_key), toml_string(expected)))
         arguments += ["-c", "hooks.%s=[%s]" % (key, ",".join(rendered))]
+    arguments += ["-c", "hooks.state={%s}" % ",".join(trust)]
     arguments += ["-c", "tui.terminal_title=[]"]
+    arguments += ["-c", "tui.notifications=false"]
 
-    if missing:
-        print("error: ~/.codex/config.toml does not trust these hooks for this build:", file=sys.stderr)
-        for key in missing:
-            print("  " + key, file=sys.stderr)
-        return 1
     print("\n".join(arguments))
     return 0
 
