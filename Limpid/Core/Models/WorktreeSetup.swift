@@ -127,10 +127,10 @@ enum WorktreeSetup {
                 kill(-group, SIGTERM)
             }
             let deadline = ContinuousClock.now + WorktreeSetup.quitGrace
-            while groups.contains(where: RunningStep.isRunning(group:)), ContinuousClock.now < deadline {
+            while groups.contains(where: isRunning(group:)), ContinuousClock.now < deadline {
                 usleep(20000)
             }
-            for group in groups where RunningStep.isRunning(group: group) {
+            for group in groups where isRunning(group: group) {
                 kill(-group, SIGKILL)
             }
         }
@@ -139,6 +139,52 @@ enum WorktreeSetup {
     /// How long a quit lets the steps end after SIGTERM: as long as the
     /// other waits at quit, short enough that a quit still feels immediate.
     static let quitGrace: Duration = .milliseconds(500)
+
+    /// Whether any process of the group is left that has not exited.
+    static func isRunning(group: pid_t) -> Bool {
+        ProcessLiveness.hasLiveMembers(group: group)
+    }
+
+    /// Waits for the last process of a stopped step's group: the setup
+    /// counts as stopped only once nothing it started still runs in the
+    /// folder. The wait sends the group SIGKILL itself `killAfter` into the
+    /// wait, and gives up only `killGrace` after that. Left to the timer of
+    /// `RunningStep.stop` alone, the SIGKILL could come after a fixed
+    /// deadline here on a busy Mac, and a child that ignored SIGTERM would
+    /// still be running when the setup was reported stopped. A second
+    /// SIGKILL costs nothing, and the group's id is still ours while a
+    /// member is left. On `SuspendingClock`, which stands still while the
+    /// Mac sleeps, as the `DispatchTime` of that timer does.
+    static func waitForGroup(_ group: pid_t) async {
+        let clock = SuspendingClock()
+        let killAt = clock.now + killAfter
+        var killedAt: SuspendingClock.Instant?
+        while isRunning(group: group) {
+            let now = clock.now
+            if let killedAt {
+                if now >= killedAt + killGrace {
+                    log.fault("a setup step's process group outlived SIGKILL")
+                    return
+                }
+            } else if now >= killAt {
+                kill(-group, SIGKILL)
+                killedAt = now
+            }
+            // Not `Task.sleep`: the task waiting here is the canceled one,
+            // whose sleep would return at once.
+            await withCheckedContinuation { (resumed: CheckedContinuation<Void, Never>) in
+                DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(50)) {
+                    resumed.resume()
+                }
+            }
+        }
+    }
+
+    /// How long a step has to end after SIGTERM before SIGKILL.
+    fileprivate static let killAfter: Duration = .seconds(3)
+
+    /// How long a group sent SIGKILL is waited for.
+    private static let killGrace: Duration = .seconds(2)
 
     private static func isUnsafeRelativePath(_ path: String) -> Bool {
         path.isEmpty
@@ -274,7 +320,7 @@ enum WorktreeSetup {
             running.terminate()
         }
         if Task.isCancelled, process.processIdentifier > 0 {
-            await RunningStep.waitForGroup(process.processIdentifier)
+            await waitForGroup(process.processIdentifier)
         }
         // Past here the step is no quit's to stop: it ended, or what it
         // left behind is what a step that ends leaves anyway.
@@ -396,7 +442,7 @@ private final class RunningStep: @unchecked Sendable {
     /// stopped.
     private static func stop(_ process: Process) {
         let group = process.processIdentifier
-        guard group > 0, process.isRunning || isRunning(group: group) else { return }
+        guard group > 0, process.isRunning || WorktreeSetup.isRunning(group: group) else { return }
         // The leader too, in case it is not the group's: `Process` makes it
         // one, and a step is never started any other way, but signaling it
         // costs nothing.
@@ -404,40 +450,12 @@ private final class RunningStep: @unchecked Sendable {
             process.terminate()
         }
         kill(-group, SIGTERM)
-        DispatchQueue.global().asyncAfter(deadline: .now() + killAfter) {
-            if isRunning(group: group) {
+        DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(Int(WorktreeSetup.killAfter / .milliseconds(1)))) {
+            if WorktreeSetup.isRunning(group: group) {
                 kill(-group, SIGKILL)
             }
         }
     }
-
-    /// Whether any process of the group is left.
-    static func isRunning(group: pid_t) -> Bool {
-        kill(-group, 0) == 0 || errno == EPERM
-    }
-
-    /// Waits for the last process of a stopped step's group, at most a
-    /// little past the SIGKILL: the setup counts as stopped only once
-    /// nothing it started still runs in the folder. On `SuspendingClock`,
-    /// the clock the SIGKILL's `DispatchTime` runs on: both stand still
-    /// while the Mac sleeps, so a sleep during the wait cannot pass this
-    /// deadline before the SIGKILL has been sent.
-    static func waitForGroup(_ group: pid_t) async {
-        let clock = SuspendingClock()
-        let deadline = clock.now + .seconds(4)
-        while isRunning(group: group), clock.now < deadline {
-            // Not `Task.sleep`: the task waiting here is the canceled one,
-            // whose sleep would return at once.
-            await withCheckedContinuation { (resumed: CheckedContinuation<Void, Never>) in
-                DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(50)) {
-                    resumed.resume()
-                }
-            }
-        }
-    }
-
-    /// How long a step has to end after SIGTERM before SIGKILL.
-    private static let killAfter: DispatchTimeInterval = .seconds(3)
 
     func resume(_ cont: CheckedContinuation<StepOutcome, Never>, with value: StepOutcome) {
         let shouldResume = lock.withLock {

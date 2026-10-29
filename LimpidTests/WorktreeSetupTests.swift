@@ -243,8 +243,46 @@ struct WorktreeSetupTests {
             await #expect(throws: CancellationError.self) { try await task.value }
             // SIGKILL reaches the whole group, the child that ignored
             // SIGTERM included.
-            await pollUntil(timeout: .seconds(6), interval: .milliseconds(50)) { kill(pid, 0) != 0 }
-            #expect(kill(pid, 0) != 0)
+            await pollUntil(timeout: .seconds(6), interval: .milliseconds(50)) { !ProcessLiveness.isLive(pid) }
+            #expect(!ProcessLiveness.isLive(pid))
         }
+    }
+
+    /// The wait for a stopped step sends SIGKILL itself, rather than
+    /// counting on the timer `RunningStep.stop` schedules, which a busy
+    /// runner can hold back past any deadline the wait keeps. Here no
+    /// timer runs, and no signal is sent before the wait, so only the
+    /// wait's SIGKILL ends the group.
+    @Test func theWaitForAStoppedStep_killsItsGroup_withoutTheStopsTimer() async throws {
+        var attributes: posix_spawnattr_t?
+        posix_spawnattr_init(&attributes)
+        defer { posix_spawnattr_destroy(&attributes) }
+        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP))
+        posix_spawnattr_setpgroup(&attributes, 0)
+        let arguments = ["/bin/sleep", "30"]
+        var argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) } + [nil]
+        defer { argv.forEach { free($0) } }
+        var group: pid_t = 0
+        try #require(posix_spawn(&group, "/bin/sleep", nil, &attributes, &argv, environ) == 0)
+        defer {
+            if WorktreeSetup.isRunning(group: group) {
+                kill(-group, SIGKILL)
+            }
+        }
+        // Reaped as it ends, as `Process` reaps a step, so the test leaves
+        // no zombie behind.
+        let leader = group
+        DispatchQueue.global().async {
+            var status: Int32 = 0
+            waitpid(leader, &status, 0)
+        }
+
+        let clock = SuspendingClock()
+        let started = clock.now
+        await WorktreeSetup.waitForGroup(group)
+
+        #expect(!WorktreeSetup.isRunning(group: group))
+        // The step still had its time to end on SIGTERM.
+        #expect(clock.now - started >= .seconds(3))
     }
 }
