@@ -39,9 +39,14 @@ jobs:
       - name: Run tests
         run: cargo test --locked --workspace --all-targets
 
+  # The two build jobs do not wait for SwiftFormat and SwiftLint: those take
+  # under a minute, and waiting put that minute in front of the longest job.
+  # A lint failure still fails the run. Review core still waits, so no more
+  # than five macOS jobs start at once, the limit for this account's plan.
+  # A sixth would wait for a free runner, and the one left waiting could be
+  # this one.
   build:
     name: Build (macOS 26)
-    needs: [format, lint]
     runs-on: macos-26
 
     steps:
@@ -59,7 +64,7 @@ jobs:
           xcodebuild -version
 
       - name: Install tooling
-        run: brew install xcodegen zig@0.17 tmux
+        run: brew install xcodegen tmux xcbeautify
 
       - name: Install pinned Rust toolchain
         run: rustup toolchain install --no-self-update
@@ -81,6 +86,12 @@ jobs:
           path: vendor/ghostty/macos/GhosttyKit.xcframework
           key: ghostty-v2-${{ runner.os }}-${{ steps.ghostty-src.outputs.sha }}-${{ hashFiles('scripts/build-ghostty.sh') }}
 
+      # Zig builds libghostty and nothing else, so it is installed only when
+      # the cached xcframework is missing.
+      - name: Install Zig
+        if: steps.cache-ghostty.outputs.cache-hit != 'true'
+        run: brew install zig@0.17
+
       - name: Build libghostty xcframework
         if: steps.cache-ghostty.outputs.cache-hit != 'true'
         run: ./scripts/build-ghostty.sh
@@ -95,10 +106,67 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
-      - name: Install xcbeautify
-        run: brew install xcbeautify
+      # `scripts/build-rust-bridge.sh` builds into `cargo-target` under
+      # OBJROOT, and Xcode resolves Sparkle into SourcePackages: both start
+      # empty on every runner. A restore from an older key still spares
+      # building the crates and fetching the package that did not change.
+      # `project.yml` stays out of the key: release-please changes its version
+      # on every release, and Xcode checks the restored packages against
+      # `project.yml` anyway.
+      - name: Restore Cargo and SwiftPM caches
+        id: cache-deps
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            build/DerivedData/Build/Intermediates.noindex/cargo-target
+            build/DerivedData/SourcePackages
+          key: build-deps-v1-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: build-deps-v1-${{ runner.os }}-
 
-      - name: Build and test with coverage
+      # Built and tested in two steps: xcodebuild prints the build timing
+      # summary for `build-for-testing` but not for `test`.
+      - name: Build for testing with coverage
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild \
+            -project Limpid.xcodeproj \
+            -scheme Limpid \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -derivedDataPath build/DerivedData \
+            -enableCodeCoverage YES \
+            -showBuildTimingSummary \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing | tee build/xcodebuild.log | xcbeautify --renderer github-actions
+
+      - name: Save Cargo and SwiftPM caches
+        if: always() && steps.cache-deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            build/DerivedData/Build/Intermediates.noindex/cargo-target
+            build/DerivedData/SourcePackages
+          key: ${{ steps.cache-deps.outputs.cache-primary-key }}
+
+      # Read from the raw log, which keeps every line as xcodebuild wrote it,
+      # and printed to the log as well as the job summary, which the API
+      # cannot read.
+      - name: Build timing summary
+        if: always()
+        run: |
+          {
+            echo "## Build timing"
+            echo '```'
+            sed -n '/Build Timing Summary/,/^\*\*/p' build/xcodebuild.log || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Test with coverage
         env:
           LIMPID_REQUIRE_TMUX_TESTS: "1"
         run: |
@@ -114,7 +182,7 @@ jobs:
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            test | xcbeautify --renderer github-actions
+            test-without-building | xcbeautify --renderer github-actions
 
       - name: Validate development service bundle
         run: |
@@ -152,7 +220,6 @@ jobs:
   # release.yml.
   release-archive:
     name: Release archive (macOS 26)
-    needs: [format, lint]
     runs-on: macos-26
 
     steps:
@@ -170,7 +237,7 @@ jobs:
           xcodebuild -version
 
       - name: Install tooling
-        run: brew install xcodegen zig@0.17
+        run: brew install xcodegen
 
       - name: Install pinned Rust toolchain
         run: rustup toolchain install --no-self-update
@@ -191,6 +258,12 @@ jobs:
         with:
           path: vendor/ghostty/macos/GhosttyKit.xcframework
           key: ghostty-v2-${{ runner.os }}-${{ steps.ghostty-src.outputs.sha }}-${{ hashFiles('scripts/build-ghostty.sh') }}
+
+      # Zig builds libghostty and nothing else, so it is installed only when
+      # the cached xcframework is missing.
+      - name: Install Zig
+        if: steps.cache-ghostty.outputs.cache-hit != 'true'
+        run: brew install zig@0.17
 
       - name: Build libghostty xcframework
         if: steps.cache-ghostty.outputs.cache-hit != 'true'
