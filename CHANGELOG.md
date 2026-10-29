@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.13](https://github.com/nek0der/limpid/compare/v0.1.12...v0.1.13) (2026-10-29)
+
+
+### Features
+
+* **agent:** show an MCP server's request for input under Claude Code with its words, from its Elicitation hook ([#176](https://github.com/nek0der/limpid/issues/176)) ([8c6cfd2](https://github.com/nek0der/limpid/commit/8c6cfd292056bd42f713552687a98805a3e3bc37))
+* **sidebar:** name each row by its branch, and make a name the person gives a label beside it ([#179](https://github.com/nek0der/limpid/issues/179)) ([ded379e](https://github.com/nek0der/limpid/commit/ded379ec514f9e7572a0b2cbaa28c9fe94f5dc74))
+
 ## [0.1.12](https://github.com/nek0der/limpid/compare/v0.1.11...v0.1.12) (2026-10-29)
 
 
