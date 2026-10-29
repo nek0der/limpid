@@ -116,16 +116,16 @@ struct DemoSceneTests {
         let rows = try Self.scene().rows(DemoFixture.duesmithProjectID).filter { $0.section == .working }
         // The working worktrees, then the folder, which the review is in.
         #expect(rows.map(\.name) == [
-            "Send overdue invoice reminders",
-            "Fix tax rounding on line items",
-            "Add proration to plan changes",
-            "Retry webhooks on timeout",
-            "Document the invoices API",
-            "Review PR #318"
+            "feat/overdue-reminders",
+            "fix/tax-rounding",
+            "feat/proration",
+            "fix/webhook-timeout",
+            "docs/invoices-api",
+            "main"
         ])
-        // Each is named by its conversation, not by a name the person gave,
-        // so no second line starts with the row's folder.
-        #expect(rows.allSatisfy { $0.folder == nil })
+        // Each is named by its branch, not by a label the person gave, so
+        // no second line starts with the row's branch.
+        #expect(rows.allSatisfy { $0.checkout == nil })
         #expect(rows.map(\.factText) == [
             "Unread · 4 files changed",
             "Waiting for approval: tsc",
@@ -192,10 +192,10 @@ struct DemoSceneTests {
     @Test func theOtherProjectsRows_readAsTheSceneSays() throws {
         let scene = Self.scene()
         let pdf = try scene.rows(DemoFixture.pdfWorkerProjectID)
-        #expect(pdf.map(\.name) == ["Fix page breaks in long invoices", "Render invoices in batches", "main"])
+        #expect(pdf.map(\.name) == ["fix/page-breaks", "feat/batch-render", "main"])
         #expect(pdf.map(\.fact.glyph) == [.needsApproval, .idle, .shell])
         #expect(pdf.map(\.factText) == ["Waiting for approval: cargo test -p layout", "PR #57 · Merged", "Folder"])
-        #expect(pdf.allSatisfy { $0.folder == nil })
+        #expect(pdf.allSatisfy { $0.checkout == nil })
         let dotfiles = try scene.rows(DemoFixture.dotfilesProjectID)
         #expect(dotfiles.map(\.name) == ["main"])
         #expect(dotfiles.map(\.fact.glyph) == [.shell])

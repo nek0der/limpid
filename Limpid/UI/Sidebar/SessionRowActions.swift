@@ -22,6 +22,11 @@ struct SessionRowActions {
     var canMoveUp = true
     var canMoveDown = true
     var rename: (() -> Void)?
+    /// Remove Label: hands a labeled row back to its branch, as clearing
+    /// the label's field does, where a person can see it can be done.
+    /// Offered only on a row with a label, so its presence says the row has
+    /// one.
+    var removeLabel: (() -> Void)?
     /// "Open on GitHub" (or the row's forge): the hover card's one action,
     /// for a person who does not point at the row's mark. Offered on
     /// rows with a pull request on file.
@@ -99,7 +104,13 @@ struct SessionRowActionsMenu: View {
                 Divider()
             }
             Button(action: rename) {
-                Label("Rename…", systemImage: "pencil")
+                Label("Set Label…", systemImage: "pencil")
+            }
+            .tint(Color.primary)
+        }
+        if let removeLabel = actions.removeLabel {
+            Button(action: removeLabel) {
+                Label("Remove Label", systemImage: "arrow.uturn.backward")
             }
             .tint(Color.primary)
         }

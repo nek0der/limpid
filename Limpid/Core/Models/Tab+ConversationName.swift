@@ -6,7 +6,7 @@ import Foundation
 extension Tab {
     /// Remembers the tab's first conversation from the badges on it
     /// (`ConversationName.remembered`). The title is the pane header's
-    /// (`PaneHeaderRules.agentTitle`), so the row and the header agree on
+    /// (`PaneHeaderRules.agentTitle`), so the tab and the header agree on
     /// what a running conversation is called.
     mutating func rememberConversationName() {
         let badges = agentBadges
@@ -47,7 +47,8 @@ extension Tab {
     }
 
     /// The name of the first conversation among `tabs` to start: what names
-    /// a row whose tabs they are; `nil` when no agent has named one of them.
+    /// a row on a detached HEAD whose tabs they are (`RowName`); `nil` when
+    /// no agent has named one of them.
     static func firstConversationName(in tabs: [Tab]) -> String? {
         ConversationName.first(tabs.compactMap(\.conversationName))?.name
     }

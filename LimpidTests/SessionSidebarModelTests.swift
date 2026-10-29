@@ -34,6 +34,15 @@ struct SessionSidebarModelTests {
         return (session, session.projects[index])
     }
 
+    /// The project with no branch known for its folder, so the folder's
+    /// row is named by its conversation, as a detached HEAD's is.
+    private static func unbranchedProject() -> (session: WorkspaceSession, project: Project) {
+        let (session, project) = project()
+        let index = session.projects.firstIndex { $0.id == project.id } ?? 0
+        session.projects[index].mainBranchName = nil
+        return (session, session.projects[index])
+    }
+
     private static func model(
         _ session: WorkspaceSession,
         _ project: Project,
@@ -90,7 +99,7 @@ struct SessionSidebarModelTests {
     }
 
     @Test func aRowsName_doesNotFollowItsTabsTitle() {
-        let (session, project) = Self.project()
+        let (session, project) = Self.unbranchedProject()
         let tab = session.openTab(container: .project(project.id))
         session.update(tab.id) {
             $0.conversationName = Self.conversation("Append a line to notes.txt", startedAt: 0)
@@ -104,6 +113,18 @@ struct SessionSidebarModelTests {
             #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.name == "Append a line to notes.txt")
         }
         #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.nameTruncation == .name)
+    }
+
+    /// A row stands for its worktree: its branch names it even while an
+    /// agent's conversation runs there, which the pane strip names.
+    @Test func aRowWithAConversation_isNamedByItsBranch() {
+        let (session, project) = Self.project()
+        let tab = session.openTab(container: .project(project.id))
+        session.update(tab.id) { $0.conversationName = Self.conversation("Add tests", startedAt: 0) }
+
+        let row = Self.model(session, project).rows.first { $0.isMainFolder }
+        #expect(row?.name == "main")
+        #expect(row?.nameTruncation == .branch)
     }
 
     @Test func aRowWithoutAConversation_isNamedByItsBranch_whateverItsTabsAreCalled() {
@@ -137,7 +158,7 @@ struct SessionSidebarModelTests {
     }
 
     @Test func anEmptyNameAPersonGave_handsTheRowToItsConversation() {
-        let (session, project) = Self.project()
+        let (session, project) = Self.unbranchedProject()
         let cleared = session.openTab(container: .project(project.id))
         let named = session.openTab(container: .project(project.id))
         session.update(cleared.id) { $0.titleOverride = "" }
@@ -146,11 +167,11 @@ struct SessionSidebarModelTests {
         #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.name == "Add tests")
 
         session.update(named.id) { $0.conversationName = nil }
-        #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.name == "main")
+        #expect(Self.model(session, project).rows.first { $0.isMainFolder }?.name == project.rootURL.lastPathComponent)
     }
 
     @Test func theHeaderAndTheCard_cutTheNameAsTheRowDoes() throws {
-        let (session, project) = Self.project()
+        let (session, project) = Self.unbranchedProject()
         let spike = ContainerID.worktree(projectID: project.id, worktreeID: project.worktrees[0].id)
         _ = session.openTab(container: spike)
         let named = session.openTab(container: .project(project.id))
@@ -173,7 +194,7 @@ struct SessionSidebarModelTests {
     }
 
     @Test func aRowKeepsItsConversationsName_afterTheAgentLeaves() throws {
-        let (session, project) = Self.project()
+        let (session, project) = Self.unbranchedProject()
         let tab = session.openTab(container: .project(project.id))
         let pane = try #require(tab.splitTree.allLeafIDs().first)
         let running = AgentBadge(
@@ -199,7 +220,7 @@ struct SessionSidebarModelTests {
     }
 
     @Test func aRowWithSeveralConversations_isNamedByTheFirstToStart() {
-        let (session, project) = Self.project()
+        let (session, project) = Self.unbranchedProject()
         let shell = session.openTab(container: .project(project.id))
         let later = session.openTab(container: .project(project.id))
         let earlier = session.openTab(container: .project(project.id))

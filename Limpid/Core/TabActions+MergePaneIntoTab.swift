@@ -45,7 +45,7 @@ extension TabActions {
         // id, not nested under Tab), so they follow the leaf id
         // automatically and need no copy / clear step.
         let transfer = sourceTab.paneTransferState(of: paneID)
-        // The conversation that names the row goes with its pane, taken
+        // The conversation that names the tab goes with its pane, taken
         // from the source here; the target keeps whichever of its own and
         // this one started first.
         var conversationName: ConversationName?

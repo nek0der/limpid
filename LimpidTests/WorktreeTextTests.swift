@@ -47,7 +47,7 @@ struct WorktreeTextTests {
         #expect(LocalizedStringResource("Close All Tabs").resolved(in: Self.japanese) == "すべてのタブを閉じる")
         #expect(EmptyState.noWorktreeSelected.message(locale: Self.japanese) == "ワークツリーが選択されていません")
         #expect(EmptyState.noMatchingWorktrees.message(locale: Self.japanese) == "一致するワークツリーはありません")
-        #expect(LocalizedStringResource("Worktree name").resolved(in: Self.japanese) == "ワークツリーの名前")
+        #expect(LocalizedStringResource("Worktree label").resolved(in: Self.japanese) == "ワークツリーのラベル")
     }
 
     /// An empty pane area names the row a worktree and New Tab's key as

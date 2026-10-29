@@ -5905,23 +5905,6 @@
         }
       }
     },
-    "Worktree name": {
-      "comment": "Sidebar row, VoiceOver: the field that renames the worktree's row",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Worktree name"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ワークツリーの名前"
-          }
-        }
-      }
-    },
     "Expand File": {
       "comment": "Review: the tooltip and VoiceOver name of a folded checked file's chevron",
       "localizations": {
@@ -21981,7 +21964,7 @@
       }
     },
     "Folder %@": {
-      "comment": "Sidebar, VoiceOver: the project's own folder, read after the name the person gave its row",
+      "comment": "Sidebar, VoiceOver: the project's own folder, read after the label the person gave a row with no branch",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -21998,7 +21981,7 @@
       }
     },
     "Worktree %@": {
-      "comment": "Sidebar, VoiceOver: the worktree's folder, read after the name the person gave its row",
+      "comment": "Sidebar, VoiceOver: the worktree's folder, read after the label the person gave a row with no branch",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -22641,6 +22624,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "サインイン %lld"
+          }
+        }
+      }
+    },
+    "Set Label…": {
+      "comment": "Sidebar row menu: gives the row a label shown in place of its branch; the Git branch is not renamed",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Set Label…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ラベルを設定…"
+          }
+        }
+      }
+    },
+    "Worktree label": {
+      "comment": "Sidebar row, VoiceOver: the field that sets the label shown in place of the row's branch",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Worktree label"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ワークツリーのラベル"
+          }
+        }
+      }
+    },
+    "Branch %@": {
+      "comment": "Sidebar, VoiceOver: the row's branch, read after the label the person gave its row",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Branch %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ブランチ %@"
+          }
+        }
+      }
+    },
+    "Remove Label": {
+      "comment": "Sidebar row menu, on a labeled row: removes the label so the row goes by its branch again; the Git branch is not changed",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove Label"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ラベルを外す"
           }
         }
       }

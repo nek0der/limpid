@@ -1,5 +1,5 @@
 // RowNameTests.swift
-// Limpid — a row is named by the person's name, its conversation, its branch, then its folder.
+// Limpid — a row is named by the person's name, its branch, its conversation, then its folder.
 
 import Foundation
 import Testing
@@ -11,17 +11,18 @@ struct RowNameTests {
         #expect(name == RowName(text: "Release prep", source: .manual))
     }
 
-    @Test func theConversation_comesBeforeTheBranch() {
+    @Test func theBranch_comesBeforeTheConversation() {
         let name = RowName.make(manual: nil, conversation: "Add tests", branch: "feat/x", folder: "repo-feat-x")
-        #expect(name == RowName(text: "Add tests", source: .conversation))
-    }
-
-    @Test func theBranch_comesBeforeTheFolder() {
-        let name = RowName.make(manual: nil, conversation: nil, branch: "feat/x", folder: "repo-feat-x")
         #expect(name == RowName(text: "feat/x", source: .branch))
     }
 
-    /// A detached HEAD has no branch: the folder names the row.
+    /// A detached HEAD has no branch: its conversation names the row.
+    @Test func theConversation_comesBeforeTheFolder() {
+        let name = RowName.make(manual: nil, conversation: "Add tests", branch: nil, folder: "alpha-detached")
+        #expect(name == RowName(text: "Add tests", source: .conversation))
+    }
+
+    /// A detached HEAD no agent has run in is named by its folder.
     @Test func aDetachedRow_isNamedByItsFolder() {
         let name = RowName.make(manual: nil, conversation: nil, branch: nil, folder: "alpha-detached")
         #expect(name == RowName(text: "alpha-detached", source: .folder))

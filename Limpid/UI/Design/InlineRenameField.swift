@@ -150,6 +150,14 @@ struct InlineRenameField: View {
     /// and faded edges where it is laid over a label in a row, or a hard
     /// clip where its owner draws a box around it (the floating panel).
     var editingStyle: InlineRenameEditingStyle = .inline
+    /// The text an edit starts from, when it is not the name drawn. A
+    /// sidebar row that goes by its branch starts empty, so the branch is
+    /// not taken for what the field renames: the field gives the row a
+    /// label and leaves the branch as it is. Nil starts from `name`.
+    var editsFrom: String?
+    /// Drawn faint in the field while the draft is empty, so an edit that
+    /// starts empty still shows what the label stands in for.
+    var prompt: String?
 
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.colorSchemeContrast) private var contrast
@@ -298,7 +306,7 @@ struct InlineRenameField: View {
     }
 
     private var field: some View {
-        TextField("", text: $draft)
+        TextField("", text: $draft, prompt: prompt.map { Text(verbatim: $0) })
             .textFieldStyle(.plain)
             .accessibilityLabel(Text(fieldName))
             .focused($fieldFocused)
@@ -307,8 +315,8 @@ struct InlineRenameField: View {
             .onAppear {
                 // Runs before the field's first frame, so it
                 // never shows a previous edit's leftover text.
-                draft = name
-                startName = name
+                draft = editsFrom ?? name
+                startName = editsFrom ?? name
                 isDraftSeeded = true
                 didFinalize = false
                 // Asked at mount, the focus is lost (a known

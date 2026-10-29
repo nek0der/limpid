@@ -40,17 +40,18 @@ enum AllProjectsText {
     }
 
     /// "limpid / feat/pricing", or the project alone when the branch is not
-    /// known. A card the person named is placed by the folder its sidebar
-    /// row shows beside that name ("limpid / login-redesign"), which says
-    /// which worktree it is where the name no longer does.
-    static func place(project: String, branch: String?, folder: String? = nil) -> String {
-        AgentStatusText.place(project: project, checkout: folder ?? branch)
+    /// known. A card the person labeled is placed by the checkout its
+    /// sidebar row shows beside that label (`checkout`, the branch or, with
+    /// no branch, the folder), which says which worktree it is where the
+    /// label does not.
+    static func place(project: String, branch: String?, checkout: String? = nil) -> String {
+        AgentStatusText.place(project: project, checkout: checkout ?? branch)
     }
 
     /// `place` as VoiceOver reads it, "limpid, feat/pricing": the spaced
     /// " / " would be read aloud as "slash".
-    static func spokenPlace(project: String, branch: String?, folder: String? = nil, locale: Locale) -> String {
-        guard let checkout = folder ?? branch, !checkout.isEmpty, checkout != project else { return project }
+    static func spokenPlace(project: String, branch: String?, checkout: String? = nil, locale: Locale) -> String {
+        guard let checkout = checkout ?? branch, !checkout.isEmpty, checkout != project else { return project }
         return AgentStatusText.spokenList([project, checkout], locale: locale)
     }
 

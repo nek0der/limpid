@@ -448,7 +448,7 @@ private struct AllProjectsCardView: View {
     }
 
     /// This is the project's color and "project / branch" ("project /
-    /// folder" for a card the person named) in the face branches have, then
+    /// folder" for a labeled card with no branch) in the face branches have, then
     /// the Git chips, then which window shows the project. What does not fit
     /// wraps to the next line, at any width the sheet has, so nothing draws
     /// past the card and the place is cut only when it is longer than a
@@ -466,7 +466,7 @@ private struct AllProjectsCardView: View {
                 .fill(LimpidColor.paletteColor(card.paletteIndex))
                 .frame(width: Layout.allProjectsPlaceDotSize, height: Layout.allProjectsPlaceDotSize)
                 .accessibilityHidden(true)
-            Text(verbatim: AllProjectsText.place(project: card.projectName, branch: card.branch, folder: card.folder))
+            Text(verbatim: AllProjectsText.place(project: card.projectName, branch: card.branch, checkout: card.checkout))
                 .font(.supervisionCode(beside: .meta))
                 .foregroundStyle(SupervisionTokens.muted.color)
                 .lineLimit(1)
@@ -477,7 +477,7 @@ private struct AllProjectsCardView: View {
                 .accessibilityLabel(Text(verbatim: AllProjectsText.spokenPlace(
                     project: card.projectName,
                     branch: card.branch,
-                    folder: card.folder,
+                    checkout: card.checkout,
                     locale: locale
                 )))
         }

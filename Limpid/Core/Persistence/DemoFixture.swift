@@ -312,18 +312,16 @@ enum DemoFixture {
     // MARK: - Worktrees
 
     //
-    // Rows are named as a real session's usually are, by their first agent
-    // conversation (`Tab.conversationName`), not by a name the person gave:
-    // no worktree has one (`Worktree.displayName`) and no tab has one
-    // (`titleOverride`). A given name would put the row's folder at the
-    // head of its second line (`WorkspaceSession.rowFolder(of:)`), and the
-    // hero has no room for it; a conversation's name does not
-    // (`RowName.folderBeside`). Each agent's tab comes first in its
-    // worktree, and its terminal's title is the conversation's, which the
-    // pane strip reads; a worktree of shells alone has no conversation, and
-    // its row reads as its branch. Badge times sit 20 seconds past a whole
-    // minute, so the rows' minutes do not tick over in the seconds before
-    // the capture.
+    // Rows are named as a real session's usually are, by their branch, not
+    // by a label the person gave: no worktree has one
+    // (`Worktree.displayName`) and no tab has one (`titleOverride`). A label
+    // would put the row's branch at the head of its second line
+    // (`WorkspaceSession.rowCheckout(of:)`), and the hero has no room for
+    // it. Each agent's tab comes first in its worktree, and its terminal's
+    // title is its first conversation's (`Tab.conversationName`), which the
+    // pane strip reads; a worktree of shells alone has no conversation.
+    // Badge times sit 20 seconds past a whole minute, so the rows' minutes
+    // do not tick over in the seconds before the capture.
 
     private static func duesmithTabs() -> [Tab] {
         let review = agentTab(
@@ -579,7 +577,7 @@ enum DemoFixture {
     // MARK: - Helpers
 
     /// Returns what each agent's first conversation is called, as its
-    /// provider titled it, which names the agent's row and its tab. It is
+    /// provider titled it, which names the agent's tab. It is
     /// `nil` for a shell's slot.
     static func conversationTitle(of slot: Slot) -> String? {
         switch slot {
@@ -599,7 +597,7 @@ enum DemoFixture {
     /// Makes an agent's tab, with `badge` on its one pane and named by the
     /// conversation in it, staged as a pass leaves a tab once the provider
     /// has titled the conversation: the tab keeps the conversation's name
-    /// (`Tab.conversationName`), which names the row, and its title is that
+    /// (`Tab.conversationName`), and its title is that
     /// name too, as the agent last set it. Demo mode runs no pass, so the
     /// name stays as staged; a scene that holds the screen sets the same
     /// title again once its shell starts (`transcript(for:)`), in place of

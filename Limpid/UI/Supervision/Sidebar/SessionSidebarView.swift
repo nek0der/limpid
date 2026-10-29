@@ -733,6 +733,9 @@ struct SessionSidebarView: View {
             // frozen into the row; an empty name hands the row back to the
             // name it would have.
             rename: other == nil ? { renamingRow = row.id } : nil,
+            removeLabel: other == nil && row.label != nil
+                ? { session.renameRow(row.id, to: "", runtimes: attention.allRuntimes) }
+                : nil,
             openPullRequest: prStatusStore.info(for: row.id).map { info in
                 SessionRowActions.Entry(
                     title: "Open on \(info.forge.displayName)",

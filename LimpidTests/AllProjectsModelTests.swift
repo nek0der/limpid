@@ -141,9 +141,9 @@ struct AllProjectsModelTests {
         #expect(cards.suffix(2).map(\.id) == [worktreeRow, .project(fixture.b.id)])
     }
 
-    /// A card the person named is placed by its folder, as its sidebar row
-    /// shows it, and the filter finds it by that folder.
-    @Test func aNamedCard_isPlacedByItsFolder_andFoundByIt() throws {
+    /// A card the person labeled is placed by its branch, as its sidebar
+    /// row shows it, and the filter finds it by that branch or its folder.
+    @Test func aLabeledCard_isPlacedByItsBranch_andFoundByIt() throws {
         let fixture = ProjectWindowsFixture()
         let index = try #require(fixture.session.projects.firstIndex { $0.id == fixture.b.id })
         let worktree = Worktree(
@@ -159,9 +159,12 @@ struct AllProjectsModelTests {
 
         let card = try #require(Self.cards(fixture.session, registry: fixture.registry).first { $0.id == worktreeRow })
         #expect(card.name == "Login work")
-        #expect(card.folder == "login-redesign")
-        #expect(AllProjectsText.place(project: card.projectName, branch: card.branch, folder: card.folder)
-            == "\(card.projectName) / login-redesign")
+        #expect(card.checkout == "feat/login")
+        #expect(AllProjectsText.place(project: card.projectName, branch: card.branch, checkout: card.checkout)
+            == "\(card.projectName) / feat/login")
+        // Found by its branch, and by its folder, which no card shows.
+        #expect(AllProjectsModel(cards: [card], query: "feat/login", attentionCount: 0).cards.count == 1)
+        #expect(card.folderName == "login-redesign")
         #expect(AllProjectsModel(cards: [card], query: "redesign", attentionCount: 0).cards.count == 1)
     }
 

@@ -4,8 +4,8 @@
 import Foundation
 
 enum SessionRowFactText {
-    /// Returns the row's fact at `now`, its second line after the folder a
-    /// named row starts it with (`lineLead`). It is worded when the model was built,
+    /// Returns the row's fact at `now`, its second line after the checkout a
+    /// labeled row starts it with (`lineLead`). It is worded when the model was built,
     /// except a usage limit stop's, which names its reset only while it is
     /// ahead and so is worded again against the row's clock.
     static func current(_ row: SessionSidebarModel.Row, now: Date, locale: Locale) -> String {
@@ -56,23 +56,24 @@ enum SessionRowFactText {
         }
     }
 
-    /// Returns what the second line says before `fact`: the folder of a row
-    /// the person named and the separator ("login-redesign · "), or the
-    /// folder alone on a row whose fact only names its state (`showsFact`).
-    /// It is empty for a row with no folder, whose line is its fact alone.
-    /// We keep it apart from the fact, so the line cuts the fact first and
-    /// the folder only when it does not fit by itself.
+    /// Returns what the second line says before `fact`: the checkout of a
+    /// row the person labeled and the separator ("feat/login · "), or the
+    /// checkout alone on a row whose fact only names its state
+    /// (`showsFact`). It is empty for a row with no checkout beside its
+    /// name, whose line is its fact alone. We keep it apart from the fact,
+    /// so the line cuts the fact first and the checkout only when it does
+    /// not fit by itself.
     static func lineLead(_ row: SessionSidebarModel.Row, fact: String, locale: Locale) -> String {
-        guard let folder = row.folder?.shown else { return "" }
-        return AgentStatusText.lead(folder, before: row.showsFact ? fact : "", locale: locale)
+        guard let checkout = row.checkout?.shown else { return "" }
+        return AgentStatusText.lead(checkout, before: row.showsFact ? fact : "", locale: locale)
     }
 
     /// Returns a row's tooltip: its whole name, which the row may cut short, the
-    /// folder a named row shows in full, its branch, the time since its
+    /// checkout a labeled row shows in full, its branch, the time since its
     /// last activity, and how many turns are unread. The branch says which
-    /// worktree a row is when its name is the agent's session name; a row
-    /// named by its branch, or one whose folder is its branch, does not
-    /// say it twice. A row waiting on a request Limpid cannot answer, with its
+    /// worktree a row is when its name is a label or a conversation's; a
+    /// row named by its branch, or one whose checkout is its branch, does
+    /// not say it twice. A row waiting on a request Limpid cannot answer, with its
     /// pane out of view, ends with a line saying how to answer it, since
     /// the row offers no "Answer…" for it.
     static func tooltip(for row: SessionSidebarModel.Row, now: Date, locale: Locale) -> String {
@@ -81,12 +82,13 @@ enum SessionRowFactText {
         if case .project = row.id {
             parts.append(folder.resolved(in: locale))
         }
-        // The folder goes in full: the line may show it less the project's name.
-        if let fullFolder = row.folder?.name {
-            parts.append(fullFolder)
+        // The checkout goes in full: the line may show a folder less the
+        // project's name.
+        if let checkout = row.checkout?.name {
+            parts.append(checkout)
         }
         if let branch = row.branch, branch != row.name,
-           row.folder.map({ branch.compare($0.name, options: .caseInsensitive) != .orderedSame }) ?? true
+           row.checkout.map({ branch.compare($0.name, options: .caseInsensitive) != .orderedSame }) ?? true
         {
             parts.append(branch)
         }
@@ -134,18 +136,18 @@ enum SessionRowFactText {
         comment: "Sidebar, one of the other worktrees: its tooltip says it is not a working row and opening it makes it one"
     )
 
-    /// Returns what VoiceOver reads for a row: its state, name, the folder a
-    /// named row shows ("Worktree login-redesign"), and project, then its
+    /// Returns what VoiceOver reads for a row: its state, name, the checkout
+    /// a labeled row shows ("Branch feat/login"), and project, then its
     /// fact, the pull request its mark shows, its agent, and the time since
     /// it last moved. The request is read where the second line states it,
     /// and after the fact on a row whose line says something else (a stop,
     /// a wait), whose mark still shows it. A fact the line drops for the
-    /// folder is not read either: the state read first says it.
+    /// checkout is not read either: the state read first says it.
     static func spokenLabel(for row: SessionSidebarModel.Row, projectName: String?, now: Date, locale: Locale) -> String {
         var parts = [stateName(row.fact.glyph, locale: locale), row.name]
-        // The folder is read in full, as the tooltip says it.
-        if let fullFolder = row.folder?.name {
-            parts.append(folderSpoken(fullFolder, of: row, locale: locale))
+        // The checkout is read in full, as the tooltip says it.
+        if let checkout = row.checkout {
+            parts.append(checkoutSpoken(checkout, of: row, locale: locale))
         }
         parts.append(projectName ?? "")
         // On screen the fold line above says so; read on its own, the row does.
@@ -153,8 +155,9 @@ enum SessionRowFactText {
             parts.append(other.resolved(in: locale))
         }
         // "Folder" is said once: at rest, the second line read next says it
-        // already, and a named folder row's own folder said it before.
-        if case .project = row.id, row.folder == nil, row.factText != folder.resolved(in: locale) {
+        // already, and a labeled folder row's own folder said it before; its
+        // branch does not say it.
+        if case .project = row.id, row.checkout?.isBranch ?? true, row.factText != folder.resolved(in: locale) {
             parts.append(folder.resolved(in: locale))
         }
         let fact = AgentStatusText.spoken(current(row, now: now, locale: locale), locale: locale)
@@ -185,20 +188,27 @@ enum SessionRowFactText {
         return AgentStatusText.spokenList(parts, locale: locale)
     }
 
-    /// Returns the folder a named row shows, as VoiceOver reads it: said to be the
-    /// worktree's ("Worktree login-redesign"), or the project's own folder
-    /// ("Folder limpid"), so the bare folder name is not taken for a
-    /// second name.
-    private static func folderSpoken(_ name: String, of row: SessionSidebarModel.Row, locale: Locale) -> String {
+    /// Returns the checkout a labeled row shows, as VoiceOver reads it:
+    /// said to be the branch ("Branch feat/login"), the worktree's folder
+    /// ("Worktree login-redesign"), or the project's own folder ("Folder
+    /// limpid"), so the bare name is not taken for a second label.
+    private static func checkoutSpoken(_ checkout: RowCheckout, of row: SessionSidebarModel.Row, locale: Locale) -> String {
+        let name = checkout.name
+        if checkout.isBranch {
+            return LocalizedStringResource(
+                "Branch \(name)",
+                comment: "Sidebar, VoiceOver: the row's branch, read after the label the person gave its row"
+            ).resolved(in: locale)
+        }
         if case .project = row.id {
             return LocalizedStringResource(
                 "Folder \(name)",
-                comment: "Sidebar, VoiceOver: the project's own folder, read after the name the person gave its row"
+                comment: "Sidebar, VoiceOver: the project's own folder, read after the label the person gave a row with no branch"
             ).resolved(in: locale)
         }
         return LocalizedStringResource(
             "Worktree \(name)",
-            comment: "Sidebar, VoiceOver: the worktree's folder, read after the name the person gave its row"
+            comment: "Sidebar, VoiceOver: the worktree's folder, read after the label the person gave a row with no branch"
         ).resolved(in: locale)
     }
 
