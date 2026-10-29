@@ -40,11 +40,11 @@ pub use turn_gc::{TurnDeletion, delete_turns, delete_turns_waiting};
 pub use worktree::{InterceptResult, WORKTREE_ROUTING_FILE};
 
 use limpid_agent_core::{
-    ApplyContext, DEFAULT_CHECK_PATTERNS, RecordWrites, SideWrite, TurnSnapshotOp, TurnStep, apply,
-    classify_check, event_id_for, idle_outcome, sanitize_text, turn_step,
+    ApplyContext, DEFAULT_CHECK_PATTERNS, IdleOutcome, RecordWrites, SideWrite, TurnSnapshotOp,
+    TurnStep, apply, classify_check, event_id_for, idle_outcome, sanitize_text, turn_step,
 };
 use limpid_agent_model::{
-    Capability, CheckResult, EventId, HookContext, InstallRecipe, ProviderAdapter,
+    AgentEvent, Capability, CheckResult, EventId, HookContext, InstallRecipe, ProviderAdapter,
     ProviderDescriptor, ProviderId, RawHookInput, RunRecord, SnapshotStatus, Titles, TmuxEndpoint,
     TurnReading, TurnUsage, cwd_event_file_name, parse_utc_seconds, run_record_file_name,
     session_hint_file_name,
@@ -636,18 +636,181 @@ fn write_record(path: &Path, record: &RunRecord, log: &HookLog) {
 struct HookCall<'a> {
     adapter: &'a dyn ProviderAdapter,
     input: RawHookInput<'a>,
-    events: &'a [limpid_agent_model::AgentEvent],
+    events: &'a [AgentEvent],
     /// Identifies the call, for the turn records.
     id: Option<&'a EventId>,
 }
 
+/// The call's events, after the start of a turn no prompt began when there
+/// is one (`unprompted_start`), each with the id its turn record keeps and
+/// whether it is that start. The start has an id of its own, and the call's
+/// events keep theirs, which a retry that finds the turn begun gives them
+/// again.
+fn call_events<'a>(
+    call: &HookCall<'a>,
+    start: Option<&'a AgentEvent>,
+) -> Vec<(&'a AgentEvent, Option<EventId>, bool)> {
+    let own = call
+        .events
+        .iter()
+        .enumerate()
+        .map(|(index, event)| (event, event_id_for(call.id, index), false));
+    start
+        .map(|start| (start, call.id.map(EventId::turn_start), true))
+        .into_iter()
+        .chain(own)
+        .collect()
+}
+
+/// The start of a turn no prompt began (Codex's goal turns), to apply before
+/// the call's own events: the call comes from a turn of the provider's
+/// (`turn_marker`) that the run has not begun, the run is in no turn, and
+/// nothing in the call begins one. Applied as a prompt is, it takes the
+/// turn's begin snapshot before the call's tool runs, so the turn shows what
+/// it changed; a call that ends the turn comes too late for one
+/// (`UnpromptedStart::is_from_end`). A call of the turn the run last had,
+/// which comes after its end, is that turn's, as before.
+fn unprompted_start(
+    call: &HookCall<'_>,
+    turns: &turn::Turns<'_>,
+    record: Option<&RunRecord>,
+) -> Option<UnpromptedStart> {
+    if call.events.is_empty()
+        || call
+            .events
+            .iter()
+            .any(|event| matches!(event, AgentEvent::PromptSubmitted { .. }))
+    {
+        return None;
+    }
+    let marker = call.adapter.turn_marker(call.input)?;
+    if !UnpromptedStart::is_due(turns, record, &marker) {
+        return None;
+    }
+    let bytes = call.input.bytes;
+    let transcript = call
+        .adapter
+        .unprompted_turn_transcript_path(RawHookInput {
+            bytes,
+            transcript: None,
+        })
+        .ok()
+        .flatten()
+        .and_then(|path| records::read_bounded_tail(Path::new(&path), MAX_TRANSCRIPT_BYTES));
+    let begun = call.adapter.unprompted_prompt(
+        RawHookInput {
+            bytes,
+            transcript: transcript.as_deref(),
+        },
+        &marker,
+    );
+    Some(UnpromptedStart {
+        event: AgentEvent::PromptSubmitted {
+            prompt: begun.prompt,
+            kind: begun.kind,
+            titles: None,
+            cwd: begun.cwd,
+        },
+        is_from_end: call.events.iter().any(|event| {
+            matches!(
+                event,
+                AgentEvent::TurnFinished { .. }
+                    | AgentEvent::Failed { .. }
+                    | AgentEvent::Interrupted
+            )
+        }),
+        marker,
+    })
+}
+
+/// The start `unprompted_start` puts before a call's events.
+struct UnpromptedStart {
+    event: AgentEvent,
+    /// The provider's id for the turn the start begins.
+    marker: String,
+    /// The call ends the turn it is the first sign of (a `Stop` with no tool
+    /// before it). Whatever the turn changed happened before the call, so a
+    /// begin snapshot taken now would show it changing nothing.
+    is_from_end: bool,
+}
+
+impl UnpromptedStart {
+    /// Whether the run, as `record` shows it, still has the turn to begin:
+    /// it is in no turn, and its last turn is not `marker`'s.
+    fn is_due(turns: &turn::Turns<'_>, record: Option<&RunRecord>, marker: &str) -> bool {
+        record.is_none_or(|record| record.run_started_at.is_none())
+            && turns.is_new_provider_turn(record, marker)
+    }
+
+    /// Why the begin takes no snapshot: a turn first seen at its end began
+    /// before anything could be taken.
+    fn begin_skip_reason(&self) -> Option<&'static str> {
+        self.is_from_end.then_some(turn::BEGIN_MISSING)
+    }
+}
+
+/// What an event was judged, from the record before the lock, for the
+/// record under it.
+struct Judged<'a> {
+    step: Option<TurnStep>,
+    idle: Option<bool>,
+    idle_before: Option<IdleOutcome>,
+    applies_before: bool,
+    /// The start of a turn no prompt began, when the event is that start.
+    start: Option<&'a UnpromptedStart>,
+}
+
+/// What `Judged::moved_on` looks the record up with.
+struct Lookups<'a> {
+    descriptor: &'a ProviderDescriptor,
+    turns: &'a turn::Turns<'a>,
+    applies: &'a dyn Fn(Option<&RunRecord>) -> bool,
+    now: &'a str,
+}
+
+impl Judged<'_> {
+    /// Why the event, prepared from `before`, is dropped now that the run is
+    /// at `previous`; `None` applies it.
+    fn moved_on(
+        &self,
+        event: &AgentEvent,
+        before: Option<&RunRecord>,
+        previous: Option<&RunRecord>,
+        lookups: &Lookups<'_>,
+    ) -> Option<&'static str> {
+        // The idle prompt ends what the run showed when the end was
+        // prepared. A `Stop` or a prompt that came while the snapshot ran
+        // changed that, and the end prepared for it would replace the real
+        // one, so the idle prompt is dropped whole.
+        if let Some(ended) = self.idle
+            && (idle_outcome(previous, ended, lookups.now) != self.idle_before
+                || turn_step(event, lookups.descriptor, previous, lookups.now) != self.step
+                || !is_same_stretch(before, previous))
+        {
+            return Some("idle prompt dropped: the run moved on while its end was prepared");
+        }
+        // We ask again under the lock: a report about the turn before must
+        // not touch the prompt or session that came meanwhile.
+        if !self.applies_before || !(lookups.applies)(previous) {
+            return Some("event dropped: the run moved on while its end was prepared");
+        }
+        // Two hooks of one turn can run at once (the tools of one response),
+        // and each finds the turn not begun before the lock; the first to
+        // take it begins the turn, and the other's start is dropped.
+        if let Some(start) = self.start
+            && !UnpromptedStart::is_due(lookups.turns, previous, &start.marker)
+        {
+            return Some("turn start dropped: another hook of the turn began it");
+        }
+        None
+    }
+}
+
 /// Returns, for the idle prompt, whether it saw the call the run waited on
 /// end (`idle_outcome`); it is `None` for every other event.
-fn idle_prompt(event: &limpid_agent_model::AgentEvent) -> Option<bool> {
+fn idle_prompt(event: &AgentEvent) -> Option<bool> {
     match event {
-        limpid_agent_model::AgentEvent::AwaitingPrompt { awaited_call_ended } => {
-            Some(*awaited_call_ended)
-        }
+        AgentEvent::AwaitingPrompt { awaited_call_ended } => Some(*awaited_call_ended),
         _ => None,
     }
 }
@@ -676,11 +839,58 @@ fn write_events(
         log,
         transcript: Some(&transcript),
     };
-    for (index, event) in call.events.iter().enumerate() {
+    let writer = EventWriter {
+        directories,
+        apply_context,
+        runtime,
+        log,
+        descriptor,
+        applies: &applies,
+        record_path: &record_path,
+        turns: &turns,
+    };
+    let start = unprompted_start(call, &turns, records::read_record(&record_path).as_ref());
+    for (event, event_id, is_start) in call_events(call, start.as_ref().map(|start| &start.event)) {
+        writer.write(event, event_id, start.as_ref().filter(|_| is_start));
+    }
+}
+
+/// What every event of one call is written with (`write_events`).
+struct EventWriter<'a> {
+    directories: &'a ResolvedDirectories,
+    apply_context: &'a ApplyContext,
+    runtime: &'a HookRuntime<'a>,
+    log: &'a HookLog,
+    descriptor: &'a ProviderDescriptor,
+    applies: &'a dyn Fn(Option<&RunRecord>) -> bool,
+    record_path: &'a Path,
+    turns: &'a turn::Turns<'a>,
+}
+
+impl EventWriter<'_> {
+    /// Applies `event` to the run record and its turn, `start` naming the
+    /// start of a turn no prompt began when the event is that start.
+    fn write(
+        &self,
+        event: &AgentEvent,
+        event_id: Option<EventId>,
+        start: Option<&UnpromptedStart>,
+    ) {
+        let Self {
+            apply_context,
+            runtime,
+            log,
+            descriptor,
+            applies,
+            record_path,
+            turns,
+            ..
+        } = *self;
+        let run_id = &apply_context.run_id;
         // Read before the lock, like the snapshot it decides: a step that
         // depends on the run (the idle prompt's) is judged from the same
         // record the turn's end is prepared from.
-        let before = records::read_record(&record_path);
+        let before = records::read_record(record_path);
         // A report about a run that has already moved on costs no snapshot,
         // and is dropped as under the lock.
         let applies_before = applies(before.as_ref());
@@ -688,7 +898,13 @@ fn write_events(
             .then(|| turn_step(event, descriptor, before.as_ref(), &runtime.now))
             .flatten();
         let idle = idle_prompt(event);
-        let idle_before = idle.and_then(|ended| idle_outcome(before.as_ref(), ended, &runtime.now));
+        let judged = Judged {
+            step,
+            idle,
+            idle_before: idle.and_then(|ended| idle_outcome(before.as_ref(), ended, &runtime.now)),
+            applies_before,
+            start,
+        };
         // A prompt holds the worktree lock shared from its snapshot until
         // the run record names it, so a restore neither runs under the
         // snapshot nor lets the agent start while it writes. Dropped once
@@ -714,10 +930,13 @@ fn write_events(
             turns.prepare(
                 step,
                 event,
-                event_id_for(call.id, index),
+                event_id,
                 before.as_ref(),
                 runtime.snapshots,
-                worktree.as_ref().and_then(Shared::snapshot_skip_reason),
+                worktree
+                    .as_ref()
+                    .and_then(Shared::snapshot_skip_reason)
+                    .or(judged.start.and_then(UnpromptedStart::begin_skip_reason)),
             )
         });
         // A prompt's record is what a restore reads to see the agent at
@@ -728,24 +947,21 @@ fn write_events(
         } else {
             records::RECORD_LOCK_ATTEMPTS
         };
-        let outcome = records::with_record_lock_attempts(&record_path, attempts, || {
-            let previous = records::read_record(&record_path);
-            // The idle prompt ends what the run showed when the end was
-            // prepared. A `Stop` or a prompt that came while the snapshot
-            // ran changed that, and the end prepared for it would replace
-            // the real one, so the idle prompt is dropped whole.
-            if let Some(ended) = idle
-                && (idle_outcome(previous.as_ref(), ended, &runtime.now) != idle_before
-                    || turn_step(event, descriptor, previous.as_ref(), &runtime.now) != step
-                    || !is_same_stretch(before.as_ref(), previous.as_ref()))
-            {
-                log.line("idle prompt dropped: the run moved on while its end was prepared");
-                return (RecordWrites::default(), None);
-            }
-            // We ask again under the lock: a report about the turn before
-            // must not touch the prompt or session that came meanwhile.
-            if !applies_before || !applies(previous.as_ref()) {
-                log.line("event dropped: the run moved on while its end was prepared");
+        let outcome = records::with_record_lock_attempts(record_path, attempts, || {
+            let previous = records::read_record(record_path);
+            let moved_on = judged.moved_on(
+                event,
+                before.as_ref(),
+                previous.as_ref(),
+                &Lookups {
+                    descriptor,
+                    turns: &turns,
+                    applies,
+                    now: &runtime.now,
+                },
+            );
+            if let Some(reason) = moved_on {
+                log.line(reason);
                 return (RecordWrites::default(), None);
             }
             let mut writes = apply(previous.as_ref(), event, apply_context, descriptor, now);
@@ -757,30 +973,37 @@ fn write_events(
                 turns.commit(prepared, previous.as_ref(), writes.run.as_mut())
             });
             if let Some(record) = &writes.run {
-                write_record(&record_path, record, log);
+                write_record(record_path, record, log);
             }
             (writes, pin)
         });
         drop(worktree);
         let Some((writes, pin)) = outcome else {
             log.line(&format!("record lock busy for {}", record_path.display()));
-            continue;
+            return;
         };
         if let Some(pin) = &pin {
             turns.pin(pin, runtime.snapshots);
         }
+        self.finish(&writes, now);
+    }
+
+    /// What the event's writes leave to do once the record lock is released:
+    /// the snapshot it retires and the files beside the record.
+    fn finish(&self, writes: &RecordWrites, now: &str) {
+        let pane_id = &self.apply_context.pane_id;
         if let Some(TurnSnapshotOp::Remove { cwd }) = &writes.snapshot {
-            remove_snapshot(cwd.as_deref(), pane_id, runtime, log);
+            remove_snapshot(cwd.as_deref(), pane_id, self.runtime, self.log);
         }
         for side in &writes.side {
             perform_side_write(
                 side,
-                directories,
+                self.directories,
                 pane_id,
-                run_id,
+                &self.apply_context.run_id,
                 now,
-                descriptor.has(Capability::SessionEndDropsSession),
-                log,
+                self.descriptor.has(Capability::SessionEndDropsSession),
+                self.log,
             );
         }
     }
@@ -1148,5 +1371,89 @@ mod subagent_tests {
             with_subagents(&ClaudeAdapter, usage, &[], None, None),
             usage
         );
+    }
+}
+
+#[cfg(test)]
+mod start_tests {
+    use super::{Judged, Lookups, UnpromptedStart};
+    use crate::records::HookLog;
+    use crate::turn::Turns;
+    use limpid_agent_model::{AgentEvent, ProviderAdapter, RunRecord};
+    use limpid_provider_codex::CodexAdapter;
+
+    fn record(json: &str) -> RunRecord {
+        RunRecord::decode(json.as_bytes()).expect("record")
+    }
+
+    /// Two hooks of one turn can both find it not begun before the lock;
+    /// the second to take the lock finds the turn the first began and drops
+    /// its own start, while an event of its own still applies.
+    #[test]
+    fn a_start_another_hook_of_the_turn_beat_to_the_lock_is_dropped() {
+        let directory =
+            std::env::temp_dir().join(format!("limpid-turn-start-{}", uuid::Uuid::new_v4()));
+        let log = HookLog::disabled();
+        let descriptor = CodexAdapter.descriptor();
+        let turns = Turns {
+            directory: directory.clone(),
+            descriptor,
+            run_id: "R",
+            pane_id: "P",
+            now: "2026-10-29T00:00:00Z",
+            log: &log,
+            transcript: None,
+        };
+        let start = UnpromptedStart {
+            event: AgentEvent::PromptSubmitted {
+                prompt: "ship it".into(),
+                kind: None,
+                titles: None,
+                cwd: None,
+            },
+            marker: "t2".into(),
+            is_from_end: false,
+        };
+        let at_rest =
+            record(r#"{"schemaVersion":3,"paneId":"P","state":"finished","updatedAt":"t"}"#);
+        let begun = record(
+            r#"{"schemaVersion":3,"paneId":"P","state":"running","updatedAt":"t","runStartedAt":"2026-10-29T00:00:00Z"}"#,
+        );
+        let applies = |_: Option<&RunRecord>| true;
+        let lookups = Lookups {
+            descriptor,
+            turns: &turns,
+            applies: &applies,
+            now: "2026-10-29T00:00:00Z",
+        };
+        let judged = |start| Judged {
+            step: None,
+            idle: None,
+            idle_before: None,
+            applies_before: true,
+            start,
+        };
+        assert_eq!(
+            judged(Some(&start)).moved_on(&start.event, Some(&at_rest), Some(&at_rest), &lookups),
+            None,
+            "the turn is still to begin"
+        );
+        assert!(
+            judged(Some(&start))
+                .moved_on(&start.event, Some(&at_rest), Some(&begun), &lookups)
+                .is_some(),
+            "another hook began the turn meanwhile"
+        );
+        let tool = AgentEvent::ToolStarted {
+            tool: "Bash".into(),
+            detail: None,
+            by_subagent: false,
+        };
+        assert_eq!(
+            judged(None).moved_on(&tool, Some(&at_rest), Some(&begun), &lookups),
+            None,
+            "the hook's own event applies"
+        );
+        let _ = std::fs::remove_dir_all(&directory);
     }
 }

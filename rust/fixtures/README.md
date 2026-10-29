@@ -239,6 +239,18 @@ Cases that could not be recorded as planned:
   response ids `resp_0001` to `resp_0005`, the subagent's call id
   `call_0001`, and its last message a placeholder. The hook runtime's
   replay test lays both out under a sessions folder and reads them.
+- `codex/2026-10/goal` records Codex CLI 0.165.0 given a `/goal` that asked
+  for `a.txt` in one turn and `b.txt` in the next. Codex began both turns
+  itself, so no `UserPromptSubmit` came; every hook of a turn names it with
+  `turn_id`. The second turn's `turn_id` was given its own placeholder
+  (`…0013`), and `threadId` in the `update_goal` payloads became the session
+  placeholder. `transcripts/codex-0.165.0-goal.jsonl` is that session's
+  rollout reduced by hand to the lines the turn reading and the start of a
+  turn no prompt began use: the goal's `thread_goal_updated`, each turn's
+  `task_started` (`turn_trigger` `goal`) and `task_complete`, and the usage
+  records. The ids became the fixture placeholders, the response ids
+  `resp_0001` to `resp_0005`, and the last messages a placeholder. The hook
+  runtime's replay tests read it.
 - `claude/2026-10/background-task` was recorded with Claude Code 2.1.312 in
   print mode (`claude -p`), with a user `--settings` value whose hooks saved
   each payload and the transcript beside it, rather than under the Debug

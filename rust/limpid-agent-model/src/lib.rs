@@ -31,8 +31,8 @@ pub mod conformance;
 
 pub use adapter::{
     CommandRun, HookContext, ListDirectory, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter,
-    RawHookInput, SettingsSource, StatusLineAdapter, TmuxEndpoint, TurnReading, parse_object,
-    transcript_path_for_events,
+    RawHookInput, SettingsSource, StatusLineAdapter, TmuxEndpoint, TurnReading, UnpromptedPrompt,
+    parse_object, transcript_path_for_events,
 };
 pub use approval::{
     ApprovalDecision, ApprovalQuestion, ApprovalQuestionOption, ApprovalRequest, ProviderOutput,

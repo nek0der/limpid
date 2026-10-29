@@ -372,6 +372,9 @@ fn body_for(state: RunState, badge: &Badge) -> Option<String> {
 /// instruction to quote. The same judgment of the same prompt (the run's
 /// `last_prompt`, which the turn record is begun from) as the turn's
 /// `prompt_kind`, so the host words the turn by the kind it shows elsewhere.
+/// A turn whose kind the provider named instead (a Codex goal's) begins
+/// from the goal's objective, which is the person's words either way; the
+/// host words it by that kind (`/goal …`).
 fn persons_words(prompt: &str) -> Option<&str> {
     match classify_prompt(prompt) {
         (PromptKind::Text, words) => Some(words),

@@ -12,12 +12,13 @@ mod rate_limits;
 mod rollouts;
 mod titles;
 mod tokens;
+mod unprompted;
 
 use limpid_agent_model::{
     AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe, ListDirectory,
     MAX_HOOK_INPUT_BYTES, NormalizeError, PlanUsageAnswer, ProviderAdapter, ProviderDescriptor,
-    ProviderOutput, RawHookInput, RunRecord, Titles, TurnReading, TurnUsage, WorktreeIntent,
-    parse_object,
+    ProviderOutput, RawHookInput, RunRecord, Titles, TurnReading, TurnUsage, UnpromptedPrompt,
+    WorktreeIntent, parse_object, transcript_path_for_events,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -94,7 +95,34 @@ impl ProviderAdapter for CodexAdapter {
     }
 
     fn turn_marker(&self, input: RawHookInput<'_>) -> Option<String> {
-        payload_turn_id(input, &["UserPromptSubmit"])
+        // A subagent's tools reach the pane's run (`normalize`), but under
+        // the subagent's own turn: taken for the pane's, one after the
+        // parent's `Stop` would begin a turn the person never had.
+        let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES).ok()?;
+        if normalize::is_subagents(&object) {
+            return None;
+        }
+        turn_id_of(&object, &normalize::TURN_EVENTS)
+    }
+
+    fn unprompted_turn_transcript_path(
+        &self,
+        input: RawHookInput<'_>,
+    ) -> Result<Option<String>, NormalizeError> {
+        transcript_path_for_events(input, &normalize::TURN_EVENTS)
+    }
+
+    fn unprompted_prompt(&self, input: RawHookInput<'_>, marker: &str) -> UnpromptedPrompt {
+        let begun = input
+            .transcript
+            .map(|rollout| unprompted::unprompted_prompt(rollout, marker))
+            .unwrap_or_default();
+        UnpromptedPrompt {
+            cwd: parse_object(input.bytes, MAX_HOOK_INPUT_BYTES)
+                .ok()
+                .and_then(|object| object.get("cwd").and_then(Value::as_str).map(str::to_owned)),
+            ..begun
+        }
     }
 
     fn turn_reading(&self, input: RawHookInput<'_>, marker: Option<&str>) -> TurnReading {
@@ -132,6 +160,11 @@ impl ProviderAdapter for CodexAdapter {
 /// The `turn_id` of a payload of one of the hook `events`.
 fn payload_turn_id(input: RawHookInput<'_>, events: &[&str]) -> Option<String> {
     let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES).ok()?;
+    turn_id_of(&object, events)
+}
+
+/// The `turn_id` of a payload object of one of the hook `events`.
+fn turn_id_of(object: &serde_json::Map<String, Value>, events: &[&str]) -> Option<String> {
     let event = object.get("hook_event_name").and_then(Value::as_str)?;
     if !events.contains(&event) {
         return None;
@@ -155,21 +188,32 @@ mod tests {
     }
 
     #[test]
-    fn a_prompt_names_its_turn_and_a_stop_reads_its_own() {
-        assert_eq!(
-            CodexAdapter.turn_marker(input(
-                r#"{"hook_event_name":"UserPromptSubmit","turn_id":"t1"}"#
-            )),
-            Some("t1".into())
-        );
+    fn every_hook_inside_a_turn_names_it_and_a_stop_reads_its_own() {
+        for event in normalize::TURN_EVENTS {
+            assert_eq!(
+                CodexAdapter.turn_marker(input(&format!(
+                    r#"{{"hook_event_name":"{event}","turn_id":"t1"}}"#
+                ))),
+                Some("t1".into()),
+                "{event}"
+            );
+        }
         assert_eq!(
             CodexAdapter.turn_marker(input(
                 r#"{"hook_event_name":"UserPromptSubmit","turn_id":""}"#
             )),
             None
         );
+        // A subagent's tool names the subagent's turn, not the pane's.
         assert_eq!(
-            CodexAdapter.turn_marker(input(r#"{"hook_event_name":"Stop","turn_id":"t1"}"#)),
+            CodexAdapter.turn_marker(input(
+                r#"{"hook_event_name":"PreToolUse","turn_id":"t2","agent_id":"019a0000-0000-7000-8000-000000000001"}"#
+            )),
+            None
+        );
+        // A `/compact` at the prompt is no turn of the person's.
+        assert_eq!(
+            CodexAdapter.turn_marker(input(r#"{"hook_event_name":"PreCompact","turn_id":"t1"}"#)),
             None
         );
         assert_eq!(

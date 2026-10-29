@@ -141,14 +141,16 @@ pub fn prompt_head(prompt: &str) -> (Option<PromptKind>, Option<String>) {
     } else {
         prompt
     };
-    let line = shown.split_whitespace().collect::<Vec<_>>().join(" ");
-    if line.is_empty() {
-        return (None, None);
+    match one_line(shown) {
+        Some(line) => (Some(kind), Some(line)),
+        None => (None, None),
     }
-    (
-        Some(kind),
-        Some(line.chars().take(PROMPT_HEAD_CHARS).collect()),
-    )
+}
+
+/// `text`'s first characters on one line, `None` when it has no words.
+fn one_line(text: &str) -> Option<String> {
+    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!line.is_empty()).then(|| line.chars().take(PROMPT_HEAD_CHARS).collect())
 }
 
 /// The first paragraph of the agent's last reply that has words, on one
@@ -328,6 +330,9 @@ pub struct TurnStart<'a> {
     pub pane_id: &'a str,
     pub display_number: u32,
     pub prompt: &'a str,
+    /// Who wrote `prompt`, when the provider said so (`PromptSubmitted`'s
+    /// `kind`); `None` judges it from the text.
+    pub prompt_kind: Option<PromptKind>,
     pub now: &'a str,
     pub begin: SnapshotTaken,
     pub event: &'a EventId,
@@ -341,7 +346,10 @@ pub struct TurnStart<'a> {
 /// The record a submitted prompt writes.
 #[must_use]
 pub fn begin_record(start: TurnStart<'_>) -> TurnRecord {
-    let (prompt_kind, prompt_head) = prompt_head(start.prompt);
+    let (prompt_kind, prompt_head) = match start.prompt_kind {
+        Some(kind) => (Some(kind), one_line(start.prompt)),
+        None => prompt_head(start.prompt),
+    };
     let mut record = TurnRecord {
         schema_version: TurnRecord::SCHEMA_VERSION,
         turn_id: start.turn_id,
@@ -511,6 +519,7 @@ mod tests {
             pane_id: "P",
             display_number: 3,
             prompt: "  add   the\n\ttests  ",
+            prompt_kind: None,
             now: "2026-10-12T00:00:00Z",
             begin,
             event,
@@ -703,6 +712,42 @@ mod tests {
         assert!(
             matches!(ended.changes, ChangeSummary::Changed { files: 1, .. }),
             "an interrupted turn still says what it changed"
+        );
+    }
+
+    /// A kind the provider names is the turn's, whatever the text would
+    /// read as: a goal's objective that opens with a tag is still the goal's.
+    #[test]
+    fn a_kind_the_provider_names_is_kept_with_its_words_on_one_line() {
+        let event = EventId::invocation(
+            &ProviderId::new("codex").expect("id"),
+            uuid::Uuid::from_u128(1),
+        );
+        let begun = begin_record(TurnStart {
+            turn_id: "T".to_owned(),
+            conversation: ConversationKey {
+                provider: ProviderId::new("codex").expect("id"),
+                conversation_id: "s".to_owned(),
+                is_fallback: false,
+            },
+            run_id: "R",
+            pane_id: "P",
+            display_number: 1,
+            prompt: "<task-notification> ship\n the  release",
+            prompt_kind: Some(PromptKind::Goal),
+            now: "2026-10-12T00:00:00Z",
+            begin: captured("tree"),
+            event: &event,
+            provider_turn_id: Some("t1".to_owned()),
+            title: None,
+        });
+        assert_eq!(
+            begun.prompt_kind,
+            Some(RecordedPromptKind::Known(PromptKind::Goal))
+        );
+        assert_eq!(
+            begun.prompt_head.as_deref(),
+            Some("<task-notification> ship the release")
         );
     }
 
@@ -966,6 +1011,7 @@ mod tests {
             pane_id: "P",
             display_number: 1,
             prompt: "go",
+            prompt_kind: None,
             now: "2026-10-12T00:00:00Z",
             begin: captured("a"),
             event,

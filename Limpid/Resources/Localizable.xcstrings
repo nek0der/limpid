@@ -22476,6 +22476,42 @@
           }
         }
       }
+    },
+    "/goal": {
+      "comment": "A turn the agent began on its own toward the person's goal, in place of the turn's prompt, its words not kept",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/goal"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/goal"
+          }
+        }
+      }
+    },
+    "/goal %@": {
+      "comment": "A turn the agent began on its own toward the person's goal, in place of the turn's prompt; argument: the goal",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/goal %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "/goal %@"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

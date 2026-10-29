@@ -5,8 +5,9 @@ use limpid_agent_hook::{
     HookEnv, HookOutcome, HookRuntime, NoSnapshots, TURNS_DIRECTORY, run_hook,
 };
 use limpid_agent_model::{
-    ChangeSummary, LOCK_FILE_SUFFIX, RunRecord, RunState, SnapshotStatus, TurnPhase, TurnRecord,
-    TurnUsage, cwd_event_file_name, run_record_file_name, session_hint_file_name,
+    ChangeSummary, LOCK_FILE_SUFFIX, PromptKind, RecordedPromptKind, RunRecord, RunState,
+    SnapshotStatus, TurnPhase, TurnRecord, TurnUsage, cwd_event_file_name, run_record_file_name,
+    session_hint_file_name,
 };
 use serde_json::Value;
 use std::fs;
@@ -1491,6 +1492,170 @@ fn an_interrupted_codex_turn_reads_what_it_used_from_the_rollout() {
     );
     assert_eq!(turns[0].check_count, 0);
     assert_eq!(turns[1].usage, None);
+}
+
+/// Codex begins the turns of a `/goal` itself, with no `UserPromptSubmit`
+/// (`fixtures/codex/2026-10/goal`, with its rollout reduced in
+/// `fixtures/transcripts/codex-0.165.0-goal.jsonl`). Each turn begins at its
+/// first hook, before its tool runs, and shows the goal's objective; before,
+/// each was an end with no beginning, and showed nothing it changed.
+#[test]
+fn a_codex_goal_begins_each_of_its_turns_at_the_turns_first_hook() {
+    let scratch = Scratch::new("codex-goal");
+    let rollout = scratch.root.join("rollout.jsonl");
+    fs::write(
+        &rollout,
+        include_bytes!("../../fixtures/transcripts/codex-0.165.0-goal.jsonl"),
+    )
+    .expect("rollout");
+    let payloads: Vec<Vec<u8>> = dated_fixture_case("codex", "2026-10", "goal")
+        .into_iter()
+        .map(|payload| {
+            let mut payload: Value = serde_json::from_slice(&payload).expect("payload");
+            payload["transcript_path"] = Value::from(rollout.display().to_string());
+            serde_json::to_vec(&payload).expect("payload")
+        })
+        .collect();
+    let calls: Vec<String> = payloads.iter().map(|_| new_call()).collect();
+    for (index, (payload, call)) in payloads.iter().zip(&calls).enumerate() {
+        assert_eq!(
+            scratch.call_as("codex", RUN, Some(call), payload),
+            HookOutcome::Applied
+        );
+        // The first tool of each turn finds the run at work in a turn.
+        if index == 1 || index == 4 {
+            assert!(
+                scratch
+                    .record()
+                    .is_some_and(|record| record.run_started_at.is_some()),
+                "payload {index} began a turn"
+            );
+            // The shim retries a call with the id it minted for it; the turn
+            // the call began is not begun again.
+            scratch.call_as("codex", RUN, Some(call), payload);
+        }
+    }
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 2);
+    let objective = "Create a.txt containing \"a\", then b.txt containing \"b\". Create only a.txt in your first turn and end that turn; create b.txt in the next turn, then mark the goal complete.";
+    for turn in &turns {
+        assert_eq!(turn.phase, TurnPhase::Finished);
+        assert_eq!(
+            turn.prompt_kind.as_ref().map(RecordedPromptKind::kind),
+            Some(PromptKind::Goal)
+        );
+        assert_eq!(
+            turn.prompt_head.as_deref(),
+            Some(objective.chars().take(80).collect::<String>().as_str())
+        );
+        // A begin was taken (the runtime takes none here), not missed.
+        assert_eq!(turn.begin, SnapshotStatus::Disabled);
+        assert!(turn.usage.is_some(), "what the turn used is read");
+    }
+    assert_eq!(
+        turns[0].provider_turn_id.as_deref(),
+        Some("00000000-0000-4000-8000-000000000003")
+    );
+    assert_eq!(
+        turns[1].provider_turn_id.as_deref(),
+        Some("00000000-0000-4000-8000-000000000013")
+    );
+    let record = scratch.record().expect("record");
+    assert_eq!(record.state, RunState::Finished);
+    assert_eq!(record.first_prompt.as_deref(), Some(objective));
+}
+
+/// A tool call of the turn the run last had, after that turn's `Stop`, is
+/// that turn's late work; it begins no turn of its own.
+#[test]
+fn a_codex_tool_after_its_turns_stop_begins_no_turn() {
+    let scratch = Scratch::new("codex-late-tool");
+    let codex = |payload: &str| {
+        scratch.call_as("codex", RUN, Some(&new_call()), payload.as_bytes());
+    };
+    codex(r#"{"hook_event_name":"SessionStart","session_id":"p","source":"startup"}"#);
+    codex(
+        r#"{"hook_event_name":"UserPromptSubmit","session_id":"p","turn_id":"t1","prompt":"fix it"}"#,
+    );
+    codex(r#"{"hook_event_name":"Stop","session_id":"p","turn_id":"t1"}"#);
+    codex(
+        r#"{"hook_event_name":"PreToolUse","session_id":"p","turn_id":"t1","tool_name":"Bash","tool_input":{"command":"ls"}}"#,
+    );
+
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].prompt_head.as_deref(), Some("fix it"));
+    assert!(
+        scratch
+            .record()
+            .is_some_and(|record| record.run_started_at.is_none()),
+        "the run is in no turn"
+    );
+}
+
+/// A subagent the turn spawned can still work after the parent's `Stop`;
+/// its tool names the subagent's own turn, which is no turn of the pane's.
+#[test]
+fn a_codex_subagents_tool_after_the_parents_stop_begins_no_turn() {
+    let scratch = Scratch::new("codex-subagent-after-stop");
+    let codex = |payload: &str| {
+        scratch.call_as("codex", RUN, Some(&new_call()), payload.as_bytes());
+    };
+    codex(r#"{"hook_event_name":"SessionStart","session_id":"p","source":"startup"}"#);
+    codex(
+        r#"{"hook_event_name":"UserPromptSubmit","session_id":"p","turn_id":"t1","prompt":"fix it"}"#,
+    );
+    codex(r#"{"hook_event_name":"Stop","session_id":"p","turn_id":"t1"}"#);
+    codex(
+        r#"{"hook_event_name":"PreToolUse","session_id":"c","turn_id":"t2","agent_id":"019a0000-0000-7000-8000-000000000001","agent_type":"explorer","tool_name":"Bash","tool_input":{"command":"ls"}}"#,
+    );
+
+    assert_eq!(scratch.turns().len(), 1);
+    assert!(
+        scratch
+            .record()
+            .is_some_and(|record| record.run_started_at.is_none()),
+        "the run is in no turn"
+    );
+}
+
+/// A goal turn that ran no hooked tool is first seen at its `Stop`. It
+/// changed whatever it changed before that hook, so its begin is missing,
+/// not taken then and shown changing nothing; it still shows the goal.
+#[test]
+fn a_codex_goal_turn_first_seen_at_its_stop_shows_its_begin_missing() {
+    let scratch = Scratch::new("codex-goal-stop-first");
+    let rollout = scratch.root.join("rollout.jsonl");
+    fs::write(
+        &rollout,
+        include_bytes!("../../fixtures/transcripts/codex-0.165.0-goal.jsonl"),
+    )
+    .expect("rollout");
+    let path = rollout.display().to_string();
+    let codex = |payload: String| {
+        scratch.call_as("codex", RUN, Some(&new_call()), payload.as_bytes());
+    };
+    codex(format!(
+        r#"{{"hook_event_name":"SessionStart","session_id":"p","source":"startup","transcript_path":"{path}"}}"#
+    ));
+    codex(format!(
+        r#"{{"hook_event_name":"Stop","session_id":"p","turn_id":"00000000-0000-4000-8000-000000000003","transcript_path":"{path}"}}"#
+    ));
+
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].phase, TurnPhase::Finished);
+    assert_eq!(
+        turns[0].prompt_kind.as_ref().map(RecordedPromptKind::kind),
+        Some(PromptKind::Goal)
+    );
+    assert_eq!(turns[0].begin, SnapshotStatus::Pending);
+    assert_eq!(
+        turns[0].changes,
+        ChangeSummary::Unavailable {
+            reason: "beginMissing".into()
+        }
+    );
 }
 
 /// Codex records a subagent's work in a rollout of its own and names only

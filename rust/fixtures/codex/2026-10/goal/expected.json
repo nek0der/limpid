@@ -1,0 +1,62 @@
+[
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "source": "startup",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "detail": "Bash: printf a > a.txt && pwd && cat a.txt",
+      "tool": "Bash",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "tool": "Bash",
+      "type": "tool_finished"
+    }
+  ],
+  [
+    {
+      "reply": "<last_assistant_message for goal>",
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "detail": "Bash: test \"$(cat a.txt)\" = a && test \"$(wc -c < a.txt | tr -d ' ')\" = 1 && printf b > b.txt && python3 -c 'from pathlib import Path; assert Path(\"a.txt\").read_bytes() == b\"a\"; assert Path(\"b.txt\").read_bytes() == b\"b\"; print(\"a.txt and b.txt verified\")'",
+      "tool": "Bash",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "tool": "Bash",
+      "type": "tool_finished"
+    }
+  ],
+  [
+    {
+      "detail": "update_goal",
+      "tool": "update_goal",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "tool": "update_goal",
+      "type": "tool_finished"
+    }
+  ],
+  [
+    {
+      "reply": "<last_assistant_message for goal>",
+      "type": "turn_finished"
+    }
+  ]
+]

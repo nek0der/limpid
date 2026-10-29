@@ -9,6 +9,7 @@
 
 use crate::background::BackgroundWork;
 use crate::cache::CacheWindow;
+use crate::prompt::PromptKind;
 use crate::provider::ProviderId;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -62,6 +63,16 @@ impl EventId {
     #[must_use]
     pub fn indexed(call: &Self, index: usize) -> Self {
         Self(format!("{}#{index}", call.0))
+    }
+
+    /// The start of a turn the runtime puts before the events of the call
+    /// `call` identifies, for a turn no prompt began
+    /// (`ProviderAdapter::unprompted_prompt`): `"<call>#turn"`. Apart from
+    /// the call's own events, so a retry that finds the turn begun and puts
+    /// nothing before them gives each the id it had.
+    #[must_use]
+    pub fn turn_start(call: &Self) -> Self {
+        Self(format!("{}#turn", call.0))
     }
 
     #[must_use]
@@ -150,6 +161,12 @@ pub enum AgentEvent {
     },
     PromptSubmitted {
         prompt: String,
+        /// Who wrote the prompt, when the provider says so rather than its
+        /// text: a Codex turn its goal began has no prompt of the person's,
+        /// only the goal's objective. `None` leaves it to the text
+        /// (`classify_prompt`).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kind: Option<PromptKind>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         titles: Option<Titles>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -391,6 +408,7 @@ mod tests {
 
         let mut prompt = AgentEvent::PromptSubmitted {
             prompt: "p".into(),
+            kind: None,
             titles: None,
             cwd: None,
         };
@@ -402,6 +420,7 @@ mod tests {
         // Nothing added leaves the event as it was, not with empty titles.
         let mut untouched = AgentEvent::PromptSubmitted {
             prompt: "p".into(),
+            kind: None,
             titles: None,
             cwd: None,
         };

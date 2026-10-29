@@ -19,12 +19,19 @@ use limpid_agent_core::{
     end_record, turn_snapshot_cwd,
 };
 use limpid_agent_model::{
-    AgentEvent, CheckResult, ConversationKey, DiffStat, EventApplication, EventId,
+    AgentEvent, CheckResult, ConversationKey, DiffStat, EventApplication, EventId, PromptKind,
     ProviderDescriptor, RunRecord, SnapshotStatus, TurnCounter, TurnPhase, TurnRecord, TurnUsage,
     turn_record_file_name,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+
+/// What a prepared begin carries into its record.
+struct Begun {
+    taken: SnapshotTaken,
+    provider_turn_id: Option<String>,
+    prompt_kind: Option<PromptKind>,
+}
 
 /// What was prepared for one event before the run record's lock.
 pub(crate) enum Prepared {
@@ -37,6 +44,9 @@ pub(crate) enum Prepared {
         taken: SnapshotTaken,
         /// The provider's own id for the turn (`TurnTranscript::marker`).
         provider_turn_id: Option<String>,
+        /// Who wrote the prompt, when the provider said so
+        /// (`PromptSubmitted`'s `kind`).
+        prompt_kind: Option<PromptKind>,
     },
     /// A turn ends. `turn_id` is the run's current turn, which an end may
     /// close again when the provider says the turn went on after another
@@ -200,6 +210,11 @@ pub(crate) fn is_turn_id(value: &str) -> bool {
         .is_ok_and(|uuid| uuid.hyphenated().to_string().to_uppercase() == value)
 }
 
+/// Why a turn has no begin snapshot: the call that wrote its record came
+/// after the turn began (an end the hook missed the prompt of, or a Codex
+/// turn first seen at its `Stop`).
+pub(crate) const BEGIN_MISSING: &str = "beginMissing";
+
 fn not_taken(reason: &str) -> SnapshotTaken {
     SnapshotTaken {
         status: SnapshotStatus::Skipped {
@@ -219,6 +234,20 @@ impl Turns<'_> {
 
     fn record_path(&self, turn_id: &str) -> PathBuf {
         self.directory.join(turn_record_file_name(turn_id))
+    }
+
+    /// Whether a call inside the provider's turn `marker` comes from a turn
+    /// the run has not begun: the run's current turn names another, or none
+    /// is there. A current turn that cannot be read says nothing, and no
+    /// turn is begun over it. An end-only turn an earlier build wrote names
+    /// no provider turn, so a late call of it begins one; no recorded Codex
+    /// session has a call of a turn after its `Stop`.
+    pub(crate) fn is_new_provider_turn(&self, record: Option<&RunRecord>, marker: &str) -> bool {
+        match self.current(record) {
+            Current::Unreadable => false,
+            Current::None => true,
+            Current::Turn(turn) => turn.provider_turn_id.as_deref() != Some(marker),
+        }
     }
 
     /// The run's current turn. Both ids come from files, so the one in the
@@ -291,7 +320,18 @@ impl Turns<'_> {
                 turn_id: uuid::Uuid::new_v4().hyphenated().to_string().to_uppercase(),
                 event: event_id,
                 provider_turn_id: self.transcript.and_then(TurnTranscript::marker),
+                prompt_kind: match event {
+                    AgentEvent::PromptSubmitted { kind, .. } => *kind,
+                    _ => None,
+                },
                 taken: match begin_skip {
+                    // Nothing could be taken in time: the record reads as
+                    // missing its begin, as an end-only record does.
+                    Some(BEGIN_MISSING) => SnapshotTaken {
+                        status: SnapshotStatus::Pending,
+                        skipped: Vec::new(),
+                        git_context: None,
+                    },
                     Some(reason) => not_taken(reason),
                     None => snapshots.capture(
                         &self.begin_directory(event),
@@ -323,7 +363,7 @@ impl Turns<'_> {
                         phase,
                         continues_ended_turn,
                         keeps_phase: false,
-                        taken: not_taken("beginMissing"),
+                        taken: not_taken(BEGIN_MISSING),
                         diff: None,
                         reading: if ended.is_some() && reading.marker.as_deref() == ended {
                             EndReading::default()
@@ -427,7 +467,18 @@ impl Turns<'_> {
                 event,
                 taken,
                 provider_turn_id,
-            } => self.begin(turn_id, event, taken, provider_turn_id, previous, run?),
+                prompt_kind,
+            } => self.begin(
+                turn_id,
+                event,
+                Begun {
+                    taken,
+                    provider_turn_id,
+                    prompt_kind,
+                },
+                previous,
+                run?,
+            ),
             Prepared::End {
                 turn_id: Some(turn_id),
                 event,
@@ -474,11 +525,15 @@ impl Turns<'_> {
         &self,
         turn_id: String,
         event: Option<EventId>,
-        taken: SnapshotTaken,
-        provider_turn_id: Option<String>,
+        begun: Begun,
         previous: Option<&RunRecord>,
         run: &mut RunRecord,
     ) -> Option<Pin> {
+        let Begun {
+            taken,
+            provider_turn_id,
+            prompt_kind,
+        } = begun;
         if let Some(event) = &event
             && self
                 .current(previous)
@@ -507,6 +562,7 @@ impl Turns<'_> {
             pane_id: self.pane_id,
             display_number,
             prompt: &prompt,
+            prompt_kind,
             now: self.now,
             begin: taken,
             event: &event,
@@ -614,6 +670,7 @@ impl Turns<'_> {
                 pane_id: self.pane_id,
                 display_number,
                 prompt: "",
+                prompt_kind: None,
                 now: self.now,
                 begin: SnapshotTaken {
                     status: SnapshotStatus::Pending,
@@ -621,7 +678,11 @@ impl Turns<'_> {
                     git_context: None,
                 },
                 event,
-                provider_turn_id: None,
+                // The provider's id for the turn the end names, when its
+                // payload carries one (Codex's `Stop`), so a later call of
+                // that turn is known for that turn's and begins none
+                // (`is_new_provider_turn`).
+                provider_turn_id: self.transcript.and_then(TurnTranscript::marker),
                 title: title.as_deref(),
             },
             TurnEnd {

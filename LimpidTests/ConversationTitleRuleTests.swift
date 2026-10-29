@@ -90,6 +90,12 @@ struct ConversationTitleRuleTests {
         #expect(Self.title() == nil)
     }
 
+    /// A goal's objective is the person's words, which Codex's turns for it
+    /// begin from in place of a prompt.
+    @Test func title_goalsObjective_namesTheConversation() {
+        #expect(Self.title(firstPrompt: TurnPrompt(kind: .goal, head: "Ship the release")) == "Ship the release")
+    }
+
     @Test func title_whitespaceOnly_isIgnored() {
         let title = Self.title(tabName: "  ", remembered: " ", live: "\n", recorded: " \t", firstPrompt: TurnPrompt(head: "Fix it"))
         #expect(title == "Fix it")

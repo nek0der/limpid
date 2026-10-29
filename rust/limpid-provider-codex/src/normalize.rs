@@ -50,6 +50,20 @@ const QUESTION_TOOL: &str = "request_user_input";
 /// (`Interrupt`'s recorded in `fixtures/codex/2026-10/interrupted-turn`).
 pub(crate) const TURN_END_EVENTS: [&str; 2] = ["Stop", "Interrupt"];
 
+/// The hooks that run inside a turn and name it with their `turn_id`: its
+/// prompt, when the person gave one, and its tools, permission requests,
+/// and end. A turn Codex began itself (`unprompted`) is known by the first
+/// of them that comes. `PreCompact` names a turn too, but a `/compact` the
+/// person gives at the prompt is no turn of theirs.
+pub(crate) const TURN_EVENTS: [&str; 6] = [
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "PermissionRequest",
+    "Stop",
+    "Interrupt",
+];
+
 pub(crate) fn normalize(
     input: RawHookInput<'_>,
     context: &HookContext,
@@ -78,6 +92,7 @@ pub(crate) fn normalize(
         },
         "UserPromptSubmit" => AgentEvent::PromptSubmitted {
             prompt: string(&object, "prompt").unwrap_or_default().to_owned(),
+            kind: None,
             titles: None,
             cwd,
         },
@@ -254,6 +269,12 @@ fn is_internal_agent(object: &Map<String, Value>, context: &HookContext) -> bool
         .is_internal_agent_directory(&resolved(home), &resolved(Path::new(cwd)))
 }
 
+/// Whether the payload comes from a subagent (Codex names it with
+/// `agent_id`), its tools among them.
+pub(crate) fn is_subagents(object: &Map<String, Value>) -> bool {
+    string(object, "agent_id").is_some_and(|id| !id.is_empty())
+}
+
 /// Returns whether the payload is a subagent's own event, which is not the
 /// pane's. Codex sets `agent_id` only on the hooks of a thread the agent
 /// spawned (`spawn_agent`). The child inherits the parent's environment, so
@@ -264,7 +285,7 @@ fn is_internal_agent(object: &Map<String, Value>, context: &HookContext) -> bool
 /// permission requests still wait on the person, in the pane's process, so
 /// those stay the pane's.
 fn is_subagents_own(object: &Map<String, Value>, event_name: &str) -> bool {
-    string(object, "agent_id").is_some_and(|id| !id.is_empty())
+    is_subagents(object)
         && !matches!(
             event_name,
             "PreToolUse" | "PostToolUse" | "PermissionRequest"

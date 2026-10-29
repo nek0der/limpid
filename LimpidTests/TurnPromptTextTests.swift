@@ -35,6 +35,28 @@ struct TurnPromptTextTests {
         #expect(TurnPromptText.instruction(TurnPrompt(kind: kind, head: nil), locale: Self.english) == english)
     }
 
+    /// A turn Codex began for the person's goal quotes the goal, which is
+    /// their words, after the command they set it with, in either language;
+    /// with no words kept, the command alone says it.
+    @Test func aGoalsTurn_quotesTheGoal_afterTheCommand() {
+        let prompt = TurnPrompt(kind: .goal, head: "  Ship the release ")
+        #expect(TurnPromptText.instruction(prompt, locale: Self.english) == "/goal Ship the release")
+        #expect(TurnPromptText.instruction(prompt, locale: Self.japanese) == "/goal Ship the release")
+        #expect(TurnPromptText.instruction(TurnPrompt(kind: .goal, head: nil), locale: Self.english) == "/goal")
+        #expect(TurnPromptText.instruction(TurnPrompt(kind: .goal, head: " "), locale: Self.japanese) == "/goal")
+    }
+
+    /// Cut for a menu line as the person's words are, the command kept whole.
+    @Test func aGoalsTurn_isCutByItsGoal_forAMenuLine() {
+        let prompt = TurnPrompt(kind: .goal, head: "Ship the release notes")
+        #expect(TurnPromptText.shortInstruction(prompt, characters: 8, locale: Self.english) == "/goal Ship the…")
+        #expect(TurnPromptText.shortInstruction(prompt, characters: 40, locale: Self.english) == "/goal Ship the release notes")
+        #expect(
+            TurnPromptText.shortInstruction(TurnPrompt(head: "Ship the release notes"), characters: 8, locale: Self.english)
+                == "Ship the…"
+        )
+    }
+
     @Test func theChangesPanel_showsTheKind_inTheRowsTooltip() throws {
         let turn = try Self.turn(head: Self.notification, kind: .backgroundTask)
         #expect(ChangesPanelText.turnDetails(turn, showsChanges: false, locale: Self.english) == ["Background work done"])

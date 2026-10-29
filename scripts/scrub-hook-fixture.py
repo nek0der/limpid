@@ -44,7 +44,7 @@ PLACEHOLDER_UUID = "00000000-0000-4000-8000-0000000000ff"
 PROMPT_KEYS = {"prompt", "last_assistant_message", "content", "display", "text"}
 # Keys whose value identifies the provider session and must stay consistent
 # across the payloads of one case.
-SESSION_KEYS = {"session_id", "sessionId", "thread_id", "conversation_id"}
+SESSION_KEYS = {"session_id", "sessionId", "thread_id", "threadId", "conversation_id"}
 # Per-turn identifiers the adapters carry through unchanged (Codex's
 # `turn_id` becomes the neutral operation id). A recorded value dates the
 # session (Codex mints UUIDv7), so each key gets its own fixed placeholder.
