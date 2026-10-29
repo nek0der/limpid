@@ -152,8 +152,8 @@ final class AppState {
     /// current tab doesn't own.
     let worktreeMoveSuggester: WorktreeMoveSuggester
     /// Installs our lifecycle hooks into Codex: the flags every Codex
-    /// pty carries, and the single trust block written into the user's
-    /// own `~/.codex/config.toml`.
+    /// pty carries, trust included, and the removal of the trust tables
+    /// earlier builds wrote into the user's own `~/.codex/config.toml`.
     let codexHookInstaller: CodexHookInstaller
     /// User preferences store. Owned by `AppState` so libghostty gets
     /// the initial values at boot and live-reload routes through here.
@@ -375,11 +375,10 @@ final class AppState {
             InitialPromptFile.removeOrphans(keeping: Set(session.tabs.flatMap(\.initialPromptFiles.values)))
         }
 
-        // The installer refreshes the trust block synchronously so the
-        // first pty we spawn already carries hooks Codex will agree to
-        // run.
+        // Only takes out what earlier builds wrote: our hooks carry their
+        // own trust in each pane's flags, so no pane waits on this.
         let codexHookInstaller = CodexHookInstaller.shared
-        codexHookInstaller.refresh(writesUserFiles: writesUserFiles)
+        codexHookInstaller.removeLegacyTrust(writesUserFiles: writesUserFiles)
         self.codexHookInstaller = codexHookInstaller
         CodexHookInstaller.reportMissingHookHelper()
 

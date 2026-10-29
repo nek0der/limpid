@@ -636,7 +636,7 @@ private extension HookAgent {
             let hooks = try #require((json as? [String: Any])?["hooks"] as? [String: Any])
             return hooks.keys.sorted().filter { !["CwdChanged", "PermissionRequest", "SubagentStop"].contains($0) }
         case .codex:
-            return CodexHookInstaller.subscribedEvents.map(\.jsonKey)
+            return CodexHookInjection.subscribedEvents.map(\.jsonKey)
         }
     }
 

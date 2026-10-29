@@ -1,5 +1,5 @@
 // CodexHookInjectionSmokeTests.swift
-// Limpid — hands the generated flags and trust block to a real `codex` and
+// Limpid — hands the generated flags, trust and all, to a real `codex` and
 // asks it what it discovered. The unit tests pin that our hashes cover our
 // commands; only Codex can say whether it agrees, and the difference shows
 // up as a "Hooks need review" prompt in front of the user.
@@ -169,32 +169,47 @@ struct CodexHookInjectionSmokeTests {
         return []
     }
 
-    @Test("Codex trusts every hook the flags supply")
-    func generatedFlagsAndTrustBlock_areAcceptedByCodex() throws {
+    /// The home's `config.toml` records no trust for our hooks, as for a
+    /// Codex whose `CODEX_HOME` is not `~/.codex`. It holds a hook of the
+    /// person's own with its trust, which our trust in the flags must leave
+    /// as it is.
+    @Test("Codex trusts every hook the flags supply, and the person's own still")
+    func generatedFlags_areTrustedByCodex() throws {
         try withTempDir { dir in
             let home = dir.appendingPathComponent("codex-home", isDirectory: true)
             try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+            let config = home.appendingPathComponent("config.toml")
+            // Codex keys the person's trust by the config's real path.
+            // `resolvingSymlinksInPath` drops the `/private` of a temporary
+            // directory, so `realpath` it is.
+            let realHome = try #require(realpath(home.path, nil).map { pointer in
+                defer { free(pointer) }
+                return String(cString: pointer)
+            })
+            let theirs = "/bin/echo theirs"
+            let theirKey = CodexTrustHash.trustKey(sourcePath: realHome + "/config.toml", eventLabel: "stop", groupIndex: 0)
+            let theirHash = CodexTrustHash.compute(eventLabel: "stop", command: theirs, timeoutSec: 600)
+            try """
+            [[hooks.Stop]]
+            [[hooks.Stop.hooks]]
+            type = "command"
+            command = "\(theirs)"
+            timeout = 600
 
-            let lifecycle = "/bin/echo lifecycle"
-            let block = CodexHookInjection.trustBlock(
-                lifecycleCommand: lifecycle, worktreeCommand: nil
-            )
-            try CodexUserConfig.applying(block: block, to: "")
-                .write(
-                    to: home.appendingPathComponent("config.toml"),
-                    atomically: true,
-                    encoding: .utf8
-                )
+            [hooks.state."\(theirKey)"]
+            trusted_hash = "\(theirHash)"
+
+            """.write(to: config, atomically: true, encoding: .utf8)
 
             let hooks = try discoveredHooks(
                 home: home,
                 cwd: dir,
                 extraArguments: CodexHookInjection.arguments(
-                    lifecycleCommand: lifecycle, worktreeCommand: nil
+                    lifecycleCommand: "/bin/echo lifecycle", worktreeCommand: "/bin/echo worktree"
                 )
             )
             let ours = hooks.filter { $0.source == "sessionFlags" }
-            let expected = Set(CodexHookInstaller.subscribedEvents.map {
+            let expected = Set(CodexHookInjection.subscribedEvents.map {
                 $0.jsonKey.prefix(1).lowercased() + $0.jsonKey.dropFirst()
             })
             let actual = Set(ours.map(\.eventName))
@@ -204,10 +219,15 @@ struct CodexHookInjectionSmokeTests {
                 actual == expected,
                 "codex: \(installedCodex?.executable ?? "missing"); missing: \(missing); unexpected: \(unexpected)"
             )
+            // One more than the events: PreToolUse's matched worktree group.
+            #expect(ours.count == expected.count + 1)
             #expect(
                 ours.allSatisfy { $0.trustStatus == "trusted" },
                 "untrusted: \(ours.filter { $0.trustStatus != "trusted" }.map(\.eventName))"
             )
+            let user = hooks.filter { $0.source == "user" }
+            #expect(user.count == 1)
+            #expect(user.allSatisfy { $0.trustStatus == "trusted" }, "the person's own hook lost its trust")
         }
     }
 }

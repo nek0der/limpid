@@ -1,17 +1,12 @@
 // CodexHookInstaller.swift
 // Limpid — installs our lifecycle hooks into Codex.
 //
-// The hooks themselves ride on the `codex` shim's command line, as `-c`
-// overrides. Codex reports those under a `sessionFlags` source of their
-// own, so they sit alongside whatever the user has configured rather than
-// replacing it, without mirroring their whole config directory into a
-// `CODEX_HOME` of our own on every launch.
-//
-// What a flag cannot carry is trust: Codex refuses to run a hook whose
-// hash is not recorded, and it deliberately ignores a trust entry supplied
-// by the same flags that define the hook. So one block, and only that
-// block, is written into the user's own `~/.codex/config.toml`. See
-// `CodexUserConfig` for how narrowly that write is scoped.
+// The hooks ride on the `codex` shim's command line as `-c` overrides,
+// trust and all (`CodexHookInjection`). Codex reports those under a
+// `sessionFlags` source of their own, so they sit alongside whatever the
+// user has configured rather than replacing it, and nothing is written to
+// the user's own `~/.codex/config.toml`. All that is left to do there is
+// take out the trust tables earlier builds kept in it (`CodexUserConfig`).
 
 import Foundation
 import OSLog
@@ -23,18 +18,15 @@ final class CodexHookInstaller {
     /// Singleton-style shared instance; LimpidApp owns it via env.
     static let shared = CodexHookInstaller()
 
-    /// The codex home whose config carries our trust block. `~/.codex/`
-    /// in a normal run — see `defaultUserCodexHome()` for the exception.
-    /// A `CODEX_HOME` is not read: the one that matters is the pane's,
-    /// which its shell sets from the person's `.zshrc` or a project's
-    /// `.envrc` after Limpid starts, and may differ from pane to pane. A
-    /// Codex started with another home finds no trust for our hooks and
-    /// does not run them (docs/known-limitations.md).
+    /// The codex home whose config may still hold the trust tables an
+    /// earlier build wrote. `~/.codex/` in a normal run; see
+    /// `defaultUserCodexHome()` for the exception. A `CODEX_HOME` is not
+    /// read: earlier builds wrote only into `~/.codex/config.toml`.
     let userCodexHome: URL
 
     /// Bundled `codex-shim/limpid-hook` script path. `nil` when running
-    /// from a test bundle without the resource — in that case `refresh()`
-    /// is a no-op and no hooks are installed.
+    /// from a test bundle without the resource — in that case no hooks are
+    /// installed.
     let hookScriptURL: URL?
 
     /// Bundled `codex-shim/limpid-pretool-worktree-hook` path. `nil` when
@@ -46,45 +38,6 @@ final class CodexHookInstaller {
     /// verifies its artifact identity on every request; when unavailable it
     /// publishes the lifecycle fallback and emits no approval decision.
     let approvalHelperURL: URL?
-
-    /// One hook event we ask Codex to call us on.
-    struct SubscribedEvent {
-        /// Our own name for the event. Doubles as the group segment of the
-        /// trust key, so changing it invalidates that entry.
-        let label: String
-        /// The name Codex uses, both as the `hooks.<key>` table and as the
-        /// payload's `hook_event_name`.
-        let jsonKey: String
-        /// Part of the identity Codex hashes, so it has to be stated
-        /// rather than left to a default: measured 2026-09, the two events
-        /// that end a session or a turn abruptly default to one second
-        /// while every other event defaults to 600, and `SessionEnd`
-        /// refuses anything above three. Hashing all of them at 600 left
-        /// those two permanently `modified`, which is to say never run.
-        let timeoutSec: Int
-    }
-
-    /// Hook events we subscribe to. Mirrors what `codex-shim/limpid-hook`
-    /// knows how to handle. `nonisolated` so the pure builders in
-    /// `CodexHookInjection` can read it off the main actor.
-    nonisolated static let subscribedEvents: [SubscribedEvent] = [
-        SubscribedEvent(label: "session_start", jsonKey: "SessionStart", timeoutSec: 600),
-        SubscribedEvent(label: "session_end", jsonKey: "SessionEnd", timeoutSec: 1),
-        SubscribedEvent(label: "user_prompt_submit", jsonKey: "UserPromptSubmit", timeoutSec: 600),
-        SubscribedEvent(label: "pre_tool_use", jsonKey: "PreToolUse", timeoutSec: 600),
-        SubscribedEvent(label: "post_tool_use", jsonKey: "PostToolUse", timeoutSec: 600),
-        SubscribedEvent(label: "pre_compact", jsonKey: "PreCompact", timeoutSec: 600),
-        SubscribedEvent(label: "post_compact", jsonKey: "PostCompact", timeoutSec: 600),
-        SubscribedEvent(label: "permission_request", jsonKey: "PermissionRequest", timeoutSec: 600),
-        SubscribedEvent(label: "interrupt", jsonKey: "Interrupt", timeoutSec: 1),
-        SubscribedEvent(label: "stop", jsonKey: "Stop", timeoutSec: 600)
-    ]
-
-    /// Codex evaluates the handler's `matcher` field as a regex (Claude
-    /// uses a flat string equal-match). `^Bash$` pins the worktree
-    /// intercept to the exact Bash tool the way Claude's
-    /// `settings.template.json` does with `"matcher": "Bash"`.
-    nonisolated static let worktreeMatcher = "^Bash$"
 
     /// Separator for `LIMPID_CODEX_HOOK_ARGS`. Newline because every
     /// fragment we generate is single-line, and the shim can split on it
@@ -107,11 +60,11 @@ final class CodexHookInstaller {
     }
 
     /// `~/.codex/` in a normal run. Under the Xcode test host it is a
-    /// stray directory instead: `LimpidApp` refreshes the installer during
+    /// stray directory instead: `LimpidApp` cleans the config during
     /// bootstrap, and the test host runs that same bootstrap, so the
     /// default would otherwise rewrite the developer's own config on every
-    /// test run. The stray path does not exist, so `refresh()` also stops
-    /// at its "user has not run codex yet" guard. Mirrors the reasoning
+    /// test run. The stray path does not exist, so `removeLegacyTrust`
+    /// also stops at its "no codex home" guard. Mirrors the reasoning
     /// behind `LimpidPaths.applicationSupportDirectory()`, and
     /// `TestWriteGuard` refuses the real `~/.codex` besides.
     private static func defaultUserCodexHome() -> URL {
@@ -125,20 +78,19 @@ final class CodexHookInstaller {
 
     // MARK: - Lifecycle
 
-    /// What one `refresh` did.
-    enum RefreshOutcome: Equatable {
-        /// Nothing was looked at: a demo run, no hook in the bundle, or no
-        /// codex home yet.
+    /// What one `removeLegacyTrust` did.
+    enum CleanupOutcome: Equatable {
+        /// Nothing was looked at: a demo run, or no codex home.
         case skipped
-        /// The block was already there as it should be.
+        /// The config holds nothing of ours.
         case unchanged
-        case installed
+        case removed
         /// The config was left as it was, because we could not read it,
         /// could not write it, or would have written one Codex refuses.
-        case failed(RefreshFailure)
+        case failed(CleanupFailure)
     }
 
-    enum RefreshFailure: Error, Equatable {
+    enum CleanupFailure: Error, Equatable {
         /// The file is there but could not be read.
         case unreadable
         /// The file is not UTF-8, so we cannot tell their lines from ours.
@@ -146,39 +98,32 @@ final class CodexHookInstaller {
         /// `config.toml` is a symbolic link to nothing: writing would
         /// replace the link rather than create what it points at.
         case danglingLink
-        /// Our splice would have produced a config Codex refuses to load
+        /// Our edit would have produced a config Codex refuses to load
         /// (`CodexUserConfig.problem(in:)`), so it was not written.
         case invalidResult
         case writeFailed
     }
 
-    /// Bring the trust block in the user's config up to date. Idempotent,
-    /// and a no-op when the block already matches — a config kept under
-    /// version control only shows a diff when our hooks actually change.
-    /// `writesUserFiles` is the app's decision for the run: a demo run
-    /// (`make screenshot`) leaves `~/.codex/config.toml` alone.
+    /// Take the trust tables an earlier build wrote out of the user's
+    /// config. Earlier builds rewrote them at every launch, with a hash
+    /// that covered the bundle path they ran from, so a table left behind
+    /// would only hold a stale hash; Codex now takes ours from the flags.
+    /// A no-op when the file holds nothing of ours, so a config kept under
+    /// version control shows a diff only once. `writesUserFiles` is the
+    /// app's decision for the run: a demo run (`make screenshot`) leaves
+    /// `~/.codex/config.toml` alone.
     ///
     /// A config that is there but that we cannot read is left alone, and
-    /// the refresh fails: read as empty, it would be replaced by our block
-    /// and nothing else, which is every model, trust and server setting the
-    /// person had. A `config.toml` that is a symbolic link (a dotfiles
-    /// checkout) is written through, so the link and the file it names stay
-    /// what they were.
+    /// the cleanup fails. A `config.toml` that is a symbolic link (a
+    /// dotfiles checkout) is written through, so the link and the file it
+    /// names stay what they were.
     @discardableResult
-    func refresh(writesUserFiles: Bool) -> RefreshOutcome {
+    func removeLegacyTrust(writesUserFiles: Bool) -> CleanupOutcome {
         guard writesUserFiles else {
-            log.debug("demo mode — skipping trust block")
+            log.debug("demo mode — leaving codex config alone")
             return .skipped
         }
-        guard let lifecycleCommand else {
-            log.debug("codex-shim/limpid-hook not found in bundle; skipping trust block")
-            return .skipped
-        }
-        // No `~/.codex/` means the user has not run codex yet. Creating
-        // one for them would be presumptuous; we install on a later
-        // refresh once it exists.
         guard FileManager.default.fileExists(atPath: userCodexHome.path) else {
-            log.debug("user codex home missing; skipping trust block")
             return .skipped
         }
         let config: CodexConfigFile
@@ -188,18 +133,11 @@ final class CodexHookInstaller {
         case let .failure(failure):
             return .failed(failure)
         }
-        let updated = CodexUserConfig.applying(
-            block: CodexHookInjection.trustBlock(
-                lifecycleCommand: lifecycleCommand,
-                worktreeCommand: worktreeCommand,
-                approvalCommand: approvalCommand
-            ),
-            to: config.text
-        )
+        let updated = CodexUserConfig.removing(keys: CodexUserConfig.legacyTrustKeys, from: config.text)
         guard updated != config.text else { return .unchanged }
-        // A config Codex cannot parse stops it from starting at all, which
-        // is far worse than starting without our hooks. Whatever the fault
-        // in the splice, the person's file stays as it was.
+        // A config Codex cannot parse stops it from starting at all. Whatever
+        // the fault in our edit, the person's file stays as it was, and the
+        // tables left in it do no harm: the flags' trust takes precedence.
         if let problem = CodexUserConfig.problem(in: updated) {
             log.error("""
             not writing codex config \(config.target.path, privacy: .private): \
@@ -209,8 +147,8 @@ final class CodexHookInstaller {
         }
         do {
             try SecureFileWrite.writeAtomic(config.data(for: updated), to: config.target)
-            log.notice("codex hook trust installed")
-            return .installed
+            log.notice("removed legacy codex hook trust")
+            return .removed
         } catch {
             log.error("""
             write codex config \(config.target.path, privacy: .private): \
@@ -354,7 +292,7 @@ struct CodexConfigFile {
     /// The file itself, past any symbolic links: an atomic write replaces
     /// what is at the path it is given, and given the link it would leave a
     /// regular file in its place, so the dotfiles checkout the link named
-    /// would never see our block.
+    /// would never see our edit.
     let target: URL
     let text: String
     /// Whether the file began with a UTF-8 byte order mark, which the text
@@ -367,10 +305,10 @@ struct CodexConfigFile {
         (hasByteOrderMark ? Data(Self.byteOrderMark) : Data()) + Data(text.utf8)
     }
 
-    /// Reads the config at `url`. A missing file reads as empty, since our
-    /// block is then the whole of it; one that is there but cannot be read
+    /// Reads the config at `url`. A missing file reads as empty, which holds
+    /// nothing of ours; one that is there but cannot be read
     /// or decoded is a failure, logged here.
-    static func read(_ url: URL) -> Result<CodexConfigFile, CodexHookInstaller.RefreshFailure> {
+    static func read(_ url: URL) -> Result<CodexConfigFile, CodexHookInstaller.CleanupFailure> {
         let fm = FileManager.default
         let target = url.resolvingSymlinksInPath()
         // `fileExists` follows links; the attributes of the item itself do

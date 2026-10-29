@@ -1,6 +1,6 @@
 // CodexHookInjectionTests.swift
-// Limpid — the `-c` flags handed to Codex and the trust block that blesses
-// them come from one place because they have to agree exactly. A hash that
+// Limpid — the `-c` flags handed to Codex and the trust that blesses them
+// come from one list of handlers because they have to agree exactly. A hash that
 // does not match the command it is supposed to cover puts the receiver in
 // Codex's "Hooks need review" prompt, which is the one failure of this
 // design a user would actually see.
@@ -31,17 +31,18 @@ struct CodexHookInjectionTests {
         #expect(!preToolUse.contains(approval))
     }
 
-    @Test("emits one -c flag per subscribed event, plus the title suppression")
+    @Test("emits one -c flag per subscribed event, plus trust and the title suppression")
     func arguments_coverEverySubscribedEvent() {
         let args = CodexHookInjection.arguments(
             lifecycleCommand: lifecycle, worktreeCommand: nil
         )
-        for event in CodexHookInstaller.subscribedEvents {
+        for event in CodexHookInjection.subscribedEvents {
             #expect(
                 args.contains { $0.hasPrefix("hooks.\(event.jsonKey)=") },
                 "no -c fragment for \(event.jsonKey)"
             )
         }
+        #expect(args.contains { $0.hasPrefix("hooks.state={") })
         #expect(args.contains("tui.terminal_title=[]"))
         // Codex's own notifications would double Limpid's.
         #expect(args.contains("tui.notifications=false"))
@@ -55,7 +56,7 @@ struct CodexHookInjectionTests {
             lifecycleCommand: lifecycle, worktreeCommand: worktree
         )
         let preToolUse = try #require(args.first { $0.hasPrefix("hooks.PreToolUse=") })
-        #expect(preToolUse.contains(CodexHookInstaller.worktreeMatcher))
+        #expect(preToolUse.contains(CodexHookInjection.worktreeMatcher))
         #expect(preToolUse.contains(worktree))
     }
 
@@ -65,44 +66,51 @@ struct CodexHookInjectionTests {
             lifecycleCommand: lifecycle, worktreeCommand: nil
         )
         let preToolUse = args.first { $0.hasPrefix("hooks.PreToolUse=") }
-        #expect(preToolUse?.contains(CodexHookInstaller.worktreeMatcher) == false)
+        #expect(preToolUse?.contains(CodexHookInjection.worktreeMatcher) == false)
     }
 
-    /// The invariant the whole design rests on: every hash in the block is
+    /// The invariant the whole design rests on: every hash in the flags is
     /// the hash of the command actually being passed, at the group index it
     /// is actually passed at.
     @Test("every trust entry matches the command the flags supply")
-    func trustBlock_hashesMatchTheArguments() {
-        let block = CodexHookInjection.trustBlock(
+    func trust_hashesMatchTheArguments() throws {
+        let args = CodexHookInjection.arguments(
             lifecycleCommand: lifecycle,
             worktreeCommand: worktree,
             approvalCommand: approval
         )
-        for event in CodexHookInstaller.subscribedEvents {
+        let state = try #require(args.first { $0.hasPrefix("hooks.state={") })
+        for event in CodexHookInjection.subscribedEvents {
             let expected = CodexTrustHash.compute(
                 eventLabel: event.label,
                 command: event.jsonKey == "PermissionRequest" ? approval : lifecycle,
                 timeoutSec: event.timeoutSec
             )
-            #expect(block.contains(expected), "no hash for \(event.label)")
+            let key = CodexHookInjection.trustKey(eventLabel: event.label, group: 0)
             #expect(
-                block.contains(
-                    CodexHookInjection.trustKey(eventLabel: event.label, group: 0)
-                )
+                state.contains("\"\(key)\"={enabled=true,trusted_hash=\"\(expected)\"}"),
+                "no trust for \(event.label)"
             )
         }
         let worktreeHash = CodexTrustHash.compute(
             eventLabel: "pre_tool_use",
             command: worktree,
             timeoutSec: 600,
-            matcher: CodexHookInstaller.worktreeMatcher
+            matcher: CodexHookInjection.worktreeMatcher
         )
-        #expect(block.contains(worktreeHash))
-        #expect(
-            block.contains(
-                CodexHookInjection.trustKey(eventLabel: "pre_tool_use", group: 1)
-            )
-        )
+        let worktreeKey = CodexHookInjection.trustKey(eventLabel: "pre_tool_use", group: 1)
+        #expect(state.contains("\"\(worktreeKey)\"={enabled=true,trusted_hash=\"\(worktreeHash)\"}"))
+    }
+
+    /// Codex splits a flag's key at each dot, and a trust key holds one, so
+    /// the entries have to sit in one inline table. The shim also splits
+    /// the flags at line feeds.
+    @Test("passes trust as one single-line inline table")
+    func trust_isOneInlineTable() {
+        let args = CodexHookInjection.arguments(lifecycleCommand: lifecycle, worktreeCommand: worktree)
+        #expect(args.count(where: { $0.hasPrefix("hooks.state") }) == 1)
+        #expect(!args.contains { $0.hasPrefix("hooks.state.") })
+        #expect(!args.contains { $0.contains("\n") })
     }
 
     /// Codex resolves session-flag hooks against a synthetic path, not the

@@ -181,14 +181,6 @@ as they are fixed or confirmed.
   no hook when a turn fails (an error from the server, a model it does not
   have, the plan's usage limit), so Limpid reads the failure from the
   session's rollout, which it checks every ten seconds.
-- **A moved Codex home (`CODEX_HOME`) gets no Limpid hooks.** Codex runs a
-  hook only when its own `config.toml` records that the hook is trusted, and
-  Limpid writes that record only into `~/.codex/config.toml`. A Codex
-  started with `CODEX_HOME` set elsewhere (in `.zshrc`, or a project's
-  `.envrc`) reads another `config.toml`. It treats Limpid's hooks as not
-  reviewed and does not run them, so its turns, approvals, and stops do not
-  reach Limpid. Limpid does not read the variable itself: the pane's shell
-  sets it after Limpid starts, and it can differ from pane to pane.
 - **A resume inside your own tmux is judged by what tmux says.** If your
   shell starts tmux at its prompt, or the pane was inside tmux when Limpid
   quit, the resume Limpid types runs inside that tmux. Codex reports nothing

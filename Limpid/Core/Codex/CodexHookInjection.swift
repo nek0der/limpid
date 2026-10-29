@@ -1,21 +1,61 @@
 // CodexHookInjection.swift
-// Limpid — builds the `-c` flags that hand our hooks to Codex, and the
-// trust block that blesses them.
+// Limpid — builds the `-c` flags that hand our hooks to Codex, together
+// with the trust that blesses them.
 //
-// Both come from here because they have to agree byte for byte: Codex
-// hashes each handler's definition and refuses to run one whose hash is
-// not recorded. Splitting the two across types is what would let them
-// drift, and the symptom is a "Hooks need review" prompt in front of the
-// user rather than a silent failure.
+// Both come from one list of handlers because they have to agree byte for
+// byte: Codex hashes each handler's definition and refuses to run one whose
+// hash is not recorded. Splitting the two would let them drift, and the
+// symptom is a "Hooks need review" prompt in front of the user rather than
+// a silent failure.
 
 import Foundation
 
 enum CodexHookInjection {
+    /// One hook event we ask Codex to call us on.
+    struct SubscribedEvent: Sendable {
+        /// Our own name for the event. Doubles as the group segment of the
+        /// trust key, so changing it invalidates that entry.
+        let label: String
+        /// The name Codex uses, both as the `hooks.<key>` table and as the
+        /// payload's `hook_event_name`.
+        let jsonKey: String
+        /// Part of the identity Codex hashes, so it has to be stated
+        /// rather than left to a default: measured 2026-09, the two events
+        /// that end a session or a turn abruptly default to one second
+        /// while every other event defaults to 600, and `SessionEnd`
+        /// refuses anything above three. Hashing all of them at 600 left
+        /// those two permanently `modified`, which is to say never run.
+        let timeoutSec: Int
+    }
+
+    /// Hook events we subscribe to. Mirrors what `codex-shim/limpid-hook`
+    /// knows how to handle.
+    static let subscribedEvents: [SubscribedEvent] = [
+        SubscribedEvent(label: "session_start", jsonKey: "SessionStart", timeoutSec: 600),
+        SubscribedEvent(label: "session_end", jsonKey: "SessionEnd", timeoutSec: 1),
+        SubscribedEvent(label: "user_prompt_submit", jsonKey: "UserPromptSubmit", timeoutSec: 600),
+        SubscribedEvent(label: "pre_tool_use", jsonKey: "PreToolUse", timeoutSec: 600),
+        SubscribedEvent(label: "post_tool_use", jsonKey: "PostToolUse", timeoutSec: 600),
+        SubscribedEvent(label: "pre_compact", jsonKey: "PreCompact", timeoutSec: 600),
+        SubscribedEvent(label: "post_compact", jsonKey: "PostCompact", timeoutSec: 600),
+        SubscribedEvent(label: "permission_request", jsonKey: "PermissionRequest", timeoutSec: 600),
+        SubscribedEvent(label: "interrupt", jsonKey: "Interrupt", timeoutSec: 1),
+        SubscribedEvent(label: "stop", jsonKey: "Stop", timeoutSec: 600)
+    ]
+
+    /// Codex evaluates the handler's `matcher` field as a regex (Claude
+    /// uses a flat string equal-match). `^Bash$` pins the worktree
+    /// intercept to the exact Bash tool the way Claude's
+    /// `settings.template.json` does with `"matcher": "Bash"`.
+    static let worktreeMatcher = "^Bash$"
+
+    // MARK: - Flags
+
     /// Codex resolves a hook supplied by CLI flags against this synthetic
     /// path rather than any file on disk, so the key half of a trust entry
-    /// survives the app bundle moving. The hash half does not — it covers
-    /// the command, which carries the bundle path — which is why
-    /// `refresh()` runs on every launch rather than only on first install.
+    /// survives the app bundle moving. The hash half does not: it covers
+    /// the command, which carries the bundle path, so both are built again
+    /// for every pane.
     private static let sessionFlagsPath = "/<session-flags>/config.toml"
 
     static func trustKey(eventLabel: String, group: Int) -> String {
@@ -32,31 +72,26 @@ enum CodexHookInjection {
         worktreeCommand: String?,
         approvalCommand: String? = nil
     ) -> [String] {
+        let handlers = Self.handlers(
+            lifecycleCommand: lifecycleCommand,
+            worktreeCommand: worktreeCommand,
+            approvalCommand: approvalCommand
+        )
         var out: [String] = []
-        for event in CodexHookInstaller.subscribedEvents {
-            var groups = [
-                group(
-                    command: event.jsonKey == "PermissionRequest"
-                        ? approvalCommand ?? lifecycleCommand
-                        : lifecycleCommand,
-                    matcher: nil,
-                    timeoutSec: event.timeoutSec
-                )
-            ]
-            if event.jsonKey == "PreToolUse", let worktreeCommand {
-                groups.append(
-                    group(
-                        command: worktreeCommand,
-                        matcher: CodexHookInstaller.worktreeMatcher,
-                        timeoutSec: event.timeoutSec
-                    )
-                )
-            }
+        for event in subscribedEvents {
+            let groups = handlers.filter { $0.event.jsonKey == event.jsonKey }.map(\.group)
             out += ["-c", "hooks.\(event.jsonKey)=[\(groups.joined(separator: ","))]"]
         }
+        // Codex reads trust from the flags as well as from the user's own
+        // config, so the hooks need no record in `~/.codex/config.toml`, and
+        // a Codex whose `CODEX_HOME` is elsewhere runs them too. One inline
+        // table, because Codex splits a flag's key at each dot, and our keys
+        // hold one (`config.toml`): `hooks.state."<key>".trusted_hash=…` names
+        // some other key, and the hook stays untrusted.
+        out += ["-c", "hooks.state={\(handlers.map(\.trustEntry).joined(separator: ","))}"]
         // Codex animates its own terminal title, which bounces tab widths
         // in a sidebar that surfaces the OSC-derived title. Suppressed here
-        // rather than by rewriting a config we no longer own.
+        // rather than by rewriting a config we do not own.
         out += ["-c", "tui.terminal_title=[]"]
         // Codex's TUI posts its own desktop notifications (OSC 9 or BEL,
         // "Approval requested: …", "Agent turn complete") for the same
@@ -71,71 +106,68 @@ enum CodexHookInjection {
         return out
     }
 
-    /// The `[hooks.state."…"]` entries covering exactly what `arguments`
-    /// supplies, ready to splice into the user's config.
-    static func trustBlock(
+    // MARK: - Handlers
+
+    /// One handler we pass: the matcher group that defines it and the
+    /// trust entry that covers it, both from the same values.
+    private struct Handler {
+        let event: SubscribedEvent
+        let groupIndex: Int
+        let command: String
+        let matcher: String?
+
+        /// The matcher group as an inline TOML table. Codex parses a `-c`
+        /// value as TOML, so the shape mirrors what the file form would hold.
+        var group: String {
+            // Stated rather than defaulted: the value is hashed, and Codex's
+            // default differs per event.
+            let handler = "{type=\"command\",command=\(CodexHookInjection.tomlString(command)),timeout=\(event.timeoutSec)}"
+            guard let matcher else { return "{hooks=[\(handler)]}" }
+            return "{matcher=\(CodexHookInjection.tomlString(matcher)),hooks=[\(handler)]}"
+        }
+
+        /// `"<key>"={enabled=true,trusted_hash="…"}`, one entry of the
+        /// `hooks.state` inline table.
+        var trustEntry: String {
+            let hash = CodexTrustHash.compute(
+                eventLabel: event.label,
+                command: command,
+                timeoutSec: event.timeoutSec,
+                matcher: matcher
+            )
+            let key = CodexHookInjection.trustKey(eventLabel: event.label, group: groupIndex)
+            return "\(CodexHookInjection.tomlString(key))={enabled=true,trusted_hash=\(CodexHookInjection.tomlString(hash))}"
+        }
+    }
+
+    private static func handlers(
         lifecycleCommand: String,
         worktreeCommand: String?,
-        approvalCommand: String? = nil
-    ) -> String {
-        var lines: [String] = []
-        for event in CodexHookInstaller.subscribedEvents {
-            lines += entry(
-                eventLabel: event.label,
-                group: 0,
-                command: event.jsonKey == "PermissionRequest"
-                    ? approvalCommand ?? lifecycleCommand
-                    : lifecycleCommand,
-                matcher: nil,
-                timeoutSec: event.timeoutSec
-            )
+        approvalCommand: String?
+    ) -> [Handler] {
+        subscribedEvents.flatMap { event -> [Handler] in
+            var out = [
+                Handler(
+                    event: event,
+                    groupIndex: 0,
+                    command: event.jsonKey == "PermissionRequest"
+                        ? approvalCommand ?? lifecycleCommand
+                        : lifecycleCommand,
+                    matcher: nil
+                )
+            ]
             if event.jsonKey == "PreToolUse", let worktreeCommand {
-                lines += entry(
-                    eventLabel: event.label,
-                    group: 1,
-                    command: worktreeCommand,
-                    matcher: CodexHookInstaller.worktreeMatcher,
-                    timeoutSec: event.timeoutSec
+                out.append(
+                    Handler(
+                        event: event,
+                        groupIndex: 1,
+                        command: worktreeCommand,
+                        matcher: CodexHookInjection.worktreeMatcher
+                    )
                 )
             }
+            return out
         }
-        return lines.joined(separator: "\n")
-    }
-
-    // MARK: - Fragments
-
-    /// One matcher group as an inline TOML table. Codex parses a `-c`
-    /// value as TOML, so the shape mirrors what the file form would hold.
-    private static func group(
-        command: String,
-        matcher: String?,
-        timeoutSec: Int
-    ) -> String {
-        // Stated rather than defaulted: the value is hashed, and Codex's
-        // default differs per event.
-        let handler = "{type=\"command\",command=\(tomlString(command)),timeout=\(timeoutSec)}"
-        guard let matcher else { return "{hooks=[\(handler)]}" }
-        return "{matcher=\(tomlString(matcher)),hooks=[\(handler)]}"
-    }
-
-    private static func entry(
-        eventLabel: String,
-        group: Int,
-        command: String,
-        matcher: String?,
-        timeoutSec: Int
-    ) -> [String] {
-        let hash = CodexTrustHash.compute(
-            eventLabel: eventLabel,
-            command: command,
-            timeoutSec: timeoutSec,
-            matcher: matcher
-        )
-        return [
-            "[hooks.state.\(tomlString(trustKey(eventLabel: eventLabel, group: group)))]",
-            "enabled = true",
-            "trusted_hash = \(tomlString(hash))"
-        ]
     }
 
     /// TOML basic string. Bundle paths carry neither quotes nor
