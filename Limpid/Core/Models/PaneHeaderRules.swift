@@ -334,8 +334,8 @@ extension PaneHeaderRules {
         switch fact.glyph {
         case .idle, .unknown, .shell:
             return nil
-        case .needsAnswer, .needsApproval, .needsResponse, .stopped, .unread, .unreadWorkingAfterTurn, .running,
-             .workingAfterTurn:
+        case .needsAnswer, .needsApproval, .needsResponse, .needsSignIn, .stopped, .unread, .unreadWorkingAfterTurn,
+             .running, .workingAfterTurn:
             break
         }
         let speaker: AgentRuntimePresentation? = if fact.glyph != .running,

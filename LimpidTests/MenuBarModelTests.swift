@@ -186,6 +186,7 @@ struct MenuBarModelTests {
         #expect(hint(.response, isInPane: true) == .goesToPaneToAnswerInTerminal)
         #expect(hint(.approval, isInPane: false) == .opensCard, "no pane: the row opens the card")
         #expect(hint(.question, isInPane: false) == .opensCard)
+        #expect(hint(.signIn, isInPane: true) == .goesToPane, "a sign-in is not answered")
         #expect(hint(.stopped, isInPane: true) == .goesToPane)
         #expect(hint(.unread, isInPane: true) == .goesToPane)
     }

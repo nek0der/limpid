@@ -9,8 +9,8 @@ import Foundation
 /// Core reaching up for it.
 enum PromptWaitText {
     /// An approval and a question as held ones read ("Waiting for approval:
-    /// notes.txt", "Question: Which color?"), any other wait as one for a
-    /// response, with the agent's words when it gave any.
+    /// notes.txt", "Question: Which color?"), a sign-in as one, and any other
+    /// wait as one for a response, with the agent's words when it gave any.
     static func line(_ wait: PromptWait) -> LocalizedStringResource {
         switch wait {
         case let .approval(approval):
@@ -24,6 +24,8 @@ enum PromptWaitText {
             detail.map {
                 LocalizedStringResource("Question: \($0)", comment: "Needs Attention row; the start of the agent's question")
             } ?? LocalizedStringResource("Needs answer")
+        case .signIn:
+            LocalizedStringResource("Needs sign-in")
         case let .unclassified(detail):
             detail.map {
                 LocalizedStringResource(

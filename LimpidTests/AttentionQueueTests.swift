@@ -154,6 +154,22 @@ struct AttentionQueueTests {
         #expect(counts.hasBlockingItems)
     }
 
+    /// A sign-in is counted on its own, so the count names it rather than
+    /// calling it a response.
+    @Test func counts_aSignIn_onItsOwn() {
+        var queue = AttentionQueue()
+        queue.insert(
+            id: .prompt(EpisodeKey(origin: .runtime("run"), episodeToken: "1")),
+            kind: .prompt(.signIn),
+            subject: Self.subject(),
+            arrivedAt: Self.start
+        )
+        #expect(queue.counts() == AttentionCounts(signIns: 1))
+        #expect(AttentionSummaryText.breakdown(queue.counts(), locale: Locale(identifier: "en")) == ["1 Sign-in"])
+        #expect(AttentionSummaryText.breakdown(queue.counts(), locale: Locale(identifier: "ja")) == ["サインイン 1"])
+        #expect(queue.counts().hasBlockingItems)
+    }
+
     @Test func counts_onlyUnread_isNotBlocking() {
         var queue = AttentionQueue()
         let (unread, unreadKind) = Self.unread("a")

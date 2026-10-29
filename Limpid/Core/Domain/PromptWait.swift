@@ -10,6 +10,9 @@ import Foundation
 enum PromptWaitKind: String, Codable, Sendable {
     case approval
     case question
+    /// The agent cannot go on until the person signs in again, as only its
+    /// own status report says (OSC 7501).
+    case signIn
 }
 
 /// A wait at the agent's prompt that Limpid's approval service does not
@@ -31,6 +34,8 @@ enum PromptWait: Equatable, Sendable {
     /// The agent's own question, as its record says; its words, `nil` when
     /// it gave none.
     case question(detail: String?)
+    /// The agent waits for the person to sign in again.
+    case signIn
     /// A wait we cannot name, from a record that does not say: the agent's
     /// words, `nil` when it said nothing.
     case unclassified(detail: String?)
@@ -44,6 +49,8 @@ enum PromptWait: Equatable, Sendable {
             self = .question(detail: Self.words(detail).flatMap(Self.questionText))
         case .approval:
             self = .approval(PromptApproval(recorded: Self.words(detail), tool: Self.words(tool)))
+        case .signIn:
+            self = .signIn
         case nil:
             self.init(detail: detail)
         }
@@ -70,6 +77,7 @@ enum PromptWait: Equatable, Sendable {
         switch self {
         case let .approval(approval): approval.detail
         case let .question(detail), let .unclassified(detail): detail
+        case .signIn: nil
         }
     }
 

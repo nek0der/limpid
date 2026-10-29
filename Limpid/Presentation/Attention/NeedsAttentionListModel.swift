@@ -16,6 +16,9 @@ struct NeedsAttentionListModel: Equatable {
         /// A wait at the agent's prompt we cannot name as an approval or a
         /// question; it ranks with approvals.
         case response
+        /// The agent waits for the person to sign in again; it ranks with
+        /// approvals.
+        case signIn
         case stopped
         case unread
     }
@@ -193,6 +196,7 @@ struct NeedsAttentionListModel: Equatable {
         switch kind {
         case .approval, .prompt(.approval): .approval
         case .prompt(.unclassified): .response
+        case .prompt(.signIn): .signIn
         case .question, .prompt(.question): .question
         case .stop: .stopped
         case .unread: .unread

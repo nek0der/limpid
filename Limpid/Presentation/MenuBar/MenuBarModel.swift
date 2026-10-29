@@ -192,7 +192,8 @@ struct MenuBarModel: Equatable {
         case .approval, .question: isInPane ? .goesToPaneToAnswerInTerminal : .opensCard
         // A prompt wait is always in its pane; it has no card to open.
         case .response: isInPane ? .goesToPaneToAnswerInTerminal : .goesToPane
-        case .stopped, .unread: .goesToPane
+        // A sign-in is not answered, only done in the pane.
+        case .signIn, .stopped, .unread: .goesToPane
         }
     }
 }

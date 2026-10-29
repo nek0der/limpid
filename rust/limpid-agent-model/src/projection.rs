@@ -185,6 +185,10 @@ pub struct ProgramStatus {
     /// sent none.
     pub app: String,
     pub state: ProgramState,
+    /// What a blocked program waits on, when it said. Absent for every
+    /// other state, and for a block it gave no kind (a dialog of its own).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<BlockedKind>,
     /// ISO-8601 UTC, when the terminal forwarded the report.
     pub observed_at: String,
 }
@@ -201,6 +205,18 @@ pub enum ProgramState {
     /// Cannot go on until the person does something.
     Blocked,
     Error,
+}
+
+/// What a blocked program waits on, as the protocol names it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum BlockedKind {
+    /// Its leave to do something: a tool, a command, a change.
+    Permission,
+    /// An answer: its own question, or an MCP server's request for input.
+    Question,
+    /// A sign-in: its credentials were refused or ran out.
+    Auth,
 }
 
 /// Everything one projection pass reads.

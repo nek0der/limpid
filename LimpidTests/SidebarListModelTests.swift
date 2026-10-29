@@ -188,6 +188,7 @@ struct SidebarListModelTests {
     @Test(arguments: [
         (AttentionCounts(questions: 1), 0, [SessionRowFact.Glyph.needsAnswer]),
         (AttentionCounts(prompts: 1), 0, [.needsResponse]),
+        (AttentionCounts(signIns: 1), 0, [.needsSignIn]),
         (AttentionCounts(approvals: 1, questions: 1), 0, [.needsApproval]),
         (AttentionCounts(unread: 3), 0, []),
         (AttentionCounts(), 1, [.running]),

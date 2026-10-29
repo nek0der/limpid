@@ -130,6 +130,7 @@ struct SessionRowFactTests {
         AttachedCase(items: [.approval(ApprovalFact.test())], agents: [.idle], glyph: .needsApproval),
         AttachedCase(items: [.question(ApprovalFact.test(isQuestion: true))], agents: [.idle], glyph: .needsAnswer),
         AttachedCase(items: [.prompt(.unclassified(detail: nil))], agents: [.needsInput], glyph: .needsResponse),
+        AttachedCase(items: [.prompt(.signIn)], agents: [.needsInput], glyph: .needsSignIn),
         AttachedCase(items: [.stop(.processExited)], agents: [.error], glyph: .stopped),
         AttachedCase(items: [Self.unread], agents: [.finished], glyph: .unread),
         AttachedCase(items: [], agents: [.running], glyph: .running),

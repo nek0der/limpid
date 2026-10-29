@@ -133,6 +133,8 @@ struct DecisionBarContent: Equatable, Sendable {
         case question
         /// A wait at the agent's prompt we cannot name as either.
         case response
+        /// The agent waits for the person to sign in again.
+        case signIn
         case stop
     }
 
@@ -326,6 +328,7 @@ struct DecisionBarContent: Equatable, Sendable {
         // or question its record says, else a response.
         case .approval, .prompt(.approval): .approval
         case .prompt(.unclassified): .response
+        case .prompt(.signIn): .signIn
         case .question, .prompt(.question): .question
         case .stop: .stop
         case .unread: nil

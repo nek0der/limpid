@@ -373,7 +373,11 @@ reports `idle`. Our libghostty fork forwards each report about the program as
 a whole, and the app keeps each pane's latest (`PaneProgramStatusStore`) and
 hands it to every pass as `programStatus`, with the second the terminal
 forwarded it. A provider names the `app` its agent reports under
-(`ProviderDescriptor::program_status_app`, `claude-code`). A run that waits
+(`ProviderDescriptor::program_status_app`: `claude-code`, `codex`), and an
+idle report ends a turn only for a provider that says so
+(`Capability::ProgramStatusIdleStopsTurn`, Claude's alone): Codex ends every
+stop with a hook (`Interrupt`, `Stop`), and its idle can come before the
+hook. A run that waits
 inside a turn and whose pane last reported idle under that name, in or after
 the second its record last changed, has had its wait declined, and the
 transcript is not asked. Only the latest report counts, so an idle from
@@ -415,6 +419,40 @@ the record keeps the episode, so it is not announced once written either.
 Work is never read from the transcript: inside tmux, or with
 `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set, it ends with the idle prompt as
 before.
+
+Some waits send no hook at all, and only the report says them: a `blocked`
+report carries the kind it waits on (`kind=permission|question|auth`), which
+the fork forwards and the app hands on as `ProgramStatus::kind`. Both agents
+report `question` for an MCP server's request for input (an elicitation), and
+Codex also for a question it asked without stopping that is still open once
+its turn is over; both report `auth` when the person has to sign in again. A
+run whose pane last reported such a block, in or after the second its record
+last changed, waits (`NeedsInput`) on a question or a sign-in
+(`WaitKind::SignIn`), with no words of its own: the report carries the MCP
+server's name only in Claude's `msg`, which the fork does not forward. The
+record is not written; the next report (`working`, `idle`) ends the wait, and
+a second request in the same turn is announced again, since the badge left
+`NeedsInput` in between. A question a hook announced keeps its kind and words,
+and a `permission` block is ignored, as both agents announce it with
+`PermissionRequest`. An approval the record waits on gives way, though: no
+hook says it was answered, so on Codex 0.165, an MCP tool allowed at its
+prompt whose server then asks for input reports `blocked` (permission),
+`working`, then `blocked` (question), while the record still says the
+approval waits. A sign-in is
+never on a record, only on a badge. A pane's report is the agent's that runs
+there now, so it goes to one run per pane and provider, idle included: of the
+runs whose session has not ended (`unknown`) and whose process is not known
+to be dead, the one whose record changed last. A run killed with its pane open
+keeps its record while a resume claims it, and an ended run keeps its last
+wait; either would otherwise announce the new agent's wait a second time. Inside tmux, or with
+`CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set, these waits show as the work or rest
+the record says.
+
+Codex now names its `app`, so a title written in its pane while it reports
+its status is left off the tab, as Claude's are. The shim already turns
+Codex's own titles off (`tui.terminal_title=[]`), so the tab shows what it
+showed before. Codex 0.165 reports its status on every frame it draws while
+stdout is a terminal, whatever that setting is.
 
 The end snapshot the idle prompt takes runs before the record lock, so the
 hook judges the idle prompt again from the record under the lock and drops it

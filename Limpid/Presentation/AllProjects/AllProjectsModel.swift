@@ -20,7 +20,8 @@ struct AllProjectsModel: Equatable {
         /// hold it, and the card's glyph and line say what still runs.
         static func of(_ glyph: SessionRowFact.Glyph) -> Self {
             switch glyph {
-            case .needsAnswer, .needsApproval, .needsResponse, .stopped, .unread, .unreadWorkingAfterTurn: .needsAttention
+            case .needsAnswer, .needsApproval, .needsResponse, .needsSignIn, .stopped, .unread, .unreadWorkingAfterTurn:
+                .needsAttention
             case .running: .running
             case .idle, .workingAfterTurn, .unknown, .shell: .idle
             }

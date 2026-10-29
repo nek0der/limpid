@@ -310,7 +310,7 @@ private struct OpenTabsRow: View {
 
     private var detailColor: Color {
         switch row.item?.stateGlyph {
-        case .needsAnswer?, .needsApproval?, .needsResponse?: SupervisionTokens.waitingText.color
+        case .needsAnswer?, .needsApproval?, .needsResponse?, .needsSignIn?: SupervisionTokens.waitingText.color
         case .stopped?: SupervisionTokens.stoppedText.color
         default: SupervisionTokens.muted.color
         }

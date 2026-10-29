@@ -291,8 +291,21 @@ enum GhosttyActionRouter {
         return ProgramStatusReport(
             app: payload.app.map { String(cString: $0) } ?? "",
             recordID: payload.id.map { String(cString: $0) } ?? "",
-            state: state
+            state: state,
+            kind: programStatusKind(payload.kind)
         )
+    }
+
+    /// What a blocked program waits on, or `nil` when it said nothing
+    /// (`-1`) or named a kind this build does not know.
+    private static func programStatusKind(_ raw: Int8) -> ProgramStatusReport.Kind? {
+        guard raw >= 0 else { return nil }
+        switch ghostty_action_program_status_kind_e(rawValue: UInt32(raw)) {
+        case GHOSTTY_PROGRAM_STATUS_KIND_PERMISSION: return .permission
+        case GHOSTTY_PROGRAM_STATUS_KIND_QUESTION: return .question
+        case GHOSTTY_PROGRAM_STATUS_KIND_AUTH: return .auth
+        default: return nil
+        }
     }
 
     // MARK: - Target → SurfaceView

@@ -28,6 +28,12 @@ enum AttentionSummaryText {
                 comment: "Attention count by kind: waits at the agent's prompt that are neither a known approval nor a known question"
             ).resolved(in: locale))
         }
+        if counts.signIns > 0 {
+            parts.append(LocalizedStringResource(
+                "\(counts.signIns) Sign-in",
+                comment: "Attention count by kind: agents waiting for the person to sign in again"
+            ).resolved(in: locale))
+        }
         if counts.questions > 0 {
             parts.append(LocalizedStringResource("\(counts.questions) Question", comment: "Attention count by kind").resolved(in: locale))
         }

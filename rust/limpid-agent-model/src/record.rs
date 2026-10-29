@@ -97,6 +97,10 @@ impl RunState {
 pub enum WaitKind {
     Approval,
     Question,
+    /// The agent cannot go on until the person signs in again. No hook says
+    /// so; only the agent's own status report does (`ProgramStatus`), so no
+    /// record carries it, only a badge.
+    SignIn,
     /// A kind a newer writer added, read as no kind at all.
     #[serde(other)]
     Unknown,

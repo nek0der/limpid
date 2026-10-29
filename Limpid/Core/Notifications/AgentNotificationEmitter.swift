@@ -161,6 +161,7 @@ struct AgentNotificationEmitter {
         switch wait {
         case let .approval(approval): approval.fact != nil
         case let .question(detail), let .unclassified(detail): detail != nil
+        case .signIn: false
         }
     }
 
@@ -197,8 +198,8 @@ extension AgentKind {
 
     /// macOS notification title used when a pane starts to wait on the
     /// person, in the words the rows use for the wait (`PromptWait`): an
-    /// approval, a question, or a response we cannot name (also when the
-    /// wait is not known here).
+    /// approval, a question, a sign-in, or a response we cannot name (also
+    /// when the wait is not known here).
     func waitTitle(for wait: PromptWait?) -> LocalizedStringResource {
         let name = AgentProviderRegistry.displayName(for: self)
         return switch wait {
@@ -206,6 +207,8 @@ extension AgentKind {
             LocalizedStringResource("\(name) is waiting for approval", comment: "Notification title; the agent's name")
         case .question?:
             LocalizedStringResource("\(name) is asking a question", comment: "Notification title; the agent's name")
+        case .signIn?:
+            LocalizedStringResource("\(name) needs you to sign in", comment: "Notification title; the agent's name")
         case .unclassified?, nil:
             LocalizedStringResource("\(name) is waiting for a response", comment: "Notification title; the agent's name")
         }

@@ -3,6 +3,7 @@
 use super::*;
 use limpid_agent_model::{Focus, PaneLocation, ProjectionState, ProviderAdapter, TabPanes};
 
+mod reported_waits;
 mod run_records;
 mod sight;
 mod stopped_turns;
@@ -72,4 +73,30 @@ fn running() -> Vec<RecordFile> {
 
 fn codex() -> ProviderId {
     ProviderId::new("codex").expect("provider id")
+}
+
+/// Returns `input` with Claude's descriptor naming its OSC 7501 app
+/// (`claude-code`) and holding `capabilities`, and the run's pane last
+/// reporting `status` (a state and, for a block, its kind) at `at`.
+fn reported_status(
+    mut input: ProjectionInput,
+    capabilities: &[Capability],
+    app: &str,
+    status: (ProgramState, Option<BlockedKind>),
+    at: &str,
+) -> ProjectionInput {
+    let mut descriptor = ProviderDescriptor::fixture("claude", []);
+    descriptor.capabilities = capabilities.iter().copied().collect();
+    descriptor.program_status_app = Some("claude-code".to_owned());
+    input.providers.insert(claude(), descriptor);
+    input.program_status.insert(
+        PANE.parse().expect("pane"),
+        ProgramStatus {
+            app: app.to_owned(),
+            state: status.0,
+            kind: status.1,
+            observed_at: at.to_owned(),
+        },
+    );
+    input
 }

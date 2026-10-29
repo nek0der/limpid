@@ -290,6 +290,9 @@ struct AgentProjectionProgramStatus: Encodable, Equatable {
     var app: String
     /// `idle`, `working`, `done`, `blocked`, or `error`.
     var state: String
+    /// `permission`, `question`, or `auth`, what a blocked program waits on.
+    /// Optional because only a block carries one.
+    var kind: String?
     var observedAt: String
 }
 

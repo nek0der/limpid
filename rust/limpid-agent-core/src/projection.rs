@@ -15,11 +15,12 @@
 use crate::title::{TitleCandidates, TitleError, conversation_title, resolve_title};
 use crate::turn_rules::conversation_of;
 use limpid_agent_model::{
-    AcceptedRun, AttachmentResolution, AttentionMarks, Badge, Capability, Command, CommandOp,
-    ConversationKey, ConversationTurns, EpisodeStamp, Instants, Precondition, ProgramState,
-    Projection, ProjectionInput, ProjectionState, ProviderDescriptor, ProviderId, RecordFile,
-    RunRecord, RunState, RuntimePresentation, SessionInfo, SnapshotStatus, StopReason, Target,
-    TurnRecord, TurnSummary, VIEWED_FINISHED_RETENTION_SECS, parse_utc_seconds, seconds_between,
+    AcceptedRun, AttachmentResolution, AttentionMarks, Badge, BlockedKind, Capability, Command,
+    CommandOp, ConversationKey, ConversationTurns, EpisodeStamp, Instants, PidStatus, Precondition,
+    ProgramState, ProgramStatus, Projection, ProjectionInput, ProjectionState, ProviderDescriptor,
+    ProviderId, RecordFile, RunRecord, RunState, RuntimePresentation, SessionInfo, SnapshotStatus,
+    StopReason, Target, TurnRecord, TurnSummary, VIEWED_FINISHED_RETENTION_SECS, WaitKind,
+    parse_utc_seconds, seconds_between,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
@@ -231,10 +232,12 @@ fn build_runtimes(
     declined: &mut DeclinedWait<'_>,
     stopped_turns: &mut Vec<(String, StoppedBy)>,
 ) -> Vec<RuntimePresentation> {
+    let agents = pane_agents(&state.accepted, input);
     let mut runtimes: Vec<RuntimePresentation> = state
         .accepted
         .iter()
         .map(|(storage_id, run)| {
+            let is_pane_agent = agents.contains(storage_id.as_str());
             let capabilities = capabilities_of(input, &run.provider);
             let id = RuntimePresentation::identifier(
                 &run.provider,
@@ -251,9 +254,11 @@ fn build_runtimes(
             let badge = badge_from(&run.record, capabilities);
             let badge = if exited.contains(storage_id) {
                 exited_badge(badge)
-            } else if let Some(evidence) = stopped_turn(run, input, declined) {
+            } else if let Some(evidence) = stopped_turn(run, input, is_pane_agent, declined) {
                 stopped_turns.push((storage_id.clone(), evidence));
                 stopped_badge(badge, run.record.state)
+            } else if let Some(kind) = reported_wait(run, input, is_pane_agent) {
+                reported_wait_badge(badge, kind)
             } else {
                 badge
             };
@@ -590,6 +595,7 @@ enum StoppedBy {
 fn stopped_turn(
     run: &AcceptedRun,
     input: &ProjectionInput,
+    is_pane_agent: bool,
     declined: &mut DeclinedWait<'_>,
 ) -> Option<StoppedBy> {
     let record = &run.record;
@@ -599,7 +605,7 @@ fn stopped_turn(
         RunState::Running | RunState::Compacting if is_in_a_turn => false,
         _ => return None,
     };
-    if program_status_shows_idle(run, input) {
+    if program_status_shows_idle(run, input, is_pane_agent) {
         return Some(StoppedBy::ProgramStatus);
     }
     (is_waiting
@@ -610,35 +616,132 @@ fn stopped_turn(
     .then_some(StoppedBy::Transcript)
 }
 
-/// Returns whether the run's own pane last reported, under the name the
-/// provider gives its agent (`ProviderDescriptor::program_status_app`), that
-/// the agent is idle, and reported it no earlier than the second the record
-/// last changed. Only the pane's latest report counts, so an idle from
-/// before the turn is no evidence: Claude reports the turn's work as the
-/// prompt is sent, before its hook writes the record, and the wait before
-/// the record says the run waits. Reports carry no fraction of a second in
-/// the record's timestamp, so the same second counts.
-fn program_status_shows_idle(run: &AcceptedRun, input: &ProjectionInput) -> bool {
-    let Some(app) = input
+/// Returns whether the run's own pane last reported that the agent is idle
+/// (`current_program_status`), for a provider whose idle report during a
+/// turn is the person stopping it (`Capability::ProgramStatusIdleStopsTurn`).
+/// Claude reports the turn's work as the prompt is sent, before its hook
+/// writes the record, and the wait before the record says the run waits, so
+/// an idle from before the record's last change is no evidence.
+fn program_status_shows_idle(
+    run: &AcceptedRun,
+    input: &ProjectionInput,
+    is_pane_agent: bool,
+) -> bool {
+    let stops_turn = input
         .providers
         .get(&run.provider)
-        .and_then(|descriptor| descriptor.program_status_app.as_deref())
-    else {
-        return false;
-    };
-    let Ok(pane) = Uuid::parse_str(&run.record.pane_id) else {
-        return false;
-    };
-    let Some(status) = input.program_status.get(&pane) else {
-        return false;
-    };
-    let (Some(reported), Some(changed)) = (
-        parse_utc_seconds(&status.observed_at),
-        parse_utc_seconds(&run.record.updated_at),
-    ) else {
-        return false;
-    };
-    status.app == app && status.state == ProgramState::Idle && reported >= changed
+        .is_some_and(|descriptor| descriptor.has(Capability::ProgramStatusIdleStopsTurn));
+    stops_turn
+        && current_program_status(run, input, is_pane_agent)
+            .is_some_and(|status| status.state == ProgramState::Idle)
+}
+
+/// The run's own pane's latest report, under the name the provider gives its
+/// agent (`ProviderDescriptor::program_status_app`), when the run is the
+/// agent in that pane now (`pane_agents`) and the report came no earlier
+/// than the second the record last changed. Only the latest report counts,
+/// so one from before the record's last change is no evidence of what the
+/// agent does now. Reports carry no fraction of a second in the record's
+/// timestamp, so the same second counts.
+fn current_program_status<'a>(
+    run: &AcceptedRun,
+    input: &'a ProjectionInput,
+    is_pane_agent: bool,
+) -> Option<&'a ProgramStatus> {
+    if !is_pane_agent {
+        return None;
+    }
+    let app = input
+        .providers
+        .get(&run.provider)
+        .and_then(|descriptor| descriptor.program_status_app.as_deref())?;
+    let pane = Uuid::parse_str(&run.record.pane_id).ok()?;
+    let status = input.program_status.get(&pane)?;
+    let reported = parse_utc_seconds(&status.observed_at)?;
+    let changed = parse_utc_seconds(&run.record.updated_at)?;
+    (status.app == app && reported >= changed).then_some(status)
+}
+
+/// The storage ids of the runs that are their pane's agent now, one per pane
+/// and provider: a pane's status report is about the program running there,
+/// not every run its records still name. A run whose session ended
+/// (`Unknown`) or whose process is known to be dead is not it: a run killed
+/// with its pane open keeps its record while a resume claims it, and a new
+/// agent in the pane would otherwise have its wait announced again under the
+/// old run. Of the runs left, the one whose record changed last is the
+/// agent; the others are records of runs that went without a word.
+fn pane_agents<'a>(
+    accepted: &'a BTreeMap<String, AcceptedRun>,
+    input: &ProjectionInput,
+) -> BTreeSet<&'a str> {
+    let mut newest: BTreeMap<(&str, &ProviderId), (Option<u64>, &str)> = BTreeMap::new();
+    for (storage_id, run) in accepted {
+        let record = &run.record;
+        let is_dead = record
+            .pid
+            .as_deref()
+            .is_some_and(|pid| input.pid_status.get(pid) == Some(&PidStatus::Dead));
+        if record.state == RunState::Unknown || is_dead {
+            continue;
+        }
+        let changed = parse_utc_seconds(&record.updated_at);
+        let entry = newest
+            .entry((record.pane_id.as_str(), &run.provider))
+            .or_insert((changed, storage_id.as_str()));
+        if changed > entry.0 {
+            *entry = (changed, storage_id.as_str());
+        }
+    }
+    newest
+        .into_values()
+        .map(|(_, storage_id)| storage_id)
+        .collect()
+}
+
+/// The wait the agent's own status report shows and no hook announced: an
+/// MCP server's request for input, a question left after the turn, a
+/// sign-in. `None` for a block that asks the person's leave, which the
+/// agents announce with a hook (`PermissionRequest`), and while the record
+/// waits on a question its hook announced, which says more and keeps its
+/// words. A record waiting on an approval is no reason to keep it: no hook
+/// says the approval was answered, so a question or a sign-in reported since
+/// is what the agent waits on now (an MCP tool allowed at the agent's
+/// prompt, whose server then asks for input).
+fn reported_wait(
+    run: &AcceptedRun,
+    input: &ProjectionInput,
+    is_pane_agent: bool,
+) -> Option<WaitKind> {
+    let is_past_hook_wait = run.record.state != RunState::NeedsInput
+        || run.record.wait_kind == Some(WaitKind::Approval);
+    if !is_past_hook_wait {
+        return None;
+    }
+    let status = current_program_status(run, input, is_pane_agent)?;
+    if status.state != ProgramState::Blocked {
+        return None;
+    }
+    match status.kind? {
+        BlockedKind::Question => Some(WaitKind::Question),
+        BlockedKind::Auth => Some(WaitKind::SignIn),
+        BlockedKind::Permission => None,
+    }
+}
+
+/// Returns the badge of a run whose agent reported a wait no hook announced
+/// (`reported_wait`): it waits, on what the report says, with no words of
+/// its own, since the report carries none Limpid reads. The record is not
+/// written: the report is the evidence for as long as it is the pane's
+/// latest, and the agent's next report (working, idle) ends the wait.
+fn reported_wait_badge(badge: Badge, kind: WaitKind) -> Badge {
+    Badge {
+        state: RunState::NeedsInput,
+        detail: None,
+        wait_kind: Some(kind),
+        tool: None,
+        stop_reason: None,
+        ..badge
+    }
 }
 
 /// Returns the badge of a run whose turn the person stopped: the turn

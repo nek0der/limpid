@@ -205,30 +205,22 @@ impl ReplaceRecords for ProjectionInput {
     }
 }
 
-/// Returns `input` with Claude's descriptor naming its OSC 7501 app and the
-/// run's pane last reporting `state` at `at`.
+/// Returns `input` with Claude's descriptor naming its OSC 7501 app, as one
+/// whose idle report stops a turn, and the run's pane last reporting `state`
+/// at `at`.
 fn reported(
-    mut input: ProjectionInput,
+    input: ProjectionInput,
     app: &str,
     state: limpid_agent_model::ProgramState,
     at: &str,
 ) -> ProjectionInput {
-    let mut descriptor = input
-        .providers
-        .get(&claude())
-        .cloned()
-        .unwrap_or_else(|| limpid_agent_model::ProviderDescriptor::fixture("claude", []));
-    descriptor.program_status_app = Some("claude-code".to_owned());
-    input.providers.insert(claude(), descriptor);
-    input.program_status.insert(
-        PANE.parse().expect("pane"),
-        limpid_agent_model::ProgramStatus {
-            app: app.to_owned(),
-            state,
-            observed_at: at.to_owned(),
-        },
-    );
-    input
+    super::reported_status(
+        input,
+        &[limpid_agent_model::Capability::ProgramStatusIdleStopsTurn],
+        app,
+        (state, None),
+        at,
+    )
 }
 
 #[test]
@@ -400,6 +392,23 @@ fn work_the_person_stopped_shows_as_its_turn_stopped_and_announces_nothing() {
             .any(|command| matches!(command.op, CommandOp::Notify(_))),
         "the record saying what the badge said is no news"
     );
+}
+
+#[test]
+fn an_idle_report_stops_no_turn_for_a_provider_whose_stops_end_with_a_hook() {
+    use limpid_agent_model::ProgramState;
+    // A provider without the capability, as Codex: its `Stop` and
+    // `Interrupt` end every turn, and its idle can come before them.
+    let input = super::reported_status(
+        working(r#","stateEpisodeToken":"5""#),
+        &[],
+        "claude-code",
+        (ProgramState::Idle, None),
+        "2026-09-14T12:03:05Z",
+    );
+    let (_, projection, commands, _) = pass(&ProjectionState::default(), &input, false);
+    assert_eq!(projection.runtimes[0].badge.state, RunState::Running);
+    assert!(stopped_turn_ends(&commands).is_empty());
 }
 
 #[test]

@@ -136,6 +136,8 @@ struct LiveLocaleTests {
         #expect(AgentKind.claude.waitTitle(for: .question(detail: nil)).resolved(in: en) == "Claude Code is asking a question")
         #expect(AgentKind.claude.waitTitle(for: .unclassified(detail: nil)).resolved(in: ja) == "Claude Code が応答を待っています")
         #expect(AgentKind.claude.waitTitle(for: nil).resolved(in: en) == "Claude Code is waiting for a response")
+        #expect(AgentKind.codex.waitTitle(for: .signIn).resolved(in: en) == "Codex needs you to sign in")
+        #expect(AgentKind.codex.waitTitle(for: .signIn).resolved(in: ja) == "Codex のサインインが必要です")
         #expect(AgentKind.claude.finishedTitle.resolved(in: ja) == "Claude Code がターンを完了しました")
         #expect(AgentKind.claude.finishedTitle.resolved(in: en) == "Claude Code finished a turn")
         #expect(AgentKind.claude.stoppedTitle.resolved(in: ja) == "Claude Code が停止しました")

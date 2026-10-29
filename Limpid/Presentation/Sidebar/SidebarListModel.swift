@@ -39,6 +39,8 @@ struct SidebarProjectHeader: Identifiable, Equatable {
             .needsAnswer
         } else if counts.prompts > 0 {
             .needsResponse
+        } else if counts.signIns > 0 {
+            .needsSignIn
         } else {
             nil
         }

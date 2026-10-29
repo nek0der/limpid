@@ -27,6 +27,8 @@ struct StateGlyph: View {
         /// A wait at the agent's prompt we cannot name as an approval or a
         /// question.
         case needsResponse
+        /// The agent waits for the person to sign in again.
+        case needsSignIn
         case stopped
         case unread
         /// An unread turn whose run still has work running after it.
@@ -45,6 +47,10 @@ struct StateGlyph: View {
             case .needsResponse: LocalizedStringResource(
                     "Needs response",
                     comment: "State: a wait at the agent's prompt that cannot be named as an approval or a question"
+                )
+            case .needsSignIn: LocalizedStringResource(
+                    "Needs sign-in",
+                    comment: "State: the agent cannot go on until the person signs in again"
                 )
             case .stopped: LocalizedStringResource("Stopped", comment: "State: the agent stopped (an error, an exit, a limit)")
             case .unread: LocalizedStringResource("Unread", comment: "State: a finished turn not read yet")
@@ -115,7 +121,7 @@ struct StateGlyphFace: View {
 
     @ViewBuilder private var glyph: some View {
         switch kind {
-        case .needsApproval, .needsAnswer, .needsResponse:
+        case .needsApproval, .needsAnswer, .needsResponse, .needsSignIn:
             disc(SupervisionTokens.waitingGlyph, edge: SupervisionTokens.waitingGlyphEdge) {
                 StateGlyphQuestionMark(geometry: geometry)
                     .stroke(
