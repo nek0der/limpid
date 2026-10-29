@@ -125,6 +125,7 @@ release that came just before the change being described.
 | `ended-session-hints.json` | new | — |
 | `turn-deletions.json` | new | — |
 | `restore-pending-stops.json` | new | — |
+| `usage/claude.json` | new: Claude Code's plan usage as its status line last reported it, for the usage panel | — |
 | `pane-path-<project ID>.txt` | new: the `PATH` the last shell of a pane of that project ended up with, where an agent is looked up for that project | — |
 | Codex's `~/.codex/config.toml` (the person's own) | our tables and markers are taken out | none |
 | Refs and files in each repository's Git directory | new, and one no longer written | — |

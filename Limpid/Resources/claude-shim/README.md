@@ -34,6 +34,15 @@ across app restarts, badge agent state, and re-route
   passes as `--settings`. Not in this directory in the source tree: it
   belongs to the provider crate that owns its shape, and the build copies it
   in beside the shim.
+- The status line. When the person has a status line of their own, the
+  shim puts the Hook Helper's `statusline claude` in Claude Code's
+  `statusLine` slot, with their options (`padding`) carried over. Claude
+  Code hands its status line the plan's usage (`rate_limits`), and nowhere
+  else gives it out: the relay writes it to `$LIMPID_USAGE_DIR/claude.json`
+  for the usage panel, then becomes their own status line (`sh -c`) on the
+  same input, which it finds the way Claude Code would, by settings
+  precedence. Without one of theirs the slot stays empty, since Claude Code
+  keeps a row even for a status line that prints nothing.
 - `zdotdir/` — zsh startup files that source the user's own first, then
   put the shim directories back at the front of `PATH`. Without them, a
   user's `export PATH="/opt/homebrew/bin:$PATH"` buries the shim and
@@ -56,6 +65,8 @@ sets them:
 | `LIMPID_SESSIONS_DIR` | Directory to write session records into |
 | `LIMPID_AGENT_STATES_DIR` | Directory to write agent-state records into |
 | `LIMPID_CWD_EVENTS_DIR` | Directory to write cwd-change records into |
+| `LIMPID_USAGE_DIR` | Directory the status line relay writes the plan usage into |
+| `LIMPID_CLAUDE_USER_SETTINGS` | Set by the shim: the person's own `--settings` value (inline JSON or an absolute path), which our flag replaced, so the status line relay finds their status line in it. Unset at the shim's start, so a nested `claude` does not take its parent's |
 | `LIMPID_REAL_CLAUDE` | Optional override path to the real `claude`, taken before any search (a test's stub) |
 | `LIMPID_FOUND_CLAUDE` | The `claude` the new worktree sheet found, from the login shell's `PATH`, the known locations, or the last `PATH` a pane of the same project had, in that order (`AgentCatalog.detectInstallations`). Given only to the shell of the pane that the sheet's launch starts (`WorkspaceSession.StagedLaunch`), never to a restored one. The shim takes it when that pane's own `PATH` has no `claude`, before the known locations, while it still names an executable file, and removes it from what it hands on, so the agent and a tmux server never carry it. The pane's shell keeps it until the pane closes, as the same fallback for a later `claude` typed there |
 | `LIMPID_CLAUDE_KNOWN_LOCATIONS` | Newline-separated places to look when the `PATH` has no `claude`, in order; one may hold a `*`. The agent catalog's list (`AgentCatalog.knownLocationsEnvironment`), so what the new worktree sheet offers is what the shim finds. A `*` folder is tried newest version first. The folder of an agent found off the `PATH`, here or through `LIMPID_FOUND_CLAUDE`, goes at the end of `PATH`; when it is a `#!/usr/bin/env node` script with a `node` beside it (an npm install under nvm), the shim starts it on that `node` rather than the first on `PATH` (`limpid_find_known_agent` and `limpid_node_beside` in `agent-shim/runtime-common.sh`) |

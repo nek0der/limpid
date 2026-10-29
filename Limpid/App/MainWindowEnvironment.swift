@@ -33,6 +33,7 @@ extension View {
         .environment(state.windowRegistry)
         .environment(state.tmuxPresence)
         .environment(state.historyStore)
+        .environment(state.planUsageStore)
         .environment(state.dragState)
         .environment(state.toastCenter)
         .environment(state.primaryKeyHint)

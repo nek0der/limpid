@@ -77,6 +77,10 @@ pub(crate) fn install_recipe() -> InstallRecipe {
                 name: "LIMPID_CLAUDE_HOOK_NAMESPACE".to_owned(),
                 value: RecipePlaceholder::BundleId,
             },
+            RecipeVariable {
+                name: "LIMPID_USAGE_DIR".to_owned(),
+                value: RecipePlaceholder::UsageDirectory,
+            },
         ],
         settings_fragments: vec![SettingsFragment {
             target: "claude.settings".to_owned(),

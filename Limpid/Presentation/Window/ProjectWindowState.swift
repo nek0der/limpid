@@ -209,7 +209,7 @@ final class ProjectWindowState: Identifiable {
     /// rail's button. Each window has its own, so the panel opens beside the
     /// control in the window it was asked from. `nil` until the control has
     /// been laid out.
-    var historyAnchor: NotificationHistoryAnchor?
+    var historyAnchor: RailPanelAnchor?
     /// The notification history's sources opened past their fold. Held by
     /// the window rather than the panel's view, so a panel the overlay
     /// rebuilds keeps them; the overlay folds them again as the panel
@@ -251,6 +251,9 @@ final class ProjectWindowState: Identifiable {
     /// Whether this window's notification history is open; what it lists
     /// is shared (`NotificationHistoryStore`).
     let notificationHistory = NotificationHistoryPresentation()
+    /// Whether this window's plan usage panel is open, and the rail button
+    /// it hangs from; what it shows is shared (`PlanUsageStore`).
+    let planUsage = PlanUsagePresentation()
     /// Whether this window's keyboard shortcuts panel is up: it opens in the
     /// window it was asked in, not in every window.
     let keyboardShortcuts = KeyboardShortcutPresentation()
@@ -635,6 +638,7 @@ enum WindowLayer: CaseIterable, Hashable {
     case palette
     case titleBarMenu
     case notificationHistory
+    case planUsage
     case allProjects
     case keyboardShortcuts
 
@@ -665,6 +669,7 @@ extension ProjectWindowState {
             (.palette, session.commandPaletteState?.windowID == id),
             (.titleBarMenu, titleBarMenu != nil),
             (.notificationHistory, notificationHistory.isPresented),
+            (.planUsage, planUsage.isPresented),
             (.allProjects, isAllProjectsPresented),
             (.keyboardShortcuts, keyboardShortcuts.isPresented)
         ]
@@ -690,6 +695,17 @@ extension ProjectWindowState {
         }
     }
 
+    /// Opens the plan usage panel, closing every other layer first, as one
+    /// layer is open at a time; or closes it when it is open.
+    func togglePlanUsage(session: WorkspaceSession) {
+        guard !planUsage.isPresented else {
+            planUsage.isPresented = false
+            return
+        }
+        closeLayers(Set(WindowLayer.allCases).subtracting([.planUsage]), session: session)
+        planUsage.isPresented = true
+    }
+
     /// Closes `layers` where they are open. Each is written only when it
     /// changes, so an observer of a closed layer is not woken.
     func closeLayers(_ layers: Set<WindowLayer>, session: WorkspaceSession) {
@@ -701,6 +717,9 @@ extension ProjectWindowState {
         }
         if layers.contains(.notificationHistory), notificationHistory.isPresented {
             notificationHistory.isPresented = false
+        }
+        if layers.contains(.planUsage), planUsage.isPresented {
+            planUsage.isPresented = false
         }
         closeWindowOverlays(layers)
     }

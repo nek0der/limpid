@@ -204,12 +204,19 @@ struct ClaudeShimScriptTests {
     /// Codex's are in its suite; what is Claude's alone besides is that
     /// our `--settings` survives the wrap.
     /// `underPTY: false` is the launch whose output is not a terminal.
+    /// `files`, when given, are written into the temporary folder, and the
+    /// shim then runs there, so a relative path in `args` or `environment`
+    /// names one of them.
     private func runShimHosted(
         _ args: [String],
         environment: [String: String] = [:],
+        files: [String: String] = [:],
         underPTY: Bool = true
     ) throws -> HostedRun {
         try withTempDir { dir in
+            for (name, contents) in files {
+                try contents.write(to: dir.appendingPathComponent(name), atomically: true, encoding: .utf8)
+            }
             let claudeArgv = dir.appendingPathComponent("claude.argv")
             let tmuxArgv = dir.appendingPathComponent("tmux.argv")
             let claudeStub = dir.appendingPathComponent("fake-claude")
@@ -232,7 +239,13 @@ struct ClaudeShimScriptTests {
                 "LIMPID_PANE_ID": "547D688D-39DF-4A06-BD6F-316C3385532C"
             ]) { _, new in new }
             shimEnvironment.merge(environment) { _, new in new }
-            try ShimHarness.run(ShimHarness.shim("claude"), args, environment: shimEnvironment, underPTY: underPTY)
+            try ShimHarness.run(
+                ShimHarness.shim("claude"),
+                args,
+                environment: shimEnvironment,
+                underPTY: underPTY,
+                currentDirectory: files.isEmpty ? nil : dir
+            )
 
             func argv(_ url: URL) -> [String] {
                 ShimHarness.recordedArgv(url) ?? []
@@ -327,6 +340,47 @@ struct ClaudeShimScriptTests {
         #expect(!handover.tmux.isEmpty)
         #expect(handover.tmuxSawFound == "unset")
         #expect(!handover.tmux.contains { $0.hasPrefix("LIMPID_FOUND_") })
+    }
+
+    /// A tmux session starts in a folder of its own, so a relative value
+    /// would name another folder there, and one left out would be the tmux
+    /// server's, the first pane's account rather than this pane's.
+    @Test("passes the pane's Claude account into tmux, made absolute")
+    func hostedLaunch_passesTheAccountMadeAbsolute() throws {
+        let handover = try runShimHosted(
+            [],
+            environment: ["CLAUDE_CONFIG_DIR": "relative/config"],
+            files: ["placeholder": ""]
+        )
+        let value = try #require(handover.tmux.first { $0.hasPrefix("CLAUDE_CONFIG_DIR=") })
+        #expect(value.hasPrefix("CLAUDE_CONFIG_DIR=/"))
+        #expect(value.hasSuffix("/relative/config"))
+
+        let unset = try runShimHosted([])
+        #expect(zip(unset.tmux, unset.tmux.dropFirst()).contains { $0 == ("-u", "CLAUDE_CONFIG_DIR") })
+    }
+
+    /// The status line relay finds the person's own status line in the
+    /// settings they launched with, which our flag replaced.
+    @Test("passes the person's settings into tmux for the status line relay")
+    func hostedLaunch_passesThePersonsSettings() throws {
+        let file = try runShimHosted(
+            ["--resume", "abc", "--settings", "mine.json"],
+            files: ["mine.json": #"{"model":"opus"}"#]
+        )
+        let value = try #require(file.tmux.first { $0.hasPrefix("LIMPID_CLAUDE_USER_SETTINGS=") })
+        #expect(value.hasPrefix("LIMPID_CLAUDE_USER_SETTINGS=/"))
+        #expect(value.hasSuffix("/mine.json"))
+
+        // Inline JSON is passed as written, blanks before it included, and
+        // merged as JSON rather than read as a file of that name.
+        let inline = "  \n {\"model\":\"opus\"}"
+        let handover = try runShimHosted(["--resume", "abc", "--settings", inline])
+        #expect(handover.tmux.contains("LIMPID_CLAUDE_USER_SETTINGS=\(inline)"))
+        let settings = try #require(handover.tmux.firstIndex(of: "--settings"))
+        let payload = try JSONSerialization.jsonObject(with: Data(handover.tmux[settings + 1].utf8)) as? [String: Any]
+        #expect(payload?["model"] as? String == "opus")
+        #expect(payload?["hooks"] != nil)
     }
 
     @Test("passes an emptied record directory into tmux as empty")

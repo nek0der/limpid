@@ -114,6 +114,7 @@ struct WindowChromeHost: ViewModifier {
             .overlay { PRHoverCardHost() }
             .overlay { FloatingPanelLayer() }
             .overlay { NotificationHistoryOverlay(state: state) }
+            .overlay { PlanUsageOverlay(state: state) }
             // Under the approval card, which an "Answer…" on it opens.
             .overlay { AllProjectsOverlay(state: state) }
             // A pending OSC 52 confirmation always wins: the panel closes

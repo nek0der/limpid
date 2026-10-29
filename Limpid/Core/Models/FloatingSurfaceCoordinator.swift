@@ -23,6 +23,7 @@ enum FloatingSurfaceKind: Hashable, CaseIterable {
     /// not a surface here: it stays on screen but holds nothing back.
     case approvalCard
     case notificationHistory
+    case planUsage
     case prCard
     case review
     /// One of the supervision title bar's dropdowns (project, worktree, the
@@ -48,7 +49,7 @@ enum FloatingSurfaceKind: Hashable, CaseIterable {
     /// commits when it loses it.
     var makesPanelsGiveWay: Bool {
         switch self {
-        case .commandPalette, .approvalCard, .notificationHistory, .review, .titleBarMenu: true
+        case .commandPalette, .approvalCard, .notificationHistory, .planUsage, .review, .titleBarMenu: true
         default: false
         }
     }
@@ -152,7 +153,7 @@ struct FloatingSurfaceCoordinator {
                 containerColor.close()
             case .titleBarMenu:
                 closeTitleBarMenu()
-            case .commandPalette, .approvalCard, .notificationHistory, .prCard, .review:
+            case .commandPalette, .approvalCard, .notificationHistory, .planUsage, .prCard, .review:
                 // Never in the closing set: these are the app's own
                 // surfaces, which close by their own controls.
                 break

@@ -1,11 +1,12 @@
 //! The contract a provider crate implements.
 
 use crate::{
-    AgentEvent, ApprovalDecision, ApprovalRequest, EventId, InstallRecipe, ProviderDescriptor,
-    Titles, TurnUsage, WorktreeIntent,
+    AgentEvent, ApprovalDecision, ApprovalRequest, EventId, InstallRecipe, PlanUsage,
+    PlanUsageAnswer, ProviderDescriptor, Titles, TurnUsage, WorktreeIntent,
 };
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 use uuid::Uuid;
 
 /// Longest hook payload an adapter accepts, matching the protocol's client
@@ -69,6 +70,50 @@ pub enum NormalizeError {
 /// adapter reads no file itself.
 pub type ListDirectory<'a> = dyn Fn(&Path) -> Vec<PathBuf> + 'a;
 
+/// Where one settings document comes from, as a provider lists them for its
+/// status line, highest precedence first. The adapter names the places; the
+/// runtime reads them, since an adapter reads no file itself.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SettingsSource {
+    /// A file at a fixed path.
+    File(PathBuf),
+    /// A file of this name in the provider's configuration directory
+    /// (`ProviderAdapter::home_directory_variable`, else the default home).
+    HomeFile(&'static str),
+    /// The settings the person passed at launch, which the shim moved into
+    /// this variable because its own flag took their place: inline JSON, or
+    /// the absolute path of a file.
+    LaunchVariable(&'static str),
+}
+
+/// A provider that hands its status line the plan's usage, and whose status
+/// line Limpid can take over while still running the person's own in it.
+pub trait StatusLineAdapter: Send + Sync {
+    /// The plan usage the status line input reports; `None` when it reports
+    /// none.
+    fn plan_usage(&self, input: &[u8], now: SystemTime) -> Option<PlanUsage>;
+
+    /// The folder whose project settings apply to the session the input
+    /// describes.
+    fn project_directory(&self, input: &[u8]) -> Option<PathBuf>;
+
+    /// The settings documents that can set a status line, highest
+    /// precedence first, for a session in `project`.
+    fn settings_sources(&self, project: Option<&Path>) -> Vec<SettingsSource>;
+
+    /// The person's own status line among `layers`, read from
+    /// `settings_sources` in the same order (`None` for one that is absent or
+    /// unreadable): the one the provider would run without us.
+    fn user_status_line(&self, layers: &[Option<Value>]) -> Option<Map<String, Value>>;
+
+    /// The shell command a status line setting runs.
+    fn command<'a>(&self, status_line: &'a Map<String, Value>) -> Option<&'a str>;
+
+    /// The setting the provider is launched with: the person's own status
+    /// line with `relay_command` in place of theirs.
+    fn relay(&self, user: &Map<String, Value>, relay_command: &str) -> Value;
+}
+
 /// A provider is one implementation of this trait plus recorded fixtures.
 pub trait ProviderAdapter: Send + Sync {
     /// Identity, capabilities, timing, and directory names.
@@ -89,6 +134,21 @@ pub trait ProviderAdapter: Send + Sync {
     /// before the agent starts.
     fn home_directory_variable(&self) -> Option<&'static str> {
         None
+    }
+
+    /// The provider's status line, when it hands it the plan's usage. `None`
+    /// for a provider without one, whose usage is asked for instead
+    /// (`plan_usage_answer`).
+    fn status_line(&self) -> Option<&dyn StatusLineAdapter> {
+        None
+    }
+
+    /// Reads the provider's answer to a plan usage request, for a provider
+    /// whose usage is asked for (Codex, through its app server). A provider
+    /// that is not asked reads nothing.
+    fn plan_usage_answer(&self, answer: &[u8], now: SystemTime) -> PlanUsageAnswer {
+        let _ = (answer, now);
+        PlanUsageAnswer::Unreadable
     }
 
     /// Maps one hook payload to neutral events. Unknown event names become

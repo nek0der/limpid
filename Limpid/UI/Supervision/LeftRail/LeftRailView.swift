@@ -1,5 +1,5 @@
 // LeftRailView.swift
-// Limpid — the left tool window bar: sessions, all projects, history; update, shortcuts, and Settings below.
+// Limpid — the left tool window bar: sessions, all projects, history; update, plan usage, shortcuts, and Settings below.
 
 import Sparkle
 import SwiftUI
@@ -7,9 +7,9 @@ import SwiftUI
 /// The left rail: the entries to what does not depend on the current
 /// session. Its top holds what the work uses (the sessions sidebar, all
 /// projects, the notification history); its bottom, help and app-wide
-/// entries (an update when there is one, the keyboard shortcuts,
-/// Settings), with space between the two. Icons only, each named by its
-/// tooltip and VoiceOver label.
+/// entries (an update when there is one, the agents' plan usage, the
+/// keyboard shortcuts, Settings), with space between the two. Icons only,
+/// each named by its tooltip and VoiceOver label.
 struct LeftRailView: View {
     @Environment(WorkspaceSession.self) private var session
     @Environment(SettingsStore.self) private var settings
@@ -20,10 +20,15 @@ struct LeftRailView: View {
     @Environment(\.sparkleUpdater) private var updater
     @Environment(\.openWindow) private var openWindow
     @Environment(\.locale) private var locale
-    /// The history control's frame and the rail's top, in global
-    /// coordinates: the panel opens beside the one, level with the other.
+    /// The history control's frame, in global coordinates: its panel opens
+    /// beside it, level with the rail's top.
     @State private var historyButtonFrame: CGRect = .zero
-    @State private var railTop: CGFloat = 0
+    /// The plan usage control's frame, in the same coordinates: its panel
+    /// opens beside it.
+    @State private var usageButtonFrame: CGRect = .zero
+    /// The rail's own frame: it runs the body's height, so its top and
+    /// bottom are the columns'.
+    @State private var railFrame: CGRect = .zero
 
     var body: some View {
         RailColumn {
@@ -62,7 +67,7 @@ struct LeftRailView: View {
             }
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
                 historyButtonFrame = frame
-                anchorHistory()
+                anchorPanels()
             }
         } bottom: {
             // Only while there is something to say about an update, so
@@ -70,6 +75,11 @@ struct LeftRailView: View {
             if updateState.showsBadge, let updater {
                 RailUpdateButton(updater: updater)
             }
+            RailPlanUsageButton()
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                    usageButtonFrame = frame
+                    anchorPanels()
+                }
             RailButton(systemImage: "keyboard", name: "Keyboard Shortcuts", shortcut: shortcut(.keyboardShortcuts)) {
                 window.commands.send(.toggleKeyboardShortcuts)
             }
@@ -79,15 +89,25 @@ struct LeftRailView: View {
                 openWindow(id: LimpidApp.settingsWindowID)
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
-            railTop = top
-            anchorHistory()
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+            railFrame = frame
+            anchorPanels()
         }
     }
 
-    /// The rail runs the body's height, so its top is the columns' top.
-    private func anchorHistory() {
-        window.historyAnchor = NotificationHistoryAnchor(frame: historyButtonFrame, columnTop: railTop)
+    /// The rail runs the body's height, so its top and bottom are the
+    /// columns'.
+    private func anchorPanels() {
+        window.historyAnchor = RailPanelAnchor(
+            frame: historyButtonFrame,
+            columnTop: railFrame.minY,
+            columnBottom: railFrame.maxY
+        )
+        window.planUsage.anchor = RailPanelAnchor(
+            frame: usageButtonFrame,
+            columnTop: railFrame.minY,
+            columnBottom: railFrame.maxY
+        )
     }
 
     private func shortcut(_ action: LimpidShortcutAction) -> String? {
@@ -194,16 +214,24 @@ struct RailBadgeMark: View {
                 .fixedSize()
                 .offset(y: 1)
         case .dot:
-            let dot = LimpidLayout.Supervision.notificationUnreadDotSize
-            // How far the ringed dot's corner sits inside a ringed count's.
-            let inset = (LimpidLayout.Supervision.railBadgeSize - dot) / 2 - ring
-            Circle()
-                .fill(SupervisionTokens.unread.color)
-                .frame(width: dot, height: dot)
-                .padding(ring)
-                .background(Circle().fill(.black).blendMode(.destinationOut))
-                .offset(x: -inset, y: 1 + inset)
+            dot(color: SupervisionTokens.unread.color, size: LimpidLayout.Supervision.notificationUnreadDotSize)
+        case .usage(isAtLimit: false):
+            dot(color: SupervisionTokens.waiting.color, size: LimpidLayout.Supervision.notificationUnreadDotSize)
+        case .usage(isAtLimit: true):
+            dot(color: SupervisionTokens.stopped.color, size: LimpidLayout.Supervision.usageLimitDotSize)
         }
+    }
+
+    private func dot(color: Color, size: CGFloat) -> some View {
+        let ring = LimpidLayout.Supervision.railBadgeRingWidth
+        // How far the ringed dot's corner sits inside a ringed count's.
+        let inset = (LimpidLayout.Supervision.railBadgeSize - size) / 2 - ring
+        return Circle()
+            .fill(color)
+            .frame(width: size, height: size)
+            .padding(ring)
+            .background(Circle().fill(.black).blendMode(.destinationOut))
+            .offset(x: -inset, y: 1 + inset)
     }
 }
 

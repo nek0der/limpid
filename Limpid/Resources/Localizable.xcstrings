@@ -22304,6 +22304,178 @@
           }
         }
       }
+    },
+    "Plan Usage": {
+      "comment": "The rail button and panel that show how much of each agent's plan limits is used",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プラン使用量"
+          }
+        }
+      }
+    },
+    "Near a limit": {
+      "comment": "Plan usage rail mark: a limit window is at 80% or more",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上限が近い"
+          }
+        }
+      }
+    },
+    "At a limit": {
+      "comment": "Plan usage rail mark: a limit window is used up",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上限に到達"
+          }
+        }
+      }
+    },
+    "Reading…": {
+      "comment": "Plan usage panel, Codex section while Codex is being asked",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取得中…"
+          }
+        }
+      }
+    },
+    "Codex was not found.": {
+      "comment": "Plan usage panel, Codex section when no codex executable is installed",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex が見つかりませんでした。"
+          }
+        }
+      }
+    },
+    "Codex’s usage could not be read.": {
+      "comment": "Plan usage panel, Codex section when Codex did not answer or answered with an error",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex の使用量を取得できませんでした。"
+          }
+        }
+      }
+    },
+    "usage.window.reset": {
+      "comment": "Plan usage panel: the window's reset time has passed, so its usage starts over",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reset"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リセット済み"
+          }
+        }
+      }
+    },
+    "%lld%% used": {
+      "comment": "Plan usage window, VoiceOver value; argument: the whole percent used",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld%% 使用済み"
+          }
+        }
+      }
+    },
+    "Resets %@": {
+      "comment": "Plan usage window; argument: when it resets, the time today or the weekday and time (3:40 PM, Tue 9:00 AM)",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ にリセット"
+          }
+        }
+      }
+    },
+    "Codex reported no plan usage. Sign in to Codex with ChatGPT to see it.": {
+      "comment": "Plan usage panel, Codex section when Codex answers with no plan (an API key, or signed out)",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex からプランの使用量が返されませんでした。Codex に ChatGPT でサインインすると表示されます。"
+          }
+        }
+      }
+    },
+    "Claude’s values are as of its last reply.": {
+      "comment": "Plan usage panel, under Claude's values: they are only as fresh as its last reply",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Claude の値は最後の応答時点のものです。"
+          }
+        }
+      }
+    },
+    "Reset credits left: %lld": {
+      "comment": "Plan usage panel, Codex section: how many limit resets the account may still spend",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リセット権 残り %lld 回"
+          }
+        }
+      }
+    },
+    "Reset credits left: %lld (until %@)": {
+      "comment": "Plan usage panel, Codex section: limit resets the account may still spend, and when the first lapses (10/30, 3:47 AM)",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リセット権 残り %lld 回（%@ まで）"
+          }
+        }
+      }
+    },
+    "Shows once Claude on a Pro or Max plan replies. Needs a status line of your own (set one with /statusline).": {
+      "comment": "Plan usage panel, Claude Code section before any usage was reported; /statusline is a command name",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pro または Max プランの Claude が応答すると表示されます。ステータスライン（/statusline で設定）が必要です。"
+          }
+        }
+      }
+    },
+    "%@ limit": {
+      "comment": "Plan usage window of a length with no name of its own; argument: the length (1d, 12h)",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ の上限"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

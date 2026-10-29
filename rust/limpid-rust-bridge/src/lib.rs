@@ -2,12 +2,14 @@
 
 #[cfg(test)]
 mod contract_tests;
+mod frame;
 mod projection;
 mod providers;
 mod restore;
 #[cfg(test)]
 mod test_support;
 mod turns;
+mod usage;
 
 pub use projection::{
     limpid_projection_engine_commit_v1, limpid_projection_engine_create_v1,
@@ -26,6 +28,10 @@ pub use restore::{
     limpid_restore_undo_v1,
 };
 pub use turns::{limpid_stopped_turn_end_v1, limpid_turn_gc_apply_v1, limpid_turn_result};
+pub use usage::{
+    limpid_plan_usage_answer_v1, limpid_status_line_run_v1, limpid_status_line_setting_v1,
+    limpid_usage_result,
+};
 
 use limpid_agent_core::{
     MAX_FIRST_PROMPT_BYTES, MAX_TITLE_BYTES, Principal, RunId, TitleCandidates, TitleError,

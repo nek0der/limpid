@@ -4,5 +4,6 @@
   "worktreeRoutingFileName": "worktree-routing.json",
   "paneIdentifierVariable": "LIMPID_PANE_ID",
   "atWorkStates": ["running", "needsInput", "compacting"],
-  "notAtWorkStates": ["idle", "finished", "error", "unknown"]
+  "notAtWorkStates": ["idle", "finished", "error", "unknown"],
+  "claudeStatusLineRelayArguments": "statusline claude"
 }

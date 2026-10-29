@@ -15,7 +15,7 @@
 //! no time rather than no limit.
 
 use crate::json::string;
-use limpid_agent_model::{UsageLimit, format_utc_seconds};
+use limpid_agent_model::{PlanUsageWindow, UsageLimit, format_utc_seconds};
 use serde_json::{Map, Value};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -135,19 +135,9 @@ fn reached_window(rate_limits: &Value) -> Option<UsageLimit> {
             window: window
                 .get("window_minutes")
                 .and_then(Value::as_u64)
-                .and_then(window_name)
+                .and_then(PlanUsageWindow::kind_for_minutes)
                 .map(str::to_owned),
         })
-}
-
-/// Codex's windows by length, in the names Claude gives the same ones, so
-/// the interface words them once.
-fn window_name(minutes: u64) -> Option<&'static str> {
-    match minutes {
-        300 => Some("five_hour"),
-        10_080 => Some("seven_day"),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

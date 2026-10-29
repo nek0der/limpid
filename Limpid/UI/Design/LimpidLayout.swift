@@ -772,6 +772,15 @@ enum LimpidLayout {
         /// stands off the icon under it.
         static let railBadgeSize: CGFloat = 15
         static let railBadgeRingWidth: CGFloat = 2
+        /// A panel that opens beside the rail from its bottom group: the
+        /// update popover and the plan usage panel, one width for both.
+        static let railPanelWidth: CGFloat = 340
+        /// A limit window's bar: thick enough to read its share at a glance,
+        /// thin enough to stay under the number beside it.
+        static let usageBarHeight: CGFloat = 6
+        /// The rail's mark for a window at its limit: a step larger than the
+        /// near-limit dot, so the two differ by more than hue.
+        static let usageLimitDotSize = notificationUnreadDotSize + 2
 
         // MARK: Status band
 

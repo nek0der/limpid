@@ -8,6 +8,7 @@ mod awaited;
 mod cache;
 mod descriptor;
 mod normalize;
+mod status_line;
 mod tokens;
 mod transcript;
 mod usage;
@@ -15,7 +16,8 @@ mod usage;
 use limpid_agent_model::{
     AgentEvent, ApprovalDecision, ApprovalRequest, CommandRun, EventId, HookContext, InstallRecipe,
     ListDirectory, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, ProviderDescriptor,
-    ProviderOutput, RawHookInput, TurnReading, TurnUsage, WorktreeIntent, parse_object,
+    ProviderOutput, RawHookInput, StatusLineAdapter, TurnReading, TurnUsage, WorktreeIntent,
+    parse_object,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -27,6 +29,8 @@ pub struct ClaudeAdapter;
 /// Stable provider id.
 pub const PROVIDER_ID: &str = "claude";
 
+pub use status_line::{LAUNCH_SETTINGS_VARIABLE, RELAY_ARGUMENTS};
+
 impl ProviderAdapter for ClaudeAdapter {
     fn descriptor(&self) -> &ProviderDescriptor {
         descriptor::descriptor()
@@ -34,6 +38,16 @@ impl ProviderAdapter for ClaudeAdapter {
 
     fn install_recipe(&self) -> InstallRecipe {
         descriptor::install_recipe()
+    }
+
+    /// Claude Code reads its settings from the folder `CLAUDE_CONFIG_DIR`
+    /// names. The shim makes a relative value absolute before Claude starts.
+    fn home_directory_variable(&self) -> Option<&'static str> {
+        Some("CLAUDE_CONFIG_DIR")
+    }
+
+    fn status_line(&self) -> Option<&dyn StatusLineAdapter> {
+        Some(&status_line::ClaudeStatusLine)
     }
 
     fn normalize(

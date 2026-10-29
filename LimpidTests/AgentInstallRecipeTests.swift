@@ -17,21 +17,27 @@ struct AgentInstallRecipeTests {
         let sessions = URL(fileURLWithPath: "/sessions")
         let cwd = URL(fileURLWithPath: "/cwd")
 
+        let usage = URL(fileURLWithPath: "/usage")
+
         let claude = AgentProviderRegistry.environment(
-            for: "claude", state: state, sessions: sessions, cwdEvents: cwd
+            for: "claude", state: state, sessions: sessions, cwdEvents: cwd, usage: usage
         )
         #expect(claude["LIMPID_AGENT_STATES_DIR"] == "/states")
+        // The status line relay keeps the plan usage here (`PlanUsageStore`).
+        #expect(claude["LIMPID_USAGE_DIR"] == "/usage")
         #expect(claude["LIMPID_SESSIONS_DIR"] == "/sessions")
         #expect(claude["LIMPID_CWD_EVENTS_DIR"] == "/cwd")
         #expect(claude["LIMPID_CLAUDE_HOOK_NAMESPACE"] == LimpidPaths.bundleID)
 
         let codex = AgentProviderRegistry.environment(
-            for: "codex", state: state, sessions: sessions, cwdEvents: nil
+            for: "codex", state: state, sessions: sessions, cwdEvents: nil, usage: usage
         )
         #expect(codex["LIMPID_CODEX_AGENT_STATES_DIR"] == "/states")
         #expect(codex["LIMPID_CODEX_SESSIONS_DIR"] == "/sessions")
         // Codex has no cwd events, so nothing claims to point at them.
         #expect(codex.values.contains("/cwd") == false)
+        // Codex's usage is read from its app server, not written by a hook.
+        #expect(codex.values.contains("/usage") == false)
     }
 
     @Test("only the provider whose hook takes arguments names a variable for them")

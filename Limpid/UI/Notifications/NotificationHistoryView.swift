@@ -77,6 +77,13 @@ struct NotificationHistoryOverlay: View {
                 window.notificationHistory.isPresented = false
             }
         }
+        // The plan usage panel opens from the same rail, and one layer is
+        // open at a time.
+        .onChange(of: window.planUsage.isPresented) { _, isPresented in
+            if isPresented {
+                window.notificationHistory.isPresented = false
+            }
+        }
         // The list held the keyboard while it was open; whatever it closed
         // for (Escape, a row, a click elsewhere), the terminal gets it back
         // unless what the row opened took it.

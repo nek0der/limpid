@@ -54,6 +54,7 @@ struct FloatingPanelLayer: View {
             // included.
             (.approvalCard, card.isOpen(in: approvalPresentation) && card.isFocused),
             (.notificationHistory, historyPresentation.isPresented),
+            (.planUsage, window.planUsage.isPresented),
             (.prCard, prHoverPresentation.visible != nil),
             // The review tab while it is in front: behind a terminal tab it
             // holds no surface back.

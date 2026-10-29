@@ -69,9 +69,9 @@ enum StopReasonText {
     /// A name this build does not know is the plain usage limit.
     static func limitName(_ window: String?) -> LocalizedStringResource {
         switch window {
-        case "five_hour":
+        case PlanUsageWindow.fiveHour:
             LocalizedStringResource("5-hour limit", comment: "The plan's limit over five hours, as in 5-hour limit reached")
-        case "seven_day":
+        case PlanUsageWindow.sevenDay:
             LocalizedStringResource("Weekly limit", comment: "The plan's limit over a week, as in Weekly limit reached")
         case "seven_day_opus":
             LocalizedStringResource("Opus weekly limit", comment: "The plan's weekly limit of the Opus model; Opus is a product name")

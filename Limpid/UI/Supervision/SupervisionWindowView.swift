@@ -131,7 +131,14 @@ struct SupervisionWindowView: View {
                 bodyFrame = frame
                 anchorHistoryWithoutRails()
             }
-            .onChange(of: window.areRailsHidden) { _, _ in anchorHistoryWithoutRails() }
+            .onChange(of: window.areRailsHidden) { _, areHidden in
+                anchorHistoryWithoutRails()
+                // The usage panel hangs from its rail button alone, which
+                // hiding the rails takes away.
+                if areHidden {
+                    window.planUsage.isPresented = false
+                }
+            }
             // Across the whole window, under the rails as well.
             StatusBandView()
         }
@@ -226,14 +233,15 @@ struct SupervisionWindowView: View {
     /// leading edge: the body's, inside the window's margin.
     private func anchorHistoryWithoutRails() {
         guard window.areRailsHidden, bodyFrame.width > 0 else { return }
-        window.historyAnchor = NotificationHistoryAnchor(
+        window.historyAnchor = RailPanelAnchor(
             frame: CGRect(
                 x: bodyFrame.minX + LimpidLayout.Supervision.surfaceGap,
                 y: bodyFrame.minY,
                 width: 1,
                 height: LimpidLayout.Supervision.railButtonSize
             ),
-            columnTop: bodyFrame.minY
+            columnTop: bodyFrame.minY,
+            columnBottom: bodyFrame.maxY
         )
     }
 

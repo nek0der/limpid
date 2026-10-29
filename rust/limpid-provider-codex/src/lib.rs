@@ -8,17 +8,20 @@ mod descriptor;
 mod failure;
 mod json;
 mod normalize;
+mod rate_limits;
 mod rollouts;
 mod titles;
 mod tokens;
 
 use limpid_agent_model::{
     AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe, ListDirectory,
-    MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, ProviderDescriptor, ProviderOutput,
-    RawHookInput, RunRecord, Titles, TurnReading, TurnUsage, WorktreeIntent, parse_object,
+    MAX_HOOK_INPUT_BYTES, NormalizeError, PlanUsageAnswer, ProviderAdapter, ProviderDescriptor,
+    ProviderOutput, RawHookInput, RunRecord, Titles, TurnReading, TurnUsage, WorktreeIntent,
+    parse_object,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 /// The Codex CLI provider.
 #[derive(Debug, Default, Clone, Copy)]
@@ -38,6 +41,10 @@ impl ProviderAdapter for CodexAdapter {
 
     fn home_directory_variable(&self) -> Option<&'static str> {
         Some(normalize::HOME_DIRECTORY_VARIABLE)
+    }
+
+    fn plan_usage_answer(&self, answer: &[u8], now: SystemTime) -> PlanUsageAnswer {
+        rate_limits::plan_usage(answer, now)
     }
 
     fn normalize(
