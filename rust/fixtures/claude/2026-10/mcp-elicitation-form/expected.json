@@ -1,0 +1,56 @@
+[
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for mcp-elicitation-form>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "detail": "ToolSearch",
+      "tool": "ToolSearch",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "detail": "mcp__probe__ask",
+      "tool": "mcp__probe__ask",
+      "type": "tool_started"
+    }
+  ],
+  [
+    {
+      "detail": "Pick a color for the probe",
+      "type": "waiting_for_input"
+    }
+  ],
+  [
+    {
+      "type": "tool_finished"
+    }
+  ],
+  [
+    {
+      "name": "Notification",
+      "payload": {
+        "cwd": "/tmp/example",
+        "hook_event_name": "Notification",
+        "message": "Elicitation response for server \"probe\": accept",
+        "notification_type": "elicitation_response",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "scratchpad_dir": "/tmp/example",
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "transcript_path": "/Users/example/.claude/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+      },
+      "type": "extension"
+    }
+  ],
+  [
+    {
+      "reply": "<last_assistant_message for mcp-elicitation-form>",
+      "type": "turn_finished"
+    }
+  ]
+]
