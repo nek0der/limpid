@@ -29,11 +29,15 @@ struct ProcessDrainTests {
 
     @Test func aChildWritingPastTheCap_isEnded_andKeepsNoMoreThanTheCap() throws {
         let start = SuspendingClock.now
-        // `yes` never stops on its own: only the cap ends it.
-        let output = try run("exec /usr/bin/yes", stdoutLimitBytes: 4096)
+        // `yes` never stops on its own: only the cap ends it, or else the
+        // timeout, 30 seconds.
+        let output = try run("exec /usr/bin/yes", stdoutLimitBytes: 4096, timeout: .seconds(30))
         #expect(output.ending == .outputLimit)
         #expect(output.stdout.count <= 4096)
-        #expect(SuspendingClock.now - start < .seconds(4))
+        // `yes` ends on the SIGTERM the cap sends, a fraction of a second.
+        // The bound is well short of the timeout and leaves room for a busy
+        // CI runner.
+        #expect(SuspendingClock.now - start < .seconds(15), "the cap, not the timeout")
     }
 
     @Test func aChildThatExitedOverTheCap_isStillReportedOverIt() throws {

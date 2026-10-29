@@ -153,53 +153,78 @@ struct ToolProcessTests {
 
     /// A child that ignores SIGTERM is killed once the grace after its timeout
     /// has passed: the timeout holds whatever the child does with the signal.
-    @Test func runTool_aChildThatIgnoresTerm_isEndedAfterItsTimeout() async {
-        let clock = SuspendingClock()
-        let started = clock.now
-        let result = await runTool(
-            executable: URL(fileURLWithPath: "/bin/sh"),
-            arguments: ["-c", "trap '' TERM; sleep 20; :"],
-            workingDirectory: nil,
-            timeout: .milliseconds(400)
-        )
-        #expect(result == nil)
-        // The timeout, the two seconds' grace, and the read that stops once
-        // the shell is gone: well short of the twenty seconds.
-        #expect(clock.now - started < .seconds(5))
+    @Test func runTool_aChildThatIgnoresTerm_isEndedAfterItsTimeout() async throws {
+        try await withTempDir { directory in
+            // The shell waits for its `sleep`, which outlives the SIGKILL that
+            // ends the shell, so the test ends it.
+            let sleeper = directory.appendingPathComponent("sleep.pid")
+            defer { killRecordedProcess(in: sleeper) }
+            let clock = SuspendingClock()
+            let started = clock.now
+            let result = await runTool(
+                executable: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "trap '' TERM; sleep 60 & echo $! > \"$1\"; wait", "sh", sleeper.path],
+                workingDirectory: nil,
+                timeout: .milliseconds(400)
+            )
+            #expect(result == nil)
+            // The timeout, the two seconds' grace, and the read that stops once
+            // the shell is gone come to under 3 seconds. The bound is well short
+            // of the 60 the script sleeps and leaves room for a busy CI runner.
+            #expect(clock.now - started < .seconds(15), "the timeout and the grace, not the script's own end")
+        }
     }
 
     /// A child that leaves a process behind holding its output returns once
     /// it has exited: what it wrote is read, and nothing waits for the
     /// process it left behind to close the pipe.
-    @Test func runTool_aChildThatLeavesItsOutputOpen_returnsWhenItExits() async {
-        let clock = SuspendingClock()
-        let started = clock.now
-        let result = await runTool(
-            executable: URL(fileURLWithPath: "/bin/sh"),
-            arguments: ["-c", "printf done; sleep 20 & exit 0"],
-            workingDirectory: nil,
-            timeout: .milliseconds(400)
-        )
-        #expect(clock.now - started < .seconds(3))
-        #expect(result?.stdout == "done")
-        #expect(result?.exitCode == 0)
+    @Test func runTool_aChildThatLeavesItsOutputOpen_returnsWhenItExits() async throws {
+        try await withTempDir { directory in
+            let leftBehind = directory.appendingPathComponent("sleep.pid")
+            defer { killRecordedProcess(in: leftBehind) }
+            let clock = SuspendingClock()
+            let started = clock.now
+            let result = await runTool(
+                executable: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "printf done; sleep 60 & echo $! > \"$1\"; exit 0", "sh", leftBehind.path],
+                workingDirectory: nil,
+                // Long enough that a busy CI runner still lets the shell exit
+                // before it: a timeout reached would end the run without its
+                // output. Past its exit the shell is not running, so the timeout
+                // no longer applies and cannot cut the wait short.
+                timeout: .seconds(5)
+            )
+            // The exit and the 300 ms read that follows it, against the 60
+            // seconds the process left behind holds the pipe. The bound leaves
+            // room for a busy CI runner.
+            #expect(clock.now - started < .seconds(15), "the exit and the drain, not the process left behind")
+            #expect(result?.stdout == "done")
+            #expect(result?.exitCode == 0)
+        }
     }
 
     /// A login shell's output goes through a file, since a process its profile
     /// left running may go on writing to it; stderr is not read then.
-    @Test func runTool_outputThroughAFile_isReadWhenTheChildExits() async {
-        let clock = SuspendingClock()
-        let started = clock.now
-        let result = await runTool(
-            executable: URL(fileURLWithPath: "/bin/sh"),
-            arguments: ["-c", "printf done; echo noise 1>&2; sleep 20 & exit 0"],
-            workingDirectory: nil,
-            readsOutputFromFile: true,
-            timeout: .seconds(5)
-        )
-        #expect(clock.now - started < .seconds(3))
-        #expect(result?.stdout == "done")
-        #expect(result?.stderr == "")
+    @Test func runTool_outputThroughAFile_isReadWhenTheChildExits() async throws {
+        try await withTempDir { directory in
+            let leftBehind = directory.appendingPathComponent("sleep.pid")
+            defer { killRecordedProcess(in: leftBehind) }
+            let clock = SuspendingClock()
+            let started = clock.now
+            let result = await runTool(
+                executable: URL(fileURLWithPath: "/bin/sh"),
+                arguments: ["-c", "printf done; echo noise 1>&2; sleep 60 & echo $! > \"$1\"; exit 0", "sh", leftBehind.path],
+                workingDirectory: nil,
+                readsOutputFromFile: true,
+                timeout: .seconds(5)
+            )
+            // With no pipe to read, the run ends at the exit, against the 60
+            // seconds the process left behind goes on. The bound leaves room
+            // for a busy CI runner.
+            #expect(clock.now - started < .seconds(15), "the exit, not the process left behind")
+            #expect(result?.stdout == "done")
+            #expect(result?.stderr == "")
+        }
     }
 
     /// A canceled run ends its child rather than waiting for it.
@@ -211,7 +236,7 @@ struct ToolProcessTests {
             let task = Task {
                 await runTool(
                     executable: URL(fileURLWithPath: "/bin/sh"),
-                    arguments: ["-c", "touch \"$1\"; exec sleep 20", "sh", started.path],
+                    arguments: ["-c", "touch \"$1\"; exec sleep 60", "sh", started.path],
                     workingDirectory: nil,
                     timeout: .seconds(30)
                 )
@@ -225,7 +250,11 @@ struct ToolProcessTests {
             task.cancel()
             let result = await task.value
             #expect(result == nil)
-            #expect(clock.now - canceled < .seconds(3))
+            // `sleep` ends on the SIGTERM the cancel sends, a fraction of a
+            // second. Not ended, the run would last until its 30-second
+            // timeout. The bound is well short of that and leaves room for a
+            // busy CI runner.
+            #expect(clock.now - canceled < .seconds(15), "the cancel, not the timeout")
         }
     }
 

@@ -256,11 +256,14 @@ struct TmuxClientProbeSmokeTests {
             kill(pid, SIGCONT)
             _ = try? run(tmux, ["-S", socket, "kill-server"])
         }
-        DispatchQueue.global().asyncAfter(deadline: .now() + 3, execute: rescue)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: rescue)
         kill(pid, SIGSTOP)
         let start = ProcessInfo.processInfo.systemUptime
         let stopped = TmuxClientProbe.topology(tmuxPath: tmux, socketPaths: [URL(fileURLWithPath: socket)], timeout: 0.1)
-        #expect(ProcessInfo.processInfo.systemUptime - start < 1.5)
+        // The 0.1-second timeout and the grace after it, against the 30
+        // seconds until the rescue resumes the server. The bound is well
+        // short of that and leaves room for a busy CI runner.
+        #expect(ProcessInfo.processInfo.systemUptime - start < 10, "the deadline, not the rescue")
         #expect(stopped.outcomes[socket] == .timedOut)
         kill(pid, SIGCONT)
         let recovered = TmuxClientProbe.topology(tmuxPath: tmux, socketPaths: [URL(fileURLWithPath: socket)])

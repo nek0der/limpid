@@ -16,18 +16,7 @@ struct ProcessNamesTests {
     private static func spawnLongNamedSleep(in directory: URL) throws -> pid_t {
         let link = directory.appendingPathComponent(longName)
         try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: "/bin/sleep")
-        var attributes: posix_spawnattr_t?
-        posix_spawnattr_init(&attributes)
-        defer { posix_spawnattr_destroy(&attributes) }
-        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP))
-        posix_spawnattr_setpgroup(&attributes, 0)
-        var pid: pid_t = 0
-        let arguments = [link.path, "30"]
-        var argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) } + [nil]
-        defer { argv.forEach { free($0) } }
-        let status = posix_spawn(&pid, link.path, nil, &attributes, &argv, environ)
-        try #require(status == 0, "posix_spawn failed: \(status)")
-        return pid
+        return try spawnProcessGroup([link.path, "30"])
     }
 
     private static func stop(_ pid: pid_t) {
