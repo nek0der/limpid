@@ -99,9 +99,14 @@ struct AllProjectsModel: Equatable {
         /// whatever the session's state (`SessionRowFact.pullRequest`);
         /// the card shows it in the same place.
         var pullRequest: SessionRowFact.PullRequest?
-        /// This is the folder the card is placed by in place of its branch, for a
-        /// card the person named (`SessionSidebarModel.Row.folder`).
-        var folder: String?
+        /// This is the checkout the card is placed by, for a card the person
+        /// labeled (`SessionSidebarModel.Row.checkout`): its branch, or its
+        /// folder when no branch is known.
+        var checkout: String?
+        /// The last path component of the card's folder, which the filter
+        /// finds the card by; the place shows it only for a labeled card
+        /// with no branch (`checkout`).
+        var folderName: String?
 
         var section: Section {
             Section.of(glyph)
@@ -116,12 +121,11 @@ struct AllProjectsModel: Equatable {
         }
 
         /// Whether the card holds every word of `query`, ignoring case:
-        /// in its project's name, its branch, the folder it is placed by,
-        /// or its own name.
+        /// in its project's name, its branch, its folder, or its own name.
         func matches(_ query: String) -> Bool {
             let words = query.split(whereSeparator: \.isWhitespace)
             guard !words.isEmpty else { return true }
-            let text = [projectName, branch ?? "", folder ?? "", name].joined(separator: " ")
+            let text = [projectName, branch ?? "", folderName ?? "", name].joined(separator: " ")
             return words.allSatisfy { text.localizedStandardContains($0) }
         }
     }

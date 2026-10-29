@@ -73,14 +73,13 @@ struct DemoFixtureTests {
         #expect(tabs[1].agentBadges[.codex]?[DemoFixture.Slot.remindersCodex.paneID]?.state == .finished)
     }
 
-    /// A row is named by its first conversation, as a real session's
-    /// usually is, never by a name the person gave, which would put the
-    /// row's folder on its second line. A worktree with an agent leads with
-    /// the agent's tab, which holds that conversation's name, and one with
-    /// shells alone holds none and reads as its branch. The worktrees
-    /// folded away (the merged one, the agents', the detached one) have no
-    /// tab: a tab would make them working rows.
-    @Test func everyWorktree_isNamedByItsAgentsConversation_andAShellsOnlyWorktreeByItsBranch() {
+    /// A row is named by its branch, never by a name the person gave,
+    /// which would put the row's folder on its second line. A worktree with
+    /// an agent leads with the agent's tab, which holds that conversation's
+    /// name and shows it in the pane strip, and one with shells alone holds
+    /// none. The worktrees folded away (the merged one, the agents', the
+    /// detached one) have no tab: a tab would make them working rows.
+    @Test func everyWorktree_isNamedByItsBranch_andAnAgentsTabByItsConversation() {
         let session = WorkspaceSession()
         _ = session.restore(from: DemoFixture.snapshot)
         var agentWorktrees = 0
@@ -92,16 +91,18 @@ struct DemoFixtureTests {
                 let isAgents = first.map { !$0.agentBadges.values.allSatisfy(\.isEmpty) } ?? false
                 #expect(tabs.allSatisfy { $0.titleOverride == nil }, "\(container)")
                 let name = session.rowName(of: container)
+                if let branch = CheckoutName.knownBranch(of: container, in: session) {
+                    #expect(name == RowName(text: branch, source: .branch), "\(container)")
+                }
                 if isAgents {
                     agentWorktrees += 1
-                    #expect(name?.source == .conversation, "\(container)")
-                    #expect(name?.text == first?.conversationName?.name, "\(container)")
+                    #expect(first?.conversationName != nil, "\(container)")
                     #expect(first?.displayTitle == first?.conversationName?.name, "\(container)")
                 } else {
                     #expect(tabs.allSatisfy { $0.conversationName == nil }, "\(container)")
                     #expect(name?.source != .conversation, "\(container)")
                 }
-                #expect(session.rowFolder(of: container) == nil, "\(container)")
+                #expect(session.rowCheckout(of: container) == nil, "\(container)")
                 if tabs.isEmpty {
                     emptyRows.append(container)
                 }

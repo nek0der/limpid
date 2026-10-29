@@ -325,9 +325,10 @@ struct NeedsAttentionListModelTests {
             == NeedsAttentionListModel.Names(title: "limpid-feature", place: "limpid"))
     }
 
-    /// A row the person named is placed by its folder too, as its sidebar
-    /// row shows it, so the list still says which worktree the item is in.
-    @Test @MainActor func aNamedRowsItem_isPlacedByItsProjectAndFolder() throws {
+    /// A row the person labeled is placed by its branch too, as its sidebar
+    /// row shows it, so the list still says which worktree the item is in;
+    /// one with no branch known, by its folder.
+    @Test @MainActor func aLabeledRowsItem_isPlacedByItsProjectAndBranch_orItsFolder() throws {
         let (session, project) = WorkspaceSessionFixture.withProject(name: "limpid")
         let worktree = try WorkspaceSessionFixture.appendWorktree(to: project.id, in: session, admission: .created)
         let container = ContainerID.worktree(projectID: project.id, worktreeID: worktree.id)
@@ -365,6 +366,16 @@ struct NeedsAttentionListModelTests {
         ]).items[0]
         #expect(NeedsAttentionListModel.names(of: rowItem, in: session, locale: Self.english)
             == NeedsAttentionListModel.Names(title: "Login work", place: "limpid / \(folder)"))
+
+        // With its branch known, the pane's item and the session row's are
+        // placed by the branch.
+        let projectIndex = try #require(session.projects.firstIndex { $0.id == project.id })
+        let worktreeIndex = try #require(session.projects[projectIndex].worktrees.firstIndex { $0.id == worktree.id })
+        session.projects[projectIndex].worktrees[worktreeIndex].gitRef = GitRef(branchName: "feat/login")
+        #expect(NeedsAttentionListModel.names(of: item, in: session, locale: Self.english)
+            == NeedsAttentionListModel.Names(title: "Login work", place: "limpid / feat/login"))
+        #expect(NeedsAttentionListModel.names(of: rowItem, in: session, locale: Self.english)
+            == NeedsAttentionListModel.Names(title: "Login work", place: "limpid / feat/login"))
     }
 
     @Test func theSecondLine_placesTheItem_andSaysWhenAnotherWindowShowsItsProject() {

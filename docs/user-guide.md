@@ -60,13 +60,23 @@ is used up. A click outside the panel or Escape closes it.
   working in the background after a turn: the finished or unread ring with a
   dot circling it), the name, the time, one fact such as "Unread · 4 files changed" or "PR #324 · Open", and
   a badge for each agent.
-- A row you renamed starts its second line with the worktree's folder, as in
-  "login-redesign · 3 Uncommitted", so it still says which worktree it is. A
-  fact that only repeats the state, such as "Idle", gives way to the folder
-  alone. A name that already matches the folder, in full or without the
-  project's folder name in front, shows no folder. The worktree menu,
-  **Needs Attention**, and **All Projects** show the same folder beside the
-  name.
+- A row goes by its branch, such as `main` or `feat/login`. A row with no
+  branch, such as a worktree on a detached HEAD, goes by its first agent
+  conversation, else by its folder.
+  The tabs above the terminal name each conversation.
+- **Set Label…** in a row's menu, or a double-click on its name, gives the
+  row a label shown in place of its branch. The Git branch keeps its name.
+  The field starts from the label, or empty on a row without one.
+  **Remove Label**, or clearing the field, hands the row back to its
+  branch.
+- A labeled row starts its second line with its branch, as in
+  "feat/login · 3 Uncommitted", so it still says which worktree it is. A
+  fact that only repeats the state, such as "Idle", gives way to the branch
+  alone. A worktree with no branch shows its folder there instead, without
+  the project's folder name in front. A label that already matches what
+  would be shown shows nothing beside it. The worktree menu, **Needs
+  Attention**, and **All Projects** say which worktree a labeled row is the
+  same way.
 - Worktrees whose folder is gone from disk, with no tab open in them, fold
   into **Missing Worktrees**. Worktrees whose PR is merged or closed, with
   nothing open and nothing uncommitted, fold into **Ready to Clean Up**, and

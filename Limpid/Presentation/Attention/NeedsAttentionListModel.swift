@@ -322,13 +322,13 @@ extension NeedsAttentionListModel {
         )
     }
 
-    /// A pane's item is named as its workspace's sidebar row is (the
-    /// conversation, else the branch or folder; not the terminal's own
+    /// A pane's item is named as its workspace's sidebar row is (a label,
+    /// else the branch, the conversation, or the folder; not the terminal's own
     /// title, which an agent sets to something generic), and placed by the
     /// tab's project; a request no pane is known for, by its agent; a
-    /// session row by its worktree folder. A row the person named is placed
-    /// by its project and its folder ("limpid / login-redesign",
-    /// `WorkspaceSession.rowFolder(of:)`), as its sidebar row shows it.
+    /// session row by its worktree folder. A row the person labeled is
+    /// placed by its project and its branch ("limpid / feat/login",
+    /// `WorkspaceSession.rowCheckout(of:)`), as its sidebar row shows it.
     @MainActor
     static func names(of item: AttentionItem, in session: WorkspaceSession, locale: Locale) -> Names {
         switch item.subject {
@@ -338,22 +338,22 @@ extension NeedsAttentionListModel {
             }
             let title = SessionSidebarModel.rowName(of: tab.container, in: session, locale: locale)
             // Placed by its project: the title is the row's name already.
-            // The scratch row's name is its place. A row the person named
-            // is placed by its folder too, as its sidebar row shows it.
+            // The scratch row's name is its place. A row the person labeled
+            // is placed by its branch too, as its sidebar row shows it.
             let place = tab.container.projectID.flatMap { session.project($0)?.name }.map {
-                AgentStatusText.place(project: $0, checkout: session.rowFolder(of: tab.container)?.shown)
+                AgentStatusText.place(project: $0, checkout: session.rowCheckout(of: tab.container)?.shown)
             }
             return Names(title: title, place: place)
         case let .sessionRow(projectID, worktreeRoot):
             // The row's name, as the sidebar shows it: the branch, not the
             // folder, which the placement prefixes with the repository's.
-            // A named row's place adds its folder, as its sidebar row does.
+            // A labeled row's place adds its branch, as its sidebar row does.
             let project = projectID.flatMap { session.project($0) }
             let worktree = project?.worktrees.first { item.subject.isSessionRow(at: $0.workingDirectory) }
             let row = project.flatMap { project in worktree.map { ContainerID.worktree(projectID: project.id, worktreeID: $0.id) } }
             return Names(
                 title: row.flatMap { session.rowName(of: $0)?.text } ?? worktreeRoot.lastPathComponent,
-                place: project.map { AgentStatusText.place(project: $0.name, checkout: row.flatMap { session.rowFolder(of: $0)?.shown }) }
+                place: project.map { AgentStatusText.place(project: $0.name, checkout: row.flatMap { session.rowCheckout(of: $0)?.shown }) }
             )
         case let .unplaced(provider):
             return Names(title: provider.rawValue.capitalized, place: nil)

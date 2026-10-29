@@ -49,7 +49,7 @@ extension TabActions {
         newTab.apply(sourceTab.paneTransferState(of: paneID), to: paneID)
 
         session.update(sourceTab.id) { t in
-            // The conversation that names the row goes with its pane.
+            // The conversation that names the tab goes with its pane.
             newTab.receiveConversationName(t.takeConversationName(of: paneID))
             let result = t.splitTree.remove(paneID)
             t.splitTree = result.tree

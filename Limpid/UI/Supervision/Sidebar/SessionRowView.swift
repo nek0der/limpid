@@ -89,7 +89,12 @@ struct SessionRowView: View {
                         // Clearing the name hands the row back to the name
                         // it would have without one.
                         submitsEmptyName: true,
-                        fieldName: "Worktree name"
+                        fieldName: "Worktree label",
+                        // The field edits the row's label, never its
+                        // branch: a row with no label starts empty, under
+                        // the name it goes by.
+                        editsFrom: row.label ?? "",
+                        prompt: row.label == nil ? row.name : nil
                     )
                     .lineLimit(1)
                     // At least the shared column; Answer… may widen it and
@@ -180,10 +185,10 @@ struct SessionRowView: View {
         }
     }
 
-    /// Draws the second line's words: a named row's folder, then the fact. The
-    /// folder goes first and keeps its width, so the fact is what is cut
-    /// short; the folder is cut, in its middle as a path is, only when it
-    /// does not fit by itself.
+    /// Draws the second line's words: a labeled row's checkout, then the
+    /// fact. The checkout goes first and keeps its width, so the fact is
+    /// what is cut short; the checkout is cut, in its middle as a path is,
+    /// only when it does not fit by itself.
     private func lineTwo(tooltip: String) -> some View {
         let fact = SessionRowFactText.current(row, now: now, locale: locale)
         let lead = SessionRowFactText.lineLead(row, fact: fact, locale: locale)

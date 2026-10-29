@@ -64,8 +64,8 @@ enum AgentStatusText {
     /// Writes a place as the attention list and all projects' cards write
     /// it: "project / worktree", or the project alone when the checkout is
     /// not known or is the project's name over again. The worktree goes by
-    /// its branch, or by its folder for a row the person named
-    /// (`WorkspaceSession.rowFolder(of:)`).
+    /// its branch, also for a row the person labeled, and by its folder
+    /// when no branch is known (`WorkspaceSession.rowCheckout(of:)`).
     static func place(project: String, checkout: String?) -> String {
         guard let checkout, !checkout.isEmpty, checkout != project else { return project }
         return "\(project) / \(checkout)"

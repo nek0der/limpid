@@ -96,7 +96,8 @@ extension AllProjectsModel {
             leadPaneID: row.leadPaneID,
             factTruncation: .fact(row.fact.fact),
             pullRequest: row.fact.pullRequest,
-            folder: row.folder?.shown
+            checkout: row.checkout?.shown,
+            folderName: sources.session.rowFolderName(of: row.id)
         )
     }
 

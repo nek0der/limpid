@@ -224,7 +224,10 @@ extension SessionSidebarModel {
                 break
             }
         }
-        let name = name(container: container, session: session, locale: sources.locale)
+        // Read once: the name, the checkout beside a label, and the label
+        // all follow from it.
+        let rowName = session.rowName(of: container)
+        let name = name(rowName, locale: sources.locale)
         return RowInput(
             container: container,
             name: name.text,
@@ -264,7 +267,8 @@ extension SessionSidebarModel {
                 ?? tabs.first?.splitTree.effectiveFocusedLeafID,
             hasTabs: !tabs.isEmpty,
             branch: project == nil ? nil : CheckoutName.of(container, in: session),
-            folder: session.rowFolder(of: container),
+            checkout: rowName.flatMap { session.rowCheckout(of: container, named: $0) },
+            label: rowName?.label,
             commandRequests: commandRequests
         )
     }
@@ -274,19 +278,14 @@ extension SessionSidebarModel {
     /// row goes by one name wherever it is listed.
     @MainActor
     static func rowName(of container: ContainerID, in session: WorkspaceSession, locale: Locale) -> String {
-        name(container: container, session: session, locale: locale).text
+        name(session.rowName(of: container), locale: locale).text
     }
 
     /// The row's name by the one rule (`WorkspaceSession.rowName(of:)`),
     /// and where it is cut. Tabs outside any project are "Scratch", whatever
     /// they are named, as the sidebar's scratch row says.
-    @MainActor
-    private static func name(
-        container: ContainerID,
-        session: WorkspaceSession,
-        locale: Locale
-    ) -> (text: String, truncation: SupervisionTruncation) {
-        guard let name = session.rowName(of: container) else {
+    private static func name(_ name: RowName?, locale: Locale) -> (text: String, truncation: SupervisionTruncation) {
+        guard let name else {
             return (LocalizedStringResource("Scratch").resolved(in: locale), .name)
         }
         // A branch shares its prefix with its neighbors and differs at its

@@ -8,9 +8,9 @@ import Foundation
 ///
 /// Not the agent tab's title, which is whatever OSC 2 set last: "claude
 /// --continue" while the agent starts, the agent's own words while it runs,
-/// and the shell's folder once it leaves. Named by that, a row would move
-/// under a different name while staying in its place, and a place is only
-/// worth keeping if the row can be found there. The
+/// and the shell's folder once it leaves. Named by that, a tab, or a row on
+/// a detached HEAD, would move under a different name while staying in its
+/// place, and a place is only worth keeping if it can be found there. The
 /// name here follows one conversation while it runs and stays once it
 /// ends.
 ///
@@ -152,8 +152,8 @@ struct ConversationName: Codable, Equatable, Sendable {
         return isEarlier(rhs, lhs) ? rhs : lhs
     }
 
-    /// The first of `names` to start: the conversation that names a row
-    /// whose tabs hold them.
+    /// The first of `names` to start: the conversation that names a
+    /// detached row whose tabs hold them (`RowName`).
     static func first(_ names: [ConversationName]) -> ConversationName? {
         names.min(by: isEarlier)
     }

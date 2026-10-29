@@ -176,8 +176,9 @@ struct WorktreeDropdown: View {
 /// name its sidebar row goes by, its branch (when the name is not it) and
 /// folder under it with how many agents run there when more than one, and
 /// its row's state glyph, after its pull request's mark when it has one.
-/// A checkout the person named gives its folder's name in place of the
-/// path, then its branch when that differs, and keeps the full path in
+/// A checkout the person labeled shows its branch and folder under the
+/// label, as any row not named by its branch does; one with no branch
+/// gives its folder's name in place of the path and keeps the full path in
 /// its tooltip.
 private struct WorktreeDropdownRow: View {
     let entry: WorktreeDropdownEntry
@@ -238,9 +239,9 @@ private struct WorktreeDropdownRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        // A named checkout's line gives its folder's name in place of the
-        // whole path, so the path is here.
-        .help(Text(verbatim: row?.folder == nil ? "" : fullPath))
+        // A labeled checkout with no branch gives its folder's name in place
+        // of the whole path, so the path is here; any other line shows it.
+        .help(Text(verbatim: row?.checkout?.isBranch == false ? fullPath : ""))
         .disabled(entry.isMissing)
         .onHover { isHovering in
             if isHovering, !entry.isMissing {
@@ -264,14 +265,14 @@ private struct WorktreeDropdownRow: View {
     }
 
     /// This is the branch when the name is not it, the folder, then "Agents
-    /// 2" when the checkout runs more than one; for a checkout the person
-    /// named, it is its folder's name, then its branch when that differs.
+    /// 2" when the checkout runs more than one; for a labeled checkout with
+    /// no branch, it is its folder's name.
     private var detail: String {
         WorktreeDropdownText.detail(
             name: entry.name,
             branch: entry.branch,
             folder: fullPath,
-            shownFolder: row?.folder?.shown,
+            shownFolder: row?.checkout.flatMap { $0.isBranch ? nil : $0.shown },
             agentCount: row?.agentCount ?? 0,
             locale: locale
         )

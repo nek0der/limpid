@@ -11,11 +11,12 @@ enum WorktreeDropdownText {
     /// two agents in one folder edit the same files. One agent goes without
     /// saying.
     ///
-    /// A checkout the person named starts with the folder its sidebar row
-    /// shows beside that name (`shownFolder`, from
-    /// `WorkspaceSession.rowFolder(of:)`), then the branch when it is not
-    /// that folder, in place of the whole path, which the row's tooltip
-    /// holds: the line then says which worktree it is as the sidebar does.
+    /// A checkout the person labeled with no branch known starts with the
+    /// folder its sidebar row shows beside that label (`shownFolder`, from
+    /// `WorkspaceSession.rowCheckout(of:)`), in place of the whole path,
+    /// which the row's tooltip holds: the line then says which worktree it
+    /// is as the sidebar does. A labeled checkout with a branch passes no
+    /// `shownFolder`, so its line is its branch and its folder.
     static func detail(
         name: String,
         branch: String,

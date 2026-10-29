@@ -77,10 +77,15 @@ struct SessionSidebarModel: Equatable {
         /// The branch of the row's folder, for its tooltip; `nil` when not
         /// known.
         var branch: String?
-        /// This is the folder the row's second line starts with, for a row
-        /// named by the person, whose name no longer says which worktree it
-        /// is (`WorkspaceSession.rowFolder(of:)`). It is `nil` for any other row.
-        var folder: RowFolder?
+        /// This is the checkout the row's second line starts with, for a
+        /// row the person labeled, whose label does not say which worktree
+        /// it is (`WorkspaceSession.rowCheckout(of:)`). It is `nil` for any
+        /// other row.
+        var checkout: RowCheckout?
+        /// The label the person gave the row, which its rename field starts
+        /// from (`RowName.label`); `nil` for a row that
+        /// goes by its branch, conversation, or folder.
+        var label: String?
         /// How many agents run in the row.
         var agentCount = 0
         /// The second line states an approval's command, rather than an
@@ -98,11 +103,18 @@ struct SessionSidebarModel: Equatable {
         var isLeadPaneShown = false
 
         /// Whether the second line states the row's fact. A row that
-        /// starts the line with its folder drops a fact that only names the
-        /// state its glyph shows (`SessionRowFact.repeatsGlyph`), and shows
-        /// the folder alone.
+        /// starts the line with its checkout drops a fact that only names
+        /// the state its glyph shows (`SessionRowFact.repeatsGlyph`), and
+        /// shows the checkout alone. The project's folder row keeps
+        /// "Folder" after its branch: a branch, unlike the project's
+        /// folder, does not say the row is the folder rather than a
+        /// worktree.
         var showsFact: Bool {
-            folder == nil || !SessionRowFact.repeatsGlyph(fact.fact)
+            guard let checkout else { return true }
+            if isMainFolder, checkout.isBranch, fact.fact == .idle {
+                return true
+            }
+            return !SessionRowFact.repeatsGlyph(fact.fact)
         }
 
         /// Whether the tooltip says to open the pane to answer in the
@@ -177,9 +189,11 @@ struct SessionSidebarModel: Equatable {
         var leadPaneID: UUID?
         var hasTabs = false
         var branch: String?
-        /// This is the folder shown beside a name the person gave
-        /// (`WorkspaceSession.rowFolder(of:)`).
-        var folder: RowFolder?
+        /// This is the checkout shown beside a label the person gave
+        /// (`WorkspaceSession.rowCheckout(of:)`).
+        var checkout: RowCheckout?
+        /// The label the person gave (`RowName.label`).
+        var label: String?
         /// The approvals whose text is a command to run
         /// (`ApprovalRequestText.isCommand`).
         var commandRequests: Set<ApprovalKey> = []
@@ -232,7 +246,8 @@ struct SessionSidebarModel: Equatable {
                 hasTabs: input.hasTabs,
                 usageLimits: limit,
                 branch: input.branch,
-                folder: input.folder,
+                checkout: input.checkout,
+                label: input.label,
                 agentCount: input.fact.agents.count,
                 isFactCommand: Self.isFactCommand(input),
                 requiresTerminalAnswer: PanePriority.dominant(input.fact.items)?.requiresTerminalAnswer ?? false,

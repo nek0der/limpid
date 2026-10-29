@@ -6,8 +6,8 @@ import Foundation
 extension WorkspaceSession {
     /// The name `container`'s row goes by (`RowName`), in the sidebar and
     /// everywhere the row is named: the name the person gave the row, then
-    /// a name the person gave one of its tabs, then the row's first
-    /// conversation, then its branch, then its folder. `nil` for the
+    /// a name the person gave one of its tabs, then its branch, then the
+    /// row's first conversation, then its folder. `nil` for the
     /// scratch row, which is named by its own word, and for a row the
     /// session no longer has.
     ///
@@ -28,12 +28,12 @@ extension WorkspaceSession {
         )
     }
 
-    /// Returns the folder `container`'s row is shown with beside its name
-    /// (`RowName.folderBeside`): the worktree's folder, less a leading
-    /// "<project's folder name>-", or the project's folder, when the row
-    /// goes by a name the person gave that is not that folder's. Every
+    /// Returns the checkout `container`'s row is shown with beside its
+    /// name (`RowName.checkoutBeside`) when the person labeled the row: its
+    /// branch, or with no branch known, the worktree's folder less a
+    /// leading "<project's folder name>-", or the project's folder. Every
     /// place that offers the row as a choice reads it here, so they all
-    /// show the same folder by the same rule. It is `nil` for any other
+    /// show the same checkout by the same rule. It is `nil` for any other
     /// row, the scratch row included.
     ///
     /// The project's folder row shows its folder only when the folder is
@@ -42,19 +42,29 @@ extension WorkspaceSession {
     /// We compare that folder with the name the header shows; a worktree's
     /// folder is instead shortened by the project's folder name, the start
     /// Limpid gave it.
-    func rowFolder(of container: ContainerID) -> RowFolder? {
-        guard let folder = folderAndGivenName(of: container)?.folder, let name = rowName(of: container) else { return nil }
+    ///
+    /// `name` is the row's name when the caller has already read it
+    /// (`rowName(of:)`), so a sidebar row reads its name once.
+    func rowCheckout(of container: ContainerID, named name: RowName? = nil) -> RowCheckout? {
+        guard let folder = rowFolderName(of: container), let name = name ?? rowName(of: container) else { return nil }
+        let branch = CheckoutName.knownBranch(of: container, in: self)
         switch container {
         case .loose:
             return nil
         case let .project(projectID):
-            guard let project = project(projectID),
-                  folder.compare(project.name, options: .caseInsensitive) != .orderedSame
-            else { return nil }
-            return name.folderBeside(folder)
+            guard let project = project(projectID) else { return nil }
+            let isProjectsName = folder.compare(project.name, options: .caseInsensitive) == .orderedSame
+            return name.checkoutBeside(branch: branch, folder: isProjectsName ? nil : folder)
         case let .worktree(projectID, _):
-            return name.folderBeside(folder, repository: project(projectID)?.rootURL.lastPathComponent)
+            return name.checkoutBeside(branch: branch, folder: folder, repository: project(projectID)?.rootURL.lastPathComponent)
         }
+    }
+
+    /// The last path component of `container`'s folder, which all projects'
+    /// filter finds a card by whatever the card is named; `nil` for the
+    /// scratch row and for a row the session no longer has.
+    func rowFolderName(of container: ContainerID) -> String? {
+        folderAndGivenName(of: container)?.folder
     }
 
     /// Returns the last path component of the row's folder and the name the
