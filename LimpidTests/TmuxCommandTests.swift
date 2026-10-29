@@ -8,9 +8,13 @@ import Testing
 @Suite("Bounded tmux command")
 struct TmuxCommandTests {
     @Test func exitStatusAndLaunchFailure_areToldApart_andEmptyOutputIsSuccess() {
-        #expect(TmuxCommand().run(executable: "/usr/bin/true", arguments: []) == .success(""))
-        #expect(TmuxCommand().run(executable: "/usr/bin/false", arguments: []) == .failed(1))
-        #expect(TmuxCommand().run(executable: "/nonexistent/limpid-tmux", arguments: []) == .launchFailed)
+        // A timeout no run here reaches. Under the half-second default, one
+        // local run reported `/usr/bin/true` as `.timedOut`, most likely
+        // because a loaded machine started it late; the timeout is not what
+        // this test is about.
+        #expect(TmuxCommand().run(executable: "/usr/bin/true", arguments: [], timeout: 30) == .success(""))
+        #expect(TmuxCommand().run(executable: "/usr/bin/false", arguments: [], timeout: 30) == .failed(1))
+        #expect(TmuxCommand().run(executable: "/nonexistent/limpid-tmux", arguments: [], timeout: 30) == .launchFailed)
     }
 
     @Test func ignoredTermination_isKilledWithinTotalDeadline() {
@@ -20,13 +24,24 @@ struct TmuxCommandTests {
         #expect(ProcessInfo.processInfo.systemUptime - start < 1.5)
     }
 
-    @Test func descendantHoldingWriter_doesNotKeepReaderAlive() {
-        let start = ProcessInfo.processInfo.systemUptime
-        // The fixture descendant exits independently; the runner owns only
-        // its client and must not signal arbitrary descendant processes.
-        let result = TmuxCommand().run(executable: "/bin/sh", arguments: ["-c", "sleep 1 & exit 0"], timeout: 0.05)
-        #expect(result == .timedOut)
-        #expect(ProcessInfo.processInfo.systemUptime - start < 0.9)
+    @Test func descendantHoldingWriter_doesNotKeepReaderAlive() throws {
+        try withTempDir { folder in
+            let descendant = folder.appendingPathComponent("descendant.pid")
+            defer { killRecordedProcess(in: descendant) }
+            let start = ProcessInfo.processInfo.systemUptime
+            // The fixture descendant exits independently; the runner owns only
+            // its client and must not signal arbitrary descendant processes.
+            let result = TmuxCommand().run(
+                executable: "/bin/sh",
+                arguments: ["-c", "sleep 30 & echo $! > \"$1\"; exit 0", "sh", descendant.path],
+                timeout: 0.05
+            )
+            #expect(result == .timedOut)
+            // The exit and the 0.2-second drain grace, against the 30 seconds
+            // the descendant holds the pipe. The bound is well short of that
+            // and leaves room for a busy CI runner.
+            #expect(ProcessInfo.processInfo.systemUptime - start < 10, "the drain grace, not the descendant's own end")
+        }
     }
 
     @Test func cancellationBeforeAndDuringLaunch_isDistinct() {

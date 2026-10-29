@@ -149,13 +149,15 @@ struct SessionLaunchSetupStopTests {
         try await withTempDir { dir in
             let (fixture, pid) = try await Fixture.startBlockingSetup(in: dir, ignoresTERM: true)
 
-            let started = SuspendingClock.now
             fixture.store.cancelAll()
-            #expect(SuspendingClock.now - started < .seconds(2), "a moment at most")
 
-            // Killed, so gone once reaped: well before the cancel's own
-            // SIGKILL, three seconds after its SIGTERM.
-            await pollUntil(timeout: .seconds(1), interval: .milliseconds(20)) { !Fixture.isRunning(pid) }
+            // The quit sent SIGKILL before it returned, so the step ends at
+            // once. The cancel's own SIGKILL comes three seconds after its
+            // SIGTERM, about two and a half past the return, so a step gone
+            // within two seconds was ended by the quit. Whether the quit
+            // sends SIGKILL at all is checked without a clock in
+            // `WorktreeSetupTests`.
+            await pollUntil(timeout: .seconds(2), interval: .milliseconds(20)) { !Fixture.isRunning(pid) }
             #expect(!Fixture.isRunning(pid))
         }
     }

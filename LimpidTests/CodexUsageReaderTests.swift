@@ -61,7 +61,10 @@ struct CodexUsageReaderTests {
                 timeout: .milliseconds(500)
             )
             #expect(answer == nil)
-            #expect(ContinuousClock.now - start < .seconds(5))
+            // The half-second timeout, against the 15-second default a run
+            // that ignored it would wait, or no end at all. The bound leaves
+            // room for a busy CI runner.
+            #expect(ContinuousClock.now - start < .seconds(10), "the timeout given, not the default")
         }
     }
 

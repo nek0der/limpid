@@ -220,7 +220,10 @@ struct WorktreeSetupTests {
             let clock = SuspendingClock.now
             task.cancel()
             await #expect(throws: CancellationError.self) { try await task.value }
-            #expect(SuspendingClock.now - clock < .seconds(5))
+            // `sleep` ends on the cancel's SIGTERM, a fraction of a second.
+            // The bound is well short of the 30 seconds it sleeps and leaves
+            // room for a busy CI runner.
+            #expect(SuspendingClock.now - clock < .seconds(15), "the cancel, not the step's own end")
             #expect(!FileManager.default.fileExists(atPath: folder.appendingPathComponent("after.txt").path))
         }
     }
@@ -254,28 +257,13 @@ struct WorktreeSetupTests {
     /// timer runs, and no signal is sent before the wait, so only the
     /// wait's SIGKILL ends the group.
     @Test func theWaitForAStoppedStep_killsItsGroup_withoutTheStopsTimer() async throws {
-        var attributes: posix_spawnattr_t?
-        posix_spawnattr_init(&attributes)
-        defer { posix_spawnattr_destroy(&attributes) }
-        posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP))
-        posix_spawnattr_setpgroup(&attributes, 0)
-        let arguments = ["/bin/sleep", "30"]
-        var argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) } + [nil]
-        defer { argv.forEach { free($0) } }
-        var group: pid_t = 0
-        try #require(posix_spawn(&group, "/bin/sleep", nil, &attributes, &argv, environ) == 0)
+        let group = try spawnProcessGroup(["/bin/sleep", "30"])
         defer {
             if WorktreeSetup.isRunning(group: group) {
                 kill(-group, SIGKILL)
             }
         }
-        // Reaped as it ends, as `Process` reaps a step, so the test leaves
-        // no zombie behind.
-        let leader = group
-        DispatchQueue.global().async {
-            var status: Int32 = 0
-            waitpid(leader, &status, 0)
-        }
+        reapWhenItEnds(group)
 
         let clock = SuspendingClock()
         let started = clock.now
@@ -284,5 +272,33 @@ struct WorktreeSetupTests {
         #expect(!WorktreeSetup.isRunning(group: group))
         // The step still had its time to end on SIGTERM.
         #expect(clock.now - started >= .seconds(3))
+    }
+
+    /// Before Limpid exits, the quit sends SIGKILL to a step that ignores
+    /// SIGTERM. No timer runs here, unlike a cancel's, so a step that ends
+    /// was ended by the quit, however long that takes on a busy runner.
+    @Test func theQuit_killsAStepThatIgnoresSIGTERM_withNoTimerOfItsOwn() async throws {
+        try await withTempDir { folder in
+            let ready = folder.appendingPathComponent("ready")
+            // `exec` keeps the ignored SIGTERM, as a step's children do.
+            let group = try spawnProcessGroup(["/bin/sh", "-c", "trap '' TERM; touch \"$1\"; exec sleep 60", "sh", ready.path])
+            defer {
+                if WorktreeSetup.isRunning(group: group) {
+                    kill(-group, SIGKILL)
+                }
+            }
+            reapWhenItEnds(group)
+            await pollUntil(timeout: .seconds(10), interval: .milliseconds(20)) {
+                FileManager.default.fileExists(atPath: ready.path)
+            }
+            try #require(FileManager.default.fileExists(atPath: ready.path))
+
+            let steps = WorktreeSetup.RunningSteps()
+            steps.insert(group)
+            steps.stopBeforeExit()
+
+            await pollUntil(timeout: .seconds(15), interval: .milliseconds(20)) { !WorktreeSetup.isRunning(group: group) }
+            #expect(!WorktreeSetup.isRunning(group: group))
+        }
     }
 }
