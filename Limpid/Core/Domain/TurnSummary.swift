@@ -65,6 +65,12 @@ struct TurnSummary: Equatable, Sendable, Decodable {
     /// read at its end from a part of the agent's transcript that no longer
     /// held the turn's start.
     let areChecksPartial: Bool
+    /// The actions the provider refused in the turn without asking the
+    /// person (Claude's auto mode), the first ones the record keeps
+    /// (`MAX_DENIED_ACTIONS` in `limpid-agent-model`).
+    let deniedActions: [DeniedAction]
+    /// How many it refused, those `deniedActions` does not hold included.
+    let deniedCount: Int
     /// What the turn used, `nil` until it ended, or when the agent's
     /// transcript did not say.
     let usage: TurnUsage?
@@ -86,7 +92,7 @@ struct TurnSummary: Equatable, Sendable, Decodable {
         case runID = "runId"
         case paneID = "paneId"
         case displayNumber, promptHead, promptKind, replyHead, conversationTitle, startedAt, finishedAt, phase, changes, durationSeconds,
-             lastCheck, checks, checkCount, failureCount, areChecksPartial, usage, hasPrompt, begin, end
+             lastCheck, checks, checkCount, failureCount, areChecksPartial, deniedActions, deniedCount, usage, hasPrompt, begin, end
     }
 
     private enum ChangeKeys: String, CodingKey {
@@ -140,6 +146,11 @@ struct TurnSummary: Equatable, Sendable, Decodable {
                 earlierFailures: max(0, failureCount - (check.hasFailed ? 1 : 0))
             )
         }
+        // As with checks: a list that does not read costs the list, not the
+        // turn, and the count is never fewer than the list holds.
+        let deniedActions = (try? container.decodeIfPresent([DeniedAction].self, forKey: .deniedActions)) ?? []
+        self.deniedActions = deniedActions
+        deniedCount = max((try? container.decodeIfPresent(Int.self, forKey: .deniedCount)) ?? 0, deniedActions.count)
         usage = (try? container.decodeIfPresent(TurnUsage.self, forKey: .usage)) ?? nil
         hasPrompt = try container.decode(Bool.self, forKey: .hasPrompt)
         // Only a taken snapshot has a tree; any other state, or one this
@@ -293,6 +304,13 @@ extension CheckSummary: Decodable {
             exitCode: container.decodeIfPresent(Int.self, forKey: .exitCode)
         )
     }
+}
+
+/// An action the provider refused in a turn without asking the person: what
+/// the agent tried, and why, both in the provider's words.
+struct DeniedAction: Equatable, Sendable, Decodable {
+    let action: String
+    let reason: String
 }
 
 /// One check run of a turn: how it exited, and whether it ran only part of

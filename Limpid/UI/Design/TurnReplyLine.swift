@@ -31,3 +31,29 @@ struct TurnReplyLine: View {
         }
     }
 }
+
+/// A card's line for what the agent tried and its own check refused. One line,
+/// in the waiting tone with a symbol, so the color is not all that says it.
+/// A long action is cut; how many others there are stays in full.
+struct TurnDeniedLine: View {
+    let action: String
+    let more: String?
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: LimpidLayout.Supervision.spaceXS) {
+            Image(systemName: "nosign")
+                .font(.supervision(.glyph))
+            Text(verbatim: action)
+                .font(.supervision(.caption))
+                .lineLimit(1)
+                .supervisionTruncation(.sentence)
+            if let more {
+                Text(verbatim: more)
+                    .font(.supervision(.caption))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .foregroundStyle(SupervisionTokens.waitingText.color)
+    }
+}

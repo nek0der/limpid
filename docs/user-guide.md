@@ -143,10 +143,12 @@ timeline, with the unviewed count and range and a **Conversation** filter.
   fainter ✓ ran only part of the suite), the tokens it used, and how long it
   ran. The token count leaves out what was read from the prompt cache; the
   tooltip has the exact count and everything it is made of. No price is
-  shown. Under them, a turn that finished shows the first paragraph of the
-  agent's reply, on two lines at most; the tooltip has more of it. A
-  finished turn's notification says the reply too, with the prompt beside
-  the project.
+  shown. When Claude Code's auto mode refused something the agent tried, a
+  line names the first action and how many others; the tooltip lists each
+  with its reason. Under them, a turn that finished shows the first
+  paragraph of the agent's reply, on two lines at most; the tooltip has more
+  of it. A finished turn's notification says the reply too, with the prompt
+  beside the project.
 - Each conversation is named by its title: the name you gave its tab
   (kept after the tab closes; clear the tab's name to drop it), else the
   agent's own (Claude's `/rename` or the title Claude generates,

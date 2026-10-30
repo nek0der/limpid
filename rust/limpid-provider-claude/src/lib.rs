@@ -14,10 +14,10 @@ mod transcript;
 mod usage;
 
 use limpid_agent_model::{
-    AgentEvent, ApprovalDecision, ApprovalRequest, CommandRun, EventId, HookContext, InstallRecipe,
-    ListDirectory, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, ProviderDescriptor,
-    ProviderOutput, RawHookInput, StatusLineAdapter, TurnReading, TurnUsage, WorktreeIntent,
-    parse_object,
+    AgentEvent, ApprovalDecision, ApprovalRequest, CommandRun, DeniedAction, EventId, HookContext,
+    InstallRecipe, ListDirectory, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter,
+    ProviderDescriptor, ProviderOutput, RawHookInput, StatusLineAdapter, TurnReading, TurnUsage,
+    WorktreeIntent, parse_object,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -97,6 +97,10 @@ impl ProviderAdapter for ClaudeAdapter {
         input: RawHookInput<'_>,
     ) -> Result<Option<WorktreeIntent>, NormalizeError> {
         WorktreeIntent::from_hook_payload(input.bytes, "Bash")
+    }
+
+    fn denied_action(&self, input: RawHookInput<'_>) -> Option<DeniedAction> {
+        normalize::denied_action(input)
     }
 
     fn command_run(&self, input: RawHookInput<'_>) -> Result<Option<CommandRun>, NormalizeError> {

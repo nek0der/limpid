@@ -89,6 +89,7 @@ pub trait ProviderAdapter: Send + Sync {
     fn title_index_path(&self, input: RawHookInput<'_>, ctx: &HookContext)
         -> Result<Option<PathBuf>, NormalizeError>;
     fn indexed_titles(&self, input: RawHookInput<'_>, index: &[u8]) -> Option<Titles>;
+    fn denied_action(&self, input: RawHookInput<'_>) -> Option<DeniedAction>;
     fn worktree_intent(&self, input: RawHookInput<'_>)
         -> Result<Option<WorktreeIntent>, NormalizeError>;
 }
@@ -127,6 +128,11 @@ pub trait ProviderAdapter: Send + Sync {
   the payload's session out of it, and the runtime adds them to the events
   that carry titles (`AgentEvent::add_titles`). Claude keeps its titles in
   its transcript, which `normalize` already reads.
+- `denied_action` reads an action the provider refused by itself, without
+  asking the person (Claude's `PermissionDenied`, from its auto mode). It is
+  separate from the neutral events because it changes no run state: the
+  runtime adds it to the current turn's record, and a refusal with no turn
+  running is no turn's. Only Claude reports one.
 - `worktree_intent` reports a `git worktree add` the agent is about to run, so
   the runtime can intercept it before the tool runs; it is separate from the
   neutral events because it is a request to act, not an observation.

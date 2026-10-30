@@ -19,9 +19,9 @@ use limpid_agent_core::{
     end_record, turn_snapshot_cwd,
 };
 use limpid_agent_model::{
-    AgentEvent, CheckResult, ConversationKey, DiffStat, EventApplication, EventId, PromptKind,
-    ProviderDescriptor, RunRecord, SnapshotStatus, TurnCounter, TurnPhase, TurnRecord, TurnUsage,
-    turn_record_file_name,
+    AgentEvent, CheckResult, ConversationKey, DeniedAction, DiffStat, EventApplication, EventId,
+    PromptKind, ProviderDescriptor, RunRecord, SnapshotStatus, TurnCounter, TurnPhase, TurnRecord,
+    TurnUsage, turn_record_file_name,
 };
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -726,6 +726,31 @@ impl Turns<'_> {
             return;
         }
         turn.push_check(check);
+        self.write(&turn);
+    }
+
+    /// Records `denied` on the run's current turn, under the run record's
+    /// lock. As with a check, a refusal with no turn running is no turn's.
+    pub(crate) fn record_denial(
+        &self,
+        record: Option<&RunRecord>,
+        event: Option<&EventId>,
+        denied: DeniedAction,
+    ) {
+        let Some(event) = event else {
+            self.log.line("denial not written: a call without an id");
+            return;
+        };
+        let Current::Turn(mut turn) = self.current(record) else {
+            return;
+        };
+        if !turn.is_writable() || turn.phase != TurnPhase::Started {
+            return;
+        }
+        if turn.apply_event(Some(event)) != EventApplication::Applied {
+            return;
+        }
+        turn.push_denied_action(denied);
         self.write(&turn);
     }
 

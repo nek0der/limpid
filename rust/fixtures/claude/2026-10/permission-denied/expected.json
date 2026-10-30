@@ -1,0 +1,49 @@
+[
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "source": "startup",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for permission-denied>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "name": "PermissionDenied",
+      "payload": {
+        "cwd": "/tmp/example",
+        "effort": {
+          "level": "medium"
+        },
+        "hook_event_name": "PermissionDenied",
+        "permission_mode": "auto",
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "reason": "<reason for permission-denied>",
+        "scratchpad_dir": "/tmp/example",
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "tool_input": {
+          "command": "git push --force origin main",
+          "description": "Force push to main"
+        },
+        "tool_name": "Bash",
+        "tool_use_id": "toolu_00000000000000000000000",
+        "transcript_path": "/Users/example/.claude-work/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+      },
+      "type": "extension"
+    }
+  ],
+  [
+    {
+      "reply": "<last_assistant_message for permission-denied>",
+      "type": "turn_finished"
+    }
+  ]
+]

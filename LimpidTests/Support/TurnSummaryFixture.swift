@@ -24,6 +24,9 @@ enum TurnSummaryFixture {
         var checkCount: Int?
         var failureCount: Int?
         var areChecksPartial: Bool?
+        /// The record's `deniedActions`, as JSON.
+        var deniedActions: String?
+        var deniedCount: Int?
         /// The record's `usage`, as JSON.
         var usage: String?
         /// The prompt's first characters, as the record keeps them.
@@ -87,6 +90,12 @@ enum TurnSummaryFixture {
         }
         if let areChecksPartial = extras.areChecksPartial {
             fields += #","areChecksPartial":\#(areChecksPartial)"#
+        }
+        if let deniedActions = extras.deniedActions {
+            fields += #","deniedActions":\#(deniedActions)"#
+        }
+        if let deniedCount = extras.deniedCount {
+            fields += #","deniedCount":\#(deniedCount)"#
         }
         if let usage = extras.usage {
             fields += #","usage":\#(usage)"#

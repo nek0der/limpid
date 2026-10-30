@@ -1,7 +1,7 @@
 //! The contract a provider crate implements.
 
 use crate::{
-    AgentEvent, ApprovalDecision, ApprovalRequest, EventId, InstallRecipe, PlanUsage,
+    AgentEvent, ApprovalDecision, ApprovalRequest, DeniedAction, EventId, InstallRecipe, PlanUsage,
     PlanUsageAnswer, PromptKind, ProviderDescriptor, Titles, TurnUsage, WorktreeIntent,
 };
 use serde_json::{Map, Value};
@@ -315,6 +315,15 @@ pub trait ProviderAdapter: Send + Sync {
     fn command_run(&self, input: RawHookInput<'_>) -> Result<Option<CommandRun>, NormalizeError> {
         let _ = input;
         Ok(None)
+    }
+
+    /// Reads an action the provider refused by itself out of a hook payload,
+    /// for the turn's record. Reported alongside the neutral events because
+    /// it changes no run state: the agent goes on with its turn. Providers
+    /// that report no such refusal keep the default.
+    fn denied_action(&self, input: RawHookInput<'_>) -> Option<DeniedAction> {
+        let _ = input;
+        None
     }
 
     /// Returns whether this call's events are about the run `record`

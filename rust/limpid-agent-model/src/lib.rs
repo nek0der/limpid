@@ -78,10 +78,10 @@ pub use timestamp::{
     days_from_civil, format_utc_seconds, parse_utc_seconds, seconds_between, unix_seconds,
 };
 pub use turn::{
-    ChangeSummary, CheckMark, CheckResult, ConversationKey, ConversationTurns, DiffStat,
-    EventApplication, GitContext, MAX_CHECK_MARKS, SkippedFile, SnapshotStatus,
-    TURN_COUNTER_FILE_SUFFIX, TURN_RECORD_FILE_SUFFIX, TurnCounter, TurnPhase, TurnRecord,
-    TurnRecordError, TurnSummary, TurnUsage, turn_record_file_name,
+    ChangeSummary, CheckMark, CheckResult, ConversationKey, ConversationTurns, DeniedAction,
+    DiffStat, EventApplication, GitContext, MAX_CHECK_MARKS, MAX_DENIED_ACTIONS, SkippedFile,
+    SnapshotStatus, TURN_COUNTER_FILE_SUFFIX, TURN_RECORD_FILE_SUFFIX, TurnCounter, TurnPhase,
+    TurnRecord, TurnRecordError, TurnSummary, TurnUsage, turn_record_file_name,
 };
 pub use usage::{PlanResetCredits, PlanUsage, PlanUsageAnswer, PlanUsageWindow, UsageLimit};
 pub use worktree::WorktreeIntent;
