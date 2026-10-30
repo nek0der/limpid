@@ -17,6 +17,37 @@ extension AttentionState {
     /// switches with the display language.
     func paneHeaderLabel(paneID: UUID, in session: WorkspaceSession, locale: Locale) -> PaneHeaderLabel {
         let tab = session.tab(containing: paneID)
+        // We keep conversation selection stable for restore and Changes,
+        // but settings describe the agent the terminal currently shows.
+        // We retain a warning from any visible split, even when another
+        // split has focus. Its model and provider identify the same agent.
+        let runtimes = allRuntimes.filter { $0.paneIDs.contains(paneID) }
+        let facts = runtimes.map { runtime in
+            let location = runtime.tmuxLocations[paneID]
+            return PaneHeaderOwnershipRules.Run(
+                id: runtime.id,
+                runID: runtime.runID,
+                parentRunID: runtime.badge.parentRunID,
+                endpoint: location.map {
+                    PaneHeaderOwnershipRules.Endpoint(
+                        socketPath: $0.socketPath,
+                        serverPID: $0.serverPID,
+                        serverStartedAt: $0.recordedServerStart,
+                        paneID: $0.paneID
+                    )
+                },
+                isKnown: runtime.badge.state != .unknown,
+                isVisible: location?.isVisible ?? location?.isActive ?? true,
+                isActive: location?.isActive ?? true,
+                runsWithoutAsking: runtime.badge.agentPermissionMode?.runsWithoutAsking == true,
+                updatedAt: runtime.badge.updatedAt,
+                sessionStartedAt: runtime.badge.sessionStartedAt,
+                launchOrder: runtime.badge.runLaunchOrder,
+                observedOrder: runtime.badge.runObservedOrder
+            )
+        }
+        let selection = PaneHeaderOwnershipRules.select(from: facts)
+        let settingsRuntime = runtimes.first { $0.id == selection.ownerID }
         // The run the header speaks for, else the agent the pane's tab
         // wears for it (`Tab.agentKind(inPane:)`): one in front before its
         // record, or a restored run that has not reported since. Only the
@@ -26,10 +57,10 @@ extension AttentionState {
         // match on.
         let agent = headerRuntime(inPane: paneID).map { runtime in
             PaneHeaderAgent(
-                providerName: AgentProviderRegistry.displayName(for: runtime.kind),
+                providerName: AgentProviderRegistry.displayName(for: settingsRuntime?.kind ?? runtime.kind),
                 title: PaneHeaderRules.agentTitle(for: runtime.badge),
-                model: runtime.badge.model,
-                permissionMode: runtime.badge.agentPermissionMode
+                model: settingsRuntime?.badge.model,
+                permissionMode: settingsRuntime?.badge.agentPermissionMode
             )
         } ?? tab?.agentKind(inPane: paneID).map { kind in
             PaneHeaderAgent(providerName: AgentProviderRegistry.displayName(for: kind), title: nil)
@@ -40,11 +71,18 @@ extension AttentionState {
         let directory = session.workingDirectory(paneID: paneID)
             ?? tab?.pwd
             ?? tab?.workingDirectory
-        return PaneHeaderRules.label(
+        var label = PaneHeaderRules.label(
             customName: session.paneState(paneID).name,
             agent: agent,
             workingDirectory: directory,
             fallbackName: LocalizedStringResource("Terminal").resolved(in: locale)
         )
+        if selection.isAmbiguous {
+            label.model = nil
+            label.permissionMode = nil
+            label.settingsAreAmbiguous = true
+        }
+        return label
     }
+
 }

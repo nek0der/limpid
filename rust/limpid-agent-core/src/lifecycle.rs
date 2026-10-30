@@ -31,6 +31,12 @@ use serde::{Deserialize, Serialize};
 pub struct ApplyContext {
     /// Uppercase UUID string; the record's file name.
     pub run_id: String,
+    /// The launching shim's immutable monotonic stamp, absent on older shims.
+    pub run_launch_order: Option<u64>,
+    /// The enclosing shim invocation, absent outside a nested agent launch.
+    pub parent_run_id: Option<String>,
+    /// The latest observation of this run's own settings, not a subagent's.
+    pub run_observed_order: Option<u64>,
     /// Uppercase UUID string of the launching pane.
     pub pane_id: String,
     /// The agent process, when the shim exported it and tmux did not make it
@@ -161,7 +167,11 @@ pub fn apply(
     {
         let mut next = prev.clone();
         observe_settings(&mut next, &context.settings);
-        if next.model != prev.model || next.permission_mode != prev.permission_mode {
+        next.run_observed_order = next.run_observed_order.max(context.run_observed_order);
+        if next.model != prev.model
+            || next.permission_mode != prev.permission_mode
+            || next.run_observed_order != prev.run_observed_order
+        {
             next.revision = Some(prev.revision.unwrap_or(0) + 1);
             writes.run = Some(next);
         }
@@ -808,6 +818,15 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
             .and_then(|record| record.provider_generated_title.as_deref())
             .and_then(title_field),
         session_started_at: prev.and_then(|record| record.session_started_at.clone()),
+        run_launch_order: prev
+            .and_then(|record| record.run_launch_order)
+            .or(context.run_launch_order),
+        parent_run_id: prev
+            .and_then(|record| record.parent_run_id.clone())
+            .or_else(|| context.parent_run_id.clone()),
+        run_observed_order: prev
+            .and_then(|record| record.run_observed_order)
+            .max(context.run_observed_order),
         turn_base_tree: prev.and_then(|record| record.turn_base_tree.clone()),
         turn_root: prev.and_then(|record| record.turn_root.clone()),
         worktree_root: prev.and_then(|record| record.worktree_root.clone()),

@@ -290,6 +290,23 @@ struct TmuxClientProbeSmokeTests {
         #expect(TmuxClientProbe.normalizeSocketPath(discovered) == discovered)
     }
 
+    /// An app opened from Finder or the Dock has no locale, where tmux
+    /// prints a format's tabs as `_`. The test host's locale can hide that,
+    /// so we set the C locale on the client ourselves.
+    @Test("a real tmux keeps a format's tabs with no UTF-8 locale")
+    func clientArguments_cLocale_keepsTheFieldsParseable() throws {
+        let tmux = try #require(installedTmux)
+        let socket = "/private/tmp/limpid-locale-\(UUID().uuidString.prefix(8)).sock"
+        defer { _ = try? run(tmux, ["-S", socket, "kill-server"]) }
+        _ = try run(tmux, ["-S", socket, "-f", "/dev/null", "new-session", "-d", "-s", "locale", "sleep 120"])
+        let output = try TestProcess.run(
+            URL(fileURLWithPath: tmux),
+            arguments: TmuxClientProbe.clientArguments(socketPath: socket) + TmuxTopology.paneArguments,
+            environment: ["LC_ALL": "C", "LC_CTYPE": "C", "LANG": "C"]
+        )
+        #expect(TmuxTopology.parsePanes(output.stdoutText, socketPath: socket).count == 1)
+    }
+
     /// The format string is the whole contract with tmux, and a typo in
     /// it yields empty output rather than an error. Only a real server
     /// can say whether we asked for the right fields.

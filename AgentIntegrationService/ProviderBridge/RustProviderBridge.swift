@@ -4,6 +4,7 @@
 // Lives outside `Shared/` because the probe executables compile `Shared/`
 // without linking the Rust bridge; only the Hook Helper and the app do.
 
+import Dispatch
 import Foundation
 import LimpidRustBridge
 
@@ -84,13 +85,18 @@ enum RustProviderBridge {
 
     /// Runs one lifecycle or worktree hook call in-process. `environment` is
     /// what the hook runtime reads the shim's variables from, so a test can
-    /// point it at a scratch directory. Never opens the approval service.
+    /// point it at a scratch directory. `observationClock` supplies this
+    /// boot's monotonic nanoseconds and can be fixed by a test. Never opens
+    /// the approval service.
     static func runHook(
         provider: String,
         kind: HookKind,
         payload: Data,
-        environment: [String: String]
+        environment: [String: String],
+        observationClock: () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }
     ) throws -> HookOutcome {
+        var environment = environment
+        environment["LIMPID_HOOK_OBSERVED_ORDER"] = String(observationClock())
         let environmentJSON = try JSONSerialization.data(withJSONObject: environment)
         let body = try environmentJSON.withUnsafeBytes { environmentBuffer in
             try call(provider: provider, input: payload, notApproval: false) { pointers in

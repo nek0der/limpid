@@ -135,3 +135,84 @@ fn an_ended_session_still_takes_a_setting_without_coming_back() {
     assert_eq!(switched.state_episode_token, ended.state_episode_token);
     assert_eq!(switched.model.as_deref(), Some("Haiku 5.5"));
 }
+
+#[test]
+fn launch_order_is_kept_through_session_restarts_and_compaction() {
+    let launch = ApplyContext {
+        run_launch_order: Some(123),
+        ..context()
+    };
+    let mut record = apply(None, &started(None), &launch, &claude(), NOW)
+        .run
+        .expect("record");
+    assert_eq!(record.run_launch_order, Some(123));
+    let changed = ApplyContext {
+        run_launch_order: Some(999),
+        ..context()
+    };
+    for event in [
+        prompt("go"),
+        started(None),
+        AgentEvent::SessionStarted {
+            compact: true,
+            source: Some(SessionSource::Compact),
+            session_id: Some("session-1".into()),
+            session_title: None,
+            cwd: Some("/repo".into()),
+        },
+    ] {
+        record = apply(Some(&record), &event, &changed, &claude(), LATER)
+            .run
+            .expect("record");
+        assert_eq!(record.run_launch_order, Some(123));
+    }
+    record = apply(
+        Some(&record),
+        &prompt("again"),
+        &context(),
+        &claude(),
+        LATER,
+    )
+    .run
+    .expect("record");
+    assert_eq!(record.run_launch_order, Some(123));
+}
+
+#[test]
+fn parent_identity_is_immutable_and_own_observations_advance_without_a_state_change() {
+    let initial = ApplyContext {
+        parent_run_id: Some("parent".into()),
+        run_observed_order: Some(100),
+        ..saying(Some("Opus 5.5"), Some(PermissionMode::Default))
+    };
+    let record = apply(None, &started(None), &initial, &claude(), NOW)
+        .run
+        .expect("record");
+    let later = ApplyContext {
+        parent_run_id: Some("another-parent".into()),
+        run_observed_order: Some(200),
+        ..initial
+    };
+    let next = apply(Some(&record), &model_switch(), &later, &claude(), LATER)
+        .run
+        .expect("observation write");
+    assert_eq!(next.parent_run_id.as_deref(), Some("parent"));
+    assert_eq!(next.run_observed_order, Some(200));
+    assert_eq!(next.updated_at, record.updated_at);
+    assert_eq!(next.state_episode_token, record.state_episode_token);
+    assert_eq!(next.revision, Some(record.revision.unwrap_or(0) + 1));
+    let delayed = ApplyContext {
+        run_observed_order: Some(150),
+        ..later
+    };
+    assert!(
+        apply(Some(&next), &model_switch(), &delayed, &claude(), LATER)
+            .run
+            .is_none()
+    );
+    let changed = apply(Some(&next), &prompt("go"), &delayed, &claude(), LATER)
+        .run
+        .expect("state write");
+    assert_eq!(changed.parent_run_id.as_deref(), Some("parent"));
+    assert_eq!(changed.run_observed_order, Some(200));
+}

@@ -316,4 +316,23 @@ struct LimpidProjectionBridgeTests {
         #expect(facts.sessionID == "S")
         #expect(AgentRunRecordFacts(content: "not json") == nil)
     }
+
+    @Test func launchOrderDecodesWithoutLosingPrecision() throws {
+        let data = Data(
+            #"""
+            {"state":"running","updatedAt":"2026-10-31T00:00:00Z",
+             "runLaunchOrder":18446744073709551615,
+             "parentRunID":"AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+             "runObservedOrder":18446744073709551614}
+            """#
+            .utf8
+        )
+        let badge = try JSONDecoder().decode(AgentProjectedBadge.self, from: data).asAgentBadge
+        #expect(badge.runLaunchOrder == UInt64.max)
+        let saved = try JSONDecoder().decode(AgentBadge.self, from: JSONEncoder().encode(badge))
+        #expect(saved.runLaunchOrder == UInt64.max)
+        #expect(saved.parentRunID == "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1")
+        #expect(saved.runObservedOrder == UInt64.max - 1)
+    }
+
 }

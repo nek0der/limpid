@@ -111,4 +111,34 @@ struct RustProviderBridgeTests {
         #expect(codex == Set(AgentProviderRegistry.processNames(for: .codex)))
         #expect(try RustProviderBridge.processNames(provider: "gemini").isEmpty)
     }
+
+    @Test func hookObservationClockCanBeControlledWithoutReorderingTheRecord() throws {
+        try withTempDir { directory in
+            let pane = UUID().uuidString
+            let run = UUID().uuidString
+            var environment = HookAgent.codex.environment(in: directory, paneID: pane)
+            environment["LIMPID_AGENT_RUN_ID"] = run
+            environment["LIMPID_TURN_SNAPSHOT"] = "0"
+            let payload = try JSONSerialization.data(withJSONObject: [
+                "hook_event_name": "SessionStart",
+                "source": "startup",
+                "session_id": "clock-fixture",
+                "model": "gpt-fixture",
+                "permission_mode": "default",
+                "cwd": directory.path
+            ])
+            let observations: [(UInt64, UInt64)] = [(100, 100), (50, 100), (200, 200)]
+            for (observed, expected) in observations {
+                let outcome = try RustProviderBridge.runHook(
+                    provider: "codex", kind: .lifecycle, payload: payload,
+                    environment: environment, observationClock: { observed }
+                )
+                #expect(outcome.exitCode == 0)
+                let url = try directory.appendingPathComponent("states/\(AgentRecordFixtures.recordFileName(run))")
+                let record = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: url)) as? [String: Any])
+                #expect((record["runObservedOrder"] as? NSNumber)?.uint64Value == expected)
+            }
+        }
+    }
+
 }

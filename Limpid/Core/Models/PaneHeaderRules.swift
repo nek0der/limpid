@@ -37,6 +37,19 @@ struct PaneHeaderLabel: Equatable {
     var model: String?
     /// How freely the pane's agent may act without asking.
     var permissionMode: AgentPermissionMode?
+    /// Whether the run records lack enough evidence to identify the current
+    /// settings owner.
+    var settingsAreAmbiguous = false
+
+    /// Shared by row layout and rename sizing so every warning reserves space.
+    var showsWarning: Bool {
+        runsWithoutAsking || settingsAreAmbiguous
+    }
+
+    static let unavailableSettings = LocalizedStringResource(
+        "Agent settings unavailable",
+        comment: "Pane header: older run records do not establish which agent settings are current"
+    )
 
     /// Whether the header warns that the agent runs every action without
     /// asking.
@@ -49,6 +62,9 @@ struct PaneHeaderLabel: Equatable {
     /// default mode is left unsaid, and the mode that runs without asking is
     /// named by the warning instead.
     func settingsText(locale: Locale) -> String? {
+        if settingsAreAmbiguous {
+            return nil
+        }
         let pieces = [model, permissionMode?.headerName?.resolved(in: locale)].compactMap(\.self)
         return pieces.isEmpty ? nil : pieces.joined(separator: " · ")
     }

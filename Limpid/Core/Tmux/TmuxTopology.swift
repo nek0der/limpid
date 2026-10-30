@@ -20,6 +20,10 @@ struct TmuxPaneLocation: Equatable {
     let windowID: String
     let paneID: String
     let isActive: Bool
+    /// Whether the pane is shown in its session's active window, including
+    /// splits that do not have input focus. Nil in older observations that
+    /// did not report whether another pane was zoomed.
+    var isVisible: Bool?
     /// The second the kernel started the server process
     /// (`TmuxClientProbe.processStartSecond`), which is what a run's record
     /// names: its hook reads `ps -o lstart=`, which reports the same value.
@@ -50,13 +54,13 @@ struct TmuxTopology: Equatable {
 
     static let paneArguments = [
         "list-panes", "-a", "-F",
-        "#{pid}\t#{start_time}\t#{session_id}\t#{window_id}\t#{pane_id}\t#{window_active}\t#{pane_active}"
+        "#{pid}\t#{start_time}\t#{session_id}\t#{window_id}\t#{pane_id}\t#{window_active}\t#{pane_active}\t#{window_zoomed_flag}"
     ]
 
     static func parsePanes(_ output: String, socketPath: String) -> [TmuxPaneLocation] {
         output.split(separator: "\n").compactMap { line in
             let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-            guard fields.count == 7,
+            guard fields.count == 7 || fields.count == 8,
                   Int(fields[0]) != nil, Int(fields[1]) != nil,
                   isID(fields[2], prefix: "$"), isID(fields[3], prefix: "@"),
                   isID(fields[4], prefix: "%")
@@ -65,7 +69,8 @@ struct TmuxTopology: Equatable {
                 socketPath: socketPath,
                 serverPID: fields[0], serverStartedAt: fields[1],
                 sessionID: fields[2], windowID: fields[3], paneID: fields[4],
-                isActive: fields[5] == "1" && fields[6] == "1"
+                isActive: fields[5] == "1" && fields[6] == "1",
+                isVisible: fields.count == 8 ? fields[5] == "1" && (fields[7] != "1" || fields[6] == "1") : nil
             )
         }
     }

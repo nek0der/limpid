@@ -99,6 +99,16 @@ struct AgentBadge: Codable, Equatable {
     /// Codex panes so the most recent session wins the tab title.
     var sessionStartedAt: Date?
 
+    /// The invocation's monotonic launch stamp. Nil for older records that
+    /// did not distinguish launches within one wall-clock second.
+    var runLaunchOrder: UInt64?
+
+    /// The enclosing invocation, absent for a root launch or older records.
+    var parentRunID: String?
+    /// The monotonic stamp of the latest hook reporting this run's own
+    /// model or permission mode. Older records may lack this stamp.
+    var runObservedOrder: UInt64?
+
     /// The prompt cache window the last finished turn left. Optional
     /// because only a provider with the cache window capability reports
     /// one, a turn may leave it unknown, and a badge persisted before this

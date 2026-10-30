@@ -66,7 +66,7 @@ struct PaneHeaderView: View {
     private var inlineRenameThreshold: CGFloat {
         PaneHeaderMetrics.inlineRenameMinimumWidth(
             showsPromptCacheClock: attention.promptCacheMark(paneID: paneID) != nil,
-            showsWarning: label.runsWithoutAsking,
+            showsWarning: label.showsWarning,
             isZoomed: isZoomed
         )
     }
@@ -259,8 +259,8 @@ struct PaneHeaderView: View {
             Spacer(minLength: LimpidLayout.paneHeaderItemSpacing)
             // Kept for as long as the state mark is: in words while the row
             // has room for the model, else as the symbol alone.
-            if form.showsMark, label.runsWithoutAsking {
-                warning(inWords: form.showsSettings)
+            if form.showsMark, label.showsWarning {
+                warning(inWords: form.showsSettings, isAmbiguous: label.settingsAreAmbiguous)
             }
             if form.showsSettings, let settings = label.settingsText(locale: locale) {
                 settingsText(settings)
@@ -307,16 +307,16 @@ struct PaneHeaderView: View {
             .fixedSize()
     }
 
-    /// The warning that the agent runs every action without asking: a
-    /// symbol and, while there is room, the words, so its color is never
-    /// the only thing that says it.
-    private func warning(inWords: Bool) -> some View {
+    /// We pair warnings about permissions or unavailable settings with a
+    /// symbol and, when space allows, text so color never carries their
+    /// meaning alone.
+    private func warning(inWords: Bool, isAmbiguous: Bool) -> some View {
         HStack(spacing: LimpidLayout.paneHeaderItemSpacing / 2) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.supervision(LimpidLayout.paneHeaderGlyphFontSize, weight: .semibold))
                 .frame(width: LimpidLayout.paneHeaderWarningSlot, height: LimpidLayout.paneHeaderWarningSlot)
             if inWords {
-                Text(AgentPermissionMode.bypassPermissions.spokenName)
+                Text(isAmbiguous ? PaneHeaderLabel.unavailableSettings : AgentPermissionMode.bypassPermissions.spokenName)
                     .font(.supervision(LimpidLayout.paneHeaderDetailFontSize, weight: .medium))
                     .lineLimit(1)
             }
@@ -351,7 +351,10 @@ struct PaneHeaderView: View {
     /// default mode is said here too, unlike in the row: a reader asking
     /// what the agent may do is told.
     private func settingsDescription(_ label: PaneHeaderLabel) -> [String] {
-        [label.model, label.permissionMode?.spokenName.resolved(in: locale)].compactMap(\.self)
+        if label.settingsAreAmbiguous {
+            return [PaneHeaderLabel.unavailableSettings.resolved(in: locale)]
+        }
+        return [label.model, label.permissionMode?.spokenName.resolved(in: locale)].compactMap(\.self)
     }
 
     private func accessibilityDescription(_ label: PaneHeaderLabel, mark: PaneHeaderMark?) -> String {

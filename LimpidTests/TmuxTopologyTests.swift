@@ -25,6 +25,30 @@ struct TmuxTopologyTests {
         ), socketAliases: ["/tmp/tmux-501/default": "/private/tmp/tmux-501/default"])
     }
 
+    /// We keep every unzoomed split visible, but a zoomed pane hides its
+    /// neighbors even when their window is active.
+    @Test func parsedPanes_distinguishVisibilityFromInputFocus() {
+        let output = """
+        42\t100\t$1\t@1\t%1\t1\t0\t0
+        42\t100\t$1\t@1\t%2\t1\t1\t0
+        42\t100\t$1\t@2\t%3\t0\t1\t0
+        42\t100\t$2\t@3\t%4\t1\t0\t1
+        42\t100\t$2\t@3\t%5\t1\t1\t1
+        """
+        let panes = TmuxTopology.parsePanes(output, socketPath: path)
+
+        #expect(panes.map(\.paneID) == ["%1", "%2", "%3", "%4", "%5"])
+        #expect(panes.map(\.isActive) == [false, true, false, false, true])
+        #expect(panes.map(\.isVisible) == [true, true, false, false, true])
+    }
+
+    @Test func parsedPanes_olderObservationsLeaveVisibilityUnknown() throws {
+        let pane = try #require(TmuxTopology.parsePanes("42\t100\t$1\t@1\t%1\t1\t0\n", socketPath: path).first)
+
+        #expect(!pane.isActive)
+        #expect(pane.isVisible == nil)
+    }
+
     @Test func failedObservation_isNotEmptySuccess() {
         var prior = TmuxTopology(clients: ["/dev/tty1": binding], outcomes: [path: .success("")], observedAt: [path: 0])
         prior.merge(TmuxTopology(outcomes: [path: .timedOut], observedAt: [path: 1]), candidates: [path], now: 1)

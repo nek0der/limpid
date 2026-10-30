@@ -531,12 +531,15 @@ mod tests {
         let env = serde_json::json!({
             "LIMPID_PANE_ID": "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F10",
             "LIMPID_AGENT_RUN_ID": "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11",
+            "LIMPID_AGENT_LAUNCH_ORDER": "18446744073709551615",
+            "LIMPID_AGENT_PARENT_RUN_ID": "AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1",
+            "LIMPID_HOOK_OBSERVED_ORDER": "100",
             "LIMPID_AGENT_STATES_DIR": scratch.join("states"),
             "LIMPID_SESSIONS_DIR": scratch.join("sessions"),
             "LIMPID_TURN_SNAPSHOT": "0",
         })
         .to_string();
-        let payload = br#"{"hook_event_name":"SessionStart","source":"startup","session_id":"s","cwd":"/tmp"}"#;
+        let payload = br#"{"hook_event_name":"SessionStart","source":"startup","session_id":"s","cwd":"/tmp","model":"claude-opus-5-5"}"#;
         let (status, body) = hook(
             "claude",
             LIMPID_HOOK_KIND_LIFECYCLE,
@@ -552,6 +555,33 @@ mod tests {
         ))
         .expect("record written");
         assert!(String::from_utf8_lossy(&record).contains("\"schemaVersion\":3"));
+        let decoded = limpid_agent_model::RunRecord::decode(&record).expect("run record");
+        assert_eq!(decoded.run_launch_order, Some(u64::MAX));
+        assert_eq!(
+            decoded.parent_run_id.as_deref(),
+            Some("AAAAAAAA-1111-4111-8111-AAAAAAAAAAA1")
+        );
+        assert_eq!(decoded.run_observed_order, Some(100));
+        let mut subagent_env: Value = serde_json::from_str(&env).expect("environment");
+        subagent_env["LIMPID_HOOK_OBSERVED_ORDER"] = Value::String("200".into());
+        let subagent_payload = br#"{"hook_event_name":"PreToolUse","session_id":"s","agent_id":"child","tool_name":"Bash","permission_mode":"default"}"#;
+        let (status, _) = hook(
+            "claude",
+            LIMPID_HOOK_KIND_LIFECYCLE,
+            subagent_payload,
+            subagent_env.to_string().as_bytes(),
+        );
+        assert_eq!(status, PROVIDER_OK);
+        let after = std::fs::read(scratch.join("states").join(
+            limpid_agent_model::run_record_file_name("6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11"),
+        ))
+        .expect("record after subagent hook");
+        assert_eq!(
+            limpid_agent_model::RunRecord::decode(&after)
+                .expect("record")
+                .run_observed_order,
+            Some(100)
+        );
 
         let (status, body) = hook("claude", LIMPID_HOOK_KIND_LIFECYCLE, payload, b"{}");
         assert_eq!(status, PROVIDER_OK);

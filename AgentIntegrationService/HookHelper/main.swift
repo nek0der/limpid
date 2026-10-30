@@ -13,6 +13,7 @@
 // `statusline <provider> [settings <relay command>]` is Claude Code's status
 // line and the shim's setting for it (`StatusLineRelay`).
 
+import Dispatch
 import Foundation
 
 /// Upper bound on one wait for a decision; the request's own timeout comes
@@ -207,6 +208,14 @@ func publishCodexLifecycleFallback(input: Data) {
         payload: input,
         environment: ProcessInfo.processInfo.environment
     )
+}
+
+// We stamp the invocation before the shim starts the agent. Unlike wall
+// time, this clock keeps its order through clock adjustments and resolves
+// launches within one second. A tmux endpoint cannot outlive this boot.
+if CommandLine.arguments.count == 2, CommandLine.arguments[1] == "launch-order" {
+    FileHandle.standardOutput.write(Data("\(DispatchTime.now().uptimeNanoseconds)\n".utf8))
+    exit(0)
 }
 
 if CommandLine.arguments.count >= 2, CommandLine.arguments[1] == CodexTurnFailureWatch.subcommand {

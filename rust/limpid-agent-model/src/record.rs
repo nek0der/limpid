@@ -119,6 +119,21 @@ pub struct RunRecord {
     /// pane-scoped records from before run ids existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub run_id: Option<String>,
+    /// Immutable monotonic-clock stamp minted by the launching shim. We
+    /// compare it only within one boot's terminal endpoint, never as a date.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_launch_order: Option<u64>,
+    /// The enclosing shim invocation, when this run was launched by an agent.
+    #[serde(
+        default,
+        rename = "parentRunID",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub parent_run_id: Option<String>,
+    /// Monotonic stamp of the latest hook reporting this run's own model or
+    /// permission mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_observed_order: Option<u64>,
     /// Monotonic per-run counter. Required in version 3; a version 2 record
     /// may lack it, in which case readers fall back to `updated_at`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -430,6 +445,9 @@ impl From<RunRecordV2> for RunRecord {
             provider_session_title: record.provider_session_title,
             provider_generated_title: record.provider_generated_title,
             session_started_at: record.session_started_at,
+            run_launch_order: None,
+            parent_run_id: None,
+            run_observed_order: None,
             turn_base_tree: record.turn_base_tree,
             turn_root: record.turn_root,
             worktree_root: None,
@@ -482,6 +500,32 @@ mod tests {
             run_record_file_name("6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11"),
             "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11.state.json"
         );
+    }
+
+    #[test]
+    fn launch_order_is_optional_and_preserves_all_integer_bits() {
+        for json in [
+            V2.to_owned(),
+            V2.replace("\"schemaVersion\":2", "\"schemaVersion\":3"),
+        ] {
+            let record = RunRecord::decode(json.as_bytes()).expect("older record");
+            assert_eq!(record.run_launch_order, None);
+            assert!(
+                !String::from_utf8(record.encode().expect("encodes"))
+                    .expect("text")
+                    .contains("runLaunchOrder")
+            );
+            let ordered = RunRecord {
+                run_launch_order: Some(u64::MAX),
+                parent_run_id: Some("6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F10".into()),
+                run_observed_order: Some(u64::MAX),
+                ..record
+            };
+            let again = RunRecord::decode(&ordered.encode().expect("encodes")).expect("decodes");
+            assert_eq!(again.run_launch_order, Some(u64::MAX));
+            assert_eq!(again.parent_run_id, ordered.parent_run_id);
+            assert_eq!(again.run_observed_order, Some(u64::MAX));
+        }
     }
 
     #[test]

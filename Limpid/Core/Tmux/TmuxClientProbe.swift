@@ -168,7 +168,11 @@ enum TmuxClientProbe {
         func query(_ arguments: [String]) -> TmuxCommandResult {
             let available = deadline - ProcessInfo.processInfo.systemUptime - TmuxTiming.terminationGrace - TmuxTiming.drainGrace
             guard available > 0 else { return .timedOut }
-            return TmuxCommand().run(executable: tmuxPath, arguments: ["-S", socketPath] + arguments, timeout: min(timeout, available))
+            return TmuxCommand().run(
+                executable: tmuxPath,
+                arguments: clientArguments(socketPath: socketPath) + arguments,
+                timeout: min(timeout, available)
+            )
         }
         let paneResult = query(TmuxTopology.paneArguments)
         guard case let .success(paneText) = paneResult else { return ServerResult(outcome: paneResult) }
@@ -253,6 +257,14 @@ enum TmuxClientProbe {
         return tty
     }
 
+    /// What every client we run starts with. An app opened from Finder or
+    /// the Dock inherits no locale, and tmux then prints a tab in a format
+    /// as `_`, which leaves none of our fields to read. `-u` tells the
+    /// client to print UTF-8 whatever the locale says.
+    static func clientArguments(socketPath: String) -> [String] {
+        ["-u", "-S", socketPath]
+    }
+
     /// `nil` on any failure — a dead socket, a wedged server, a tmux
     /// that is not there. Every one of them means "no binding for these
     /// panes", which is the same answer as an empty client list, so
@@ -263,7 +275,11 @@ enum TmuxClientProbe {
         arguments: [String],
         timeout: TimeInterval
     ) -> String? {
-        let result = TmuxCommand().run(executable: tmuxPath, arguments: ["-S", socketPath] + arguments, timeout: timeout)
+        let result = TmuxCommand().run(
+            executable: tmuxPath,
+            arguments: clientArguments(socketPath: socketPath) + arguments,
+            timeout: timeout
+        )
         guard case let .success(output) = result else { return nil }
         return output
     }

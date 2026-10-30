@@ -538,6 +538,9 @@ fn badge_from(record: &RunRecord, descriptor: Option<&ProviderDescriptor>) -> Ba
         provider_session_title: present(&record.provider_session_title),
         provider_generated_title: present(&record.provider_generated_title),
         session_started_at: present(&record.session_started_at),
+        run_launch_order: record.run_launch_order,
+        parent_run_id: record.parent_run_id.clone(),
+        run_observed_order: record.run_observed_order,
         cache_window: caches.then(|| record.cache_window.clone()).flatten(),
         // The record keeps the last failure's limit through what follows;
         // it is the run's only while the run still rests in that error.
