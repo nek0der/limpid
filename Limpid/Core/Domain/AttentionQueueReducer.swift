@@ -102,6 +102,7 @@ enum AttentionQueueReducer {
                 queue.update(id: item.id, kind: item.kind, subject: item.subject)
             }
         }
+        queue.noteUsageLimitsLifted(by: input.runtimes)
         return (queue, effects)
     }
 

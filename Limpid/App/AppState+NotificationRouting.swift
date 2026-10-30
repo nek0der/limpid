@@ -13,7 +13,7 @@ extension AppState {
         _ notificationManager: LimpidNotificationManager
     ) -> UsageLimitResetSync {
         UsageLimitResetSync(
-            limits: { [attentionQueue] in UsageLimits(items: attentionQueue.queue.items) },
+            limits: { [attentionQueue] in UsageLimits(queue: attentionQueue.queue) },
             isEnabled: { [settingsStore] in settingsStore.settings.general.notifyOnUsageLimitReset },
             schedule: { [notificationManager] in notificationManager.scheduleUsageLimitReset(for: $0, at: $1) },
             cancel: { [notificationManager] in notificationManager.cancelUsageLimitReset(for: $0) }

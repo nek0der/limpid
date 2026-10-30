@@ -66,6 +66,46 @@ struct UsageLimitTests {
         #expect(UsageLimits(items: []).limits.isEmpty)
     }
 
+    /// The person left the stopped agent (upgraded the plan, or signed in
+    /// to another account) and went on in a new conversation: a turn of
+    /// the provider served to its end after the stop lifts the limit, for
+    /// every row and the reset notice, and keeps it lifted through that
+    /// run's next turn. The stop itself stays. A prompt taken, a session
+    /// started, a turn from before the stop, another provider's turn, or a
+    /// model's own weekly limit lifts nothing.
+    @Test func limits_aTurnServedAfterTheStop_liftsTheAccountWideLimit() {
+        let limited = Self.runtime("r1", limit: UsageLimit(resetAt: nil, window: "five_hour"))
+        var stopped = AttentionQueue()
+        (stopped, _) = AttentionQueueReducer.reduce(stopped, input: .init(runtimes: [limited]))
+        #expect(UsageLimits(queue: stopped).accountWide(of: .claude).count == 1)
+
+        func after(_ runtime: RuntimeFact) -> AttentionQueue {
+            AttentionQueueReducer.reduce(stopped, input: .init(runtimes: [limited, runtime])).0
+        }
+        let later = Self.start.addingTimeInterval(60)
+        for runtime in [
+            RuntimeFact.test("r2", .running, updatedAt: later),
+            RuntimeFact.test("r2", .idle, updatedAt: later),
+            RuntimeFact.test("r2", .finished, updatedAt: Self.start),
+            RuntimeFact.test("r2", .finished, provider: .codex, updatedAt: later)
+        ] {
+            #expect(UsageLimits(queue: after(runtime)).accountWide(of: .claude).count == 1)
+        }
+
+        let lifted = after(RuntimeFact.test("r2", .finished, updatedAt: later))
+        #expect(UsageLimits(queue: lifted).limits.isEmpty)
+        #expect(lifted.counts().stops == 1)
+        // Its next turn under way, the limit stays lifted.
+        let next = AttentionQueueReducer.reduce(
+            lifted,
+            input: .init(runtimes: [limited, RuntimeFact.test("r2", .running, updatedAt: later.addingTimeInterval(5))])
+        ).0
+        #expect(UsageLimits(queue: next).limits.isEmpty)
+
+        let opus = AttentionItem.testUsageLimitStop(UsageLimit(resetAt: Self.reset, window: "seven_day_opus"), arrivedAt: Self.start)
+        #expect(!UsageLimits.isLifted(opus, by: RuntimeFact.test("r2", .finished, updatedAt: later)))
+    }
+
     /// A time still ahead first, then a time not known, and a time past
     /// never: a reset that has passed does not hide a newer limit.
     @Test func holding_prefersATimeAheadThenAnUnknownOneOverOnePast() {

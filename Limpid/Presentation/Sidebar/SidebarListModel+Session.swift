@@ -51,7 +51,7 @@ extension SidebarListModel {
             approvals: sources.approvals,
             locale: sources.locale
         )
-        let usageLimits = UsageLimits(items: sources.queue.items)
+        let usageLimits = UsageLimits(queue: sources.queue)
         let groups = arrangement.ordered(session.projects.map(\.id)).compactMap { id -> Group? in
             guard let project = byID[id] else { return nil }
             let listed = sections.ordered(project)

@@ -35,7 +35,7 @@ extension SessionSidebarModel {
             project: project,
             window: window,
             sources: Sources(session: session, index: index, runtimes: runtimes, approvals: approvals, locale: locale),
-            usageLimits: UsageLimits(items: queue.items),
+            usageLimits: UsageLimits(queue: queue),
             pullRequest: pullRequest,
             gitFacts: gitFacts,
             layout: layout ?? project.map { project in
@@ -115,7 +115,7 @@ extension SessionSidebarModel {
         locale: Locale
     ) {
         guard let container = session.selection(window)?.activeContainerID else {
-            self.init(rows: [], activeContainer: nil, usageLimits: UsageLimits(items: queue.items), locale: locale)
+            self.init(rows: [], activeContainer: nil, usageLimits: UsageLimits(queue: queue), locale: locale)
             return
         }
         let input = Self.rowInput(
@@ -130,7 +130,7 @@ extension SessionSidebarModel {
             ),
             git: Git(pullRequest: pullRequest, facts: gitFacts)
         )
-        self.init(rows: [input], activeContainer: container, usageLimits: UsageLimits(items: queue.items), locale: locale)
+        self.init(rows: [input], activeContainer: container, usageLimits: UsageLimits(queue: queue), locale: locale)
     }
 
     /// What every row is read from, built once for every project a list
