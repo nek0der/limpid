@@ -351,8 +351,11 @@ struct AgentShimLaunchTests {
             process.arguments = ["-c", """
             . "$HELPER"
             limpid_ensure_run_id
-            printf '%s\\n' "$LIMPID_AGENT_RUN_ID" > "$OUT"
+            first="$LIMPID_AGENT_RUN_ID"
+            [ "$LIMPID_AGENT_PARENT_RUN_ID" = "$INHERITED" ] || exit 1
+            printf '%s\\n' "$first" > "$OUT"
             limpid_ensure_run_id
+            [ "$LIMPID_AGENT_PARENT_RUN_ID" = "$first" ] || exit 1
             printf '%s\\n' "$LIMPID_AGENT_RUN_ID" >> "$OUT"
             """]
             process.environment = IsolatedProcessEnvironment.make([
@@ -360,7 +363,8 @@ struct AgentShimLaunchTests {
                 "HOME": directory.path,
                 "HELPER": helper.path,
                 "OUT": output.path,
-                "LIMPID_AGENT_RUN_ID": inherited
+                "LIMPID_AGENT_RUN_ID": inherited,
+                "INHERITED": inherited
             ])
             process.standardOutput = FileHandle.nullDevice
             try process.run()
@@ -373,4 +377,42 @@ struct AgentShimLaunchTests {
             #expect(!ids.contains(inherited))
         }
     }
+
+    @Test(.disabled(if: HookHelperFixture.helperURL == nil, "no hook helper beside the test host"))
+    func eachInvocation_mintsItsOwnMonotonicLaunchOrder() throws {
+        let helper = try #require(HookHelperFixture.helperURL)
+        try withTempDir { directory in
+            let common = try AgentCatalogFixture.shimFolder("agent-shim").appendingPathComponent("runtime-common.sh")
+            let output = directory.appendingPathComponent("orders")
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = ["-c", """
+            . "$COMMON"
+            limpid_ensure_run_id
+            printf '%s\\n' "$LIMPID_AGENT_LAUNCH_ORDER" > "$OUT"
+            limpid_ensure_run_id
+            printf '%s\\n' "$LIMPID_AGENT_LAUNCH_ORDER" >> "$OUT"
+            """]
+            process.environment = IsolatedProcessEnvironment.make([
+                "PATH": ShimHarness.systemPath,
+                "HOME": directory.path,
+                "COMMON": common.path,
+                "OUT": output.path,
+                "LIMPID_HOOK_HELPER": helper.path,
+                "LIMPID_AGENT_LAUNCH_ORDER": "18446744073709551615"
+            ])
+            process.standardOutput = FileHandle.nullDevice
+            try process.run()
+            #expect(process.waitUntilExit(within: 10))
+            #expect(process.terminationStatus == 0)
+            let orders = try String(contentsOf: output, encoding: .utf8).split(separator: "\n").compactMap { UInt64($0) }
+            #expect(orders.count == 2)
+            if orders.count == 2 {
+                #expect(orders[0] > 0)
+                #expect(orders[1] > orders[0])
+                #expect(orders[1] != UInt64.max)
+            }
+        }
+    }
+
 }

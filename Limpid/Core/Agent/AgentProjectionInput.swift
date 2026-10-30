@@ -471,6 +471,9 @@ struct AgentProjectedBadge: Decodable, Sendable {
     var providerSessionTitle: String?
     var providerGeneratedTitle: String?
     var sessionStartedAt: String?
+    var runLaunchOrder: UInt64?
+    var parentRunID: String?
+    var runObservedOrder: UInt64?
     var cacheWindow: AgentProjectedCacheWindow?
     var usageLimit: AgentProjectedUsageLimit?
     var waitKind: String?
@@ -485,7 +488,7 @@ struct AgentProjectedBadge: Decodable, Sendable {
         case state, detail, runStartedAt, isTmuxHosted, updatedAt
         case lastPrompt, firstPrompt, turnBaseTree, turnRoot, worktreeRoot
         case conversationID = "conversationId"
-        case providerSessionTitle, providerGeneratedTitle, sessionStartedAt
+        case providerSessionTitle, providerGeneratedTitle, sessionStartedAt, runLaunchOrder, parentRunID, runObservedOrder
         case cacheWindow, usageLimit, waitKind, tool, stopReason, hasPrompt
         case backgroundWork, model, permissionMode
     }
@@ -509,6 +512,9 @@ struct AgentProjectedBadge: Decodable, Sendable {
             providerSessionTitle: providerSessionTitle,
             providerGeneratedTitle: providerGeneratedTitle,
             sessionStartedAt: AgentDateParsing.parseOptional(sessionStartedAt),
+            runLaunchOrder: runLaunchOrder,
+            parentRunID: parentRunID,
+            runObservedOrder: runObservedOrder,
             cacheWindow: cacheWindow?.window,
             usageLimit: usageLimit?.limit,
             waitKind: waitKind,

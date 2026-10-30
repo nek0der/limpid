@@ -146,7 +146,7 @@ one_shot_flags="--version -v -V --help -h -p --print --bg --background"
 # the server's is the first pane's that started it. `CLAUDE_CONFIG_DIR`
 # too: the session's Claude and its status line relay read the settings of
 # the pane's account, not the server's.
-hosted_env_names="LIMPID_PANE_ID LIMPID_SESSIONS_DIR LIMPID_AGENT_STATES_DIR LIMPID_CWD_EVENTS_DIR LIMPID_USAGE_DIR LIMPID_CLAUDE_USER_SETTINGS LIMPID_AGENT_RUN_ID LIMPID_AGENT_TMUX_HOST_MODE LIMPID_AGENT_TMUX PATH CLAUDE_CONFIG_DIR"
+hosted_env_names="LIMPID_PANE_ID LIMPID_SESSIONS_DIR LIMPID_AGENT_STATES_DIR LIMPID_CWD_EVENTS_DIR LIMPID_USAGE_DIR LIMPID_CLAUDE_USER_SETTINGS LIMPID_AGENT_RUN_ID LIMPID_AGENT_PARENT_RUN_ID LIMPID_AGENT_LAUNCH_ORDER LIMPID_AGENT_TMUX_HOST_MODE LIMPID_AGENT_TMUX PATH CLAUDE_CONFIG_DIR"
 
 hosts_in_tmux=0
 # Decided against the user's own arguments, before we add any of ours

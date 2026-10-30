@@ -13,6 +13,9 @@ const LATER: &str = "2026-09-14T00:00:05Z";
 
 fn context() -> ApplyContext {
     ApplyContext {
+        run_launch_order: None,
+        parent_run_id: None,
+        run_observed_order: None,
         run_id: "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11".into(),
         pane_id: "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F10".into(),
         pid: Some(4242),

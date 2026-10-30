@@ -112,6 +112,35 @@ impl HookEnv {
             .map(|uuid| uuid.hyphenated().to_string().to_uppercase())
     }
 
+    /// The shim's monotonic launch stamp. We accept only a positive decimal
+    /// integer so absent or damaged values cannot become an ordering proof.
+    #[must_use]
+    pub fn run_launch_order(&self) -> Option<u64> {
+        self.positive_order("LIMPID_AGENT_LAUNCH_ORDER")
+    }
+
+    /// The enclosing invocation, normalized like the run's own id.
+    #[must_use]
+    pub fn parent_run_id(&self) -> Option<String> {
+        uuid::Uuid::parse_str(self.get("LIMPID_AGENT_PARENT_RUN_ID")?)
+            .ok()
+            .map(|uuid| uuid.hyphenated().to_string().to_uppercase())
+    }
+
+    /// The helper's observation stamp, never an inherited shim value.
+    #[must_use]
+    pub fn run_observed_order(&self) -> Option<u64> {
+        self.positive_order("LIMPID_HOOK_OBSERVED_ORDER")
+    }
+
+    fn positive_order(&self, variable: &str) -> Option<u64> {
+        let value = self.get(variable)?;
+        if !value.bytes().all(|byte| byte.is_ascii_digit()) {
+            return None;
+        }
+        value.parse::<u64>().ok().filter(|order| *order > 0)
+    }
+
     /// The id the shim minted for this hook call, when it is a UUID. The
     /// shim keeps it across its retries of the call.
     #[must_use]
@@ -235,6 +264,30 @@ mod tests {
     }
 
     #[test]
+    fn launch_order_requires_a_positive_decimal_integer() {
+        for (raw, expected) in [
+            ("1", Some(1)),
+            ("18446744073709551615", Some(u64::MAX)),
+            ("", None),
+            ("0", None),
+            ("-1", None),
+            ("+1", None),
+            (" 1", None),
+            ("1.5", None),
+            ("18446744073709551616", None),
+        ] {
+            let env = HookEnv::from_pairs([("LIMPID_AGENT_LAUNCH_ORDER", raw)]);
+            assert_eq!(env.run_launch_order(), expected, "{raw:?}");
+            let observed = HookEnv::from_pairs([("LIMPID_HOOK_OBSERVED_ORDER", raw)]);
+            assert_eq!(observed.run_observed_order(), expected, "{raw:?}");
+        }
+        assert_eq!(
+            HookEnv::from_pairs([] as [(&str, &str); 0]).run_launch_order(),
+            None
+        );
+    }
+
+    #[test]
     fn run_ids_are_uppercased_and_validated() {
         let env = HookEnv::from_pairs([(
             "LIMPID_AGENT_RUN_ID",
@@ -246,6 +299,24 @@ mod tests {
         );
         let env = HookEnv::from_pairs([("LIMPID_AGENT_RUN_ID", "nope")]);
         assert_eq!(env.run_id(), None);
+    }
+
+    #[test]
+    fn parent_run_ids_are_validated_and_canonicalized() {
+        let env = HookEnv::from_pairs([(
+            "LIMPID_AGENT_PARENT_RUN_ID",
+            "6f1d6a1e-0e34-4a1a-9a8e-2f2b6c1d7f11",
+        )]);
+        assert_eq!(
+            env.parent_run_id().as_deref(),
+            Some("6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F11")
+        );
+        for bad in ["", "../parent", "not-a-uuid"] {
+            assert_eq!(
+                HookEnv::from_pairs([("LIMPID_AGENT_PARENT_RUN_ID", bad)]).parent_run_id(),
+                None
+            );
+        }
     }
 
     #[test]

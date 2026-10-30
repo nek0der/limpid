@@ -143,9 +143,27 @@ limpid_should_host_in_tmux() {
 limpid_ensure_run_id() {
   # We exec the real agent (not this shim) when handing off to tmux, so
   # every shim entry is a new invocation, including an agent's child.
+  if [ -n "${LIMPID_AGENT_RUN_ID:-}" ]; then
+    LIMPID_AGENT_PARENT_RUN_ID="$LIMPID_AGENT_RUN_ID"
+    export LIMPID_AGENT_PARENT_RUN_ID
+  else
+    unset LIMPID_AGENT_PARENT_RUN_ID
+  fi
   LIMPID_AGENT_RUN_ID=$(/usr/bin/uuidgen 2>/dev/null || true)
   LIMPID_AGENT_RUN_ID=$(printf '%s' "$LIMPID_AGENT_RUN_ID" | tr 'a-f' 'A-F')
   export LIMPID_AGENT_RUN_ID
+  # We mint the launch order here rather than inherit an enclosing agent's.
+  # The signed helper supplies a monotonic clock shared across processes.
+  # Source-tree fixtures and older bundles may have no helper yet.
+  unset LIMPID_AGENT_LAUNCH_ORDER
+  lro_helper="${LIMPID_HOOK_HELPER:-${self_dir:-}/../../MacOS/AgentIntegrationHookHelper}"
+  if [ -x "$lro_helper" ]; then
+    lro_order=$("$lro_helper" launch-order </dev/null 2>/dev/null || true)
+    case "$lro_order" in
+      "" | *[!0-9]*) ;;
+      *) LIMPID_AGENT_LAUNCH_ORDER="$lro_order"; export LIMPID_AGENT_LAUNCH_ORDER ;;
+    esac
+  fi
 }
 
 # The paths a known location names, one a line. A `/*/` stands for each

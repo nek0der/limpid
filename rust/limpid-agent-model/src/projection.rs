@@ -531,6 +531,18 @@ pub struct Badge {
     pub provider_generated_title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_started_at: Option<String>,
+    /// The launching shim's immutable monotonic stamp, for ordering runs
+    /// whose wall-clock timestamps fall in the same second.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_launch_order: Option<u64>,
+    #[serde(
+        default,
+        rename = "parentRunID",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub parent_run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run_observed_order: Option<u64>,
     /// Present only for providers with the cache window capability. The
     /// interface derives whether the cache is about to expire from this and
     /// its own clock, so the projection does not have to run on a timer.

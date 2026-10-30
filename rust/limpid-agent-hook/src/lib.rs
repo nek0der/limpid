@@ -221,6 +221,11 @@ pub fn run_hook(provider: &str, stdin: &[u8], runtime: &HookRuntime<'_>) -> Hook
     // costs no read.
     apply_context.transcript_path = adapter.turn_transcript_path(input).ok().flatten();
     apply_context.settings = adapter.session_settings(input, &context);
+    // A subagent's hook may advance the parent's lifecycle, but it does not
+    // prove that the parent has resumed control of the terminal.
+    if apply_context.settings.is_empty() {
+        apply_context.run_observed_order = None;
+    }
 
     let mut events = match adapter.normalize(input, &context) {
         Ok(events) => events,
@@ -663,6 +668,9 @@ fn identity(
     };
     let apply_context = ApplyContext {
         run_id,
+        run_launch_order: env.run_launch_order(),
+        parent_run_id: env.parent_run_id(),
+        run_observed_order: env.run_observed_order(),
         pane_id: pane_id.to_owned(),
         pid,
         tmux,

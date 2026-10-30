@@ -329,3 +329,26 @@ fn a_badge_is_named_only_with_its_conversation() {
     assert_eq!(unknown.conversation_id, None);
     assert_eq!(badge_title(&unknown), Ok(None));
 }
+
+#[test]
+fn launch_order_reaches_the_runtime_badge_without_precision_loss() {
+    let mut input = finished_input(Vec::new());
+    let ordered = record(Some(4), "2026-09-14T12:03:00Z", "finished").replace(
+        "\"state\":\"finished\"",
+        "\"state\":\"finished\",\"runLaunchOrder\":18446744073709551615,\"parentRunID\":\"parent\",\"runObservedOrder\":18446744073709551615",
+    );
+    input.records = vec![file(Some(ordered))];
+    let (_, projection, _) = project(&ProjectionState::default(), &input, &now());
+    assert_eq!(
+        projection.runtimes[0].badge.run_launch_order,
+        Some(u64::MAX)
+    );
+    assert_eq!(
+        projection.runtimes[0].badge.parent_run_id.as_deref(),
+        Some("parent")
+    );
+    assert_eq!(
+        projection.runtimes[0].badge.run_observed_order,
+        Some(u64::MAX)
+    );
+}

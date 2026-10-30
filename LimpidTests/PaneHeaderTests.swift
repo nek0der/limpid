@@ -415,6 +415,198 @@ struct PaneHeaderTests {
         #expect(attention.headerRuntime(inPane: UUID()) == nil)
     }
 
+    /// We keep the conversation selected for Changes while the model and
+    /// permission warning follow tmux's active window, without a new hook.
+    @Test(arguments: [true, false])
+    func paneHeaderLabel_settingsFollowTheActiveTmuxAgent(isBypassActive: Bool) throws {
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
+        let pane = try #require(tab.splitTree.allLeafIDs().first)
+        let attention = AttentionState()
+        var bypassBadge = Self.badge(conversationID: "a", sessionTitle: "Visible work", updatedAt: Date(timeIntervalSince1970: 1))
+        bypassBadge.model = "Opus 5.5"
+        bypassBadge.permissionMode = "bypassPermissions"
+        var defaultBadge = Self.badge(conversationID: "b", sessionTitle: "Latest conversation", updatedAt: Date(timeIntervalSince1970: 2))
+        defaultBadge.model = "gpt-6.1-sol"
+        defaultBadge.permissionMode = "default"
+        let bypass = AgentRuntimePresentation.test(
+            runID: "bypass",
+            badge: bypassBadge,
+            paneIDs: [pane],
+            tmuxLocations: [pane: Self.tmuxLocation(window: "@1", pane: "%1", isActive: isBypassActive)]
+        )
+        let normal = AgentRuntimePresentation.test(
+            kind: .codex,
+            runID: "normal",
+            badge: defaultBadge,
+            paneIDs: [pane],
+            tmuxLocations: [pane: Self.tmuxLocation(window: "@2", pane: "%2", isActive: !isBypassActive)]
+        )
+        attention.replaceRuntimes([bypass], kind: .claude)
+        attention.replaceRuntimes([normal], kind: .codex)
+
+        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
+        #expect(label.model == (isBypassActive ? "Opus 5.5" : "gpt-6.1-sol"))
+        #expect(label.permissionMode == (isBypassActive ? .bypassPermissions : .default))
+        #expect(label.runsWithoutAsking == isBypassActive)
+        #expect(label.agentName == AgentProviderRegistry.displayName(for: isBypassActive ? .claude : .codex))
+        #expect(label.name == "Latest conversation")
+        #expect(attention.headerRuntime(inPane: pane)?.runID == "normal")
+    }
+
+    @Test func paneHeaderLabel_hiddenTmuxAgentDoesNotSupplySettings() throws {
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
+        let pane = try #require(tab.splitTree.allLeafIDs().first)
+        let attention = AttentionState()
+        var badge = Self.badge(conversationID: "hidden", sessionTitle: "Hidden conversation")
+        badge.model = "Opus 5.5"
+        badge.permissionMode = "bypassPermissions"
+        let hidden = AgentRuntimePresentation.test(
+            badge: badge,
+            paneIDs: [pane],
+            tmuxLocations: [pane: Self.tmuxLocation(window: "@1", pane: "%1", isActive: false)]
+        )
+        attention.replaceRuntimes([hidden], kind: .claude)
+
+        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
+        #expect(label.model == nil)
+        #expect(label.permissionMode == nil)
+        #expect(!label.runsWithoutAsking)
+        #expect(label.name == "Hidden conversation")
+    }
+
+    /// A visible split keeps its warning when focus moves to another
+    /// agent or to a shell, even if the other agent reported more recently.
+    @Test(arguments: [true, false])
+    func paneHeaderLabel_visibleUnfocusedBypassKeepsItsWarning(hasFocusedAgent: Bool) throws {
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
+        let pane = try #require(tab.splitTree.allLeafIDs().first)
+        let attention = AttentionState()
+        var bypassBadge = Self.badge(updatedAt: Date(timeIntervalSince1970: 1))
+        bypassBadge.model = "Opus 5.5"
+        bypassBadge.permissionMode = "bypassPermissions"
+        let bypass = AgentRuntimePresentation.test(
+            badge: bypassBadge,
+            paneIDs: [pane],
+            tmuxLocations: [pane: Self.tmuxLocation(window: "@1", pane: "%1", isActive: false, isVisible: true)]
+        )
+        attention.replaceRuntimes([bypass], kind: .claude)
+        if hasFocusedAgent {
+            var normalBadge = Self.badge(updatedAt: Date(timeIntervalSince1970: 2))
+            normalBadge.model = "gpt-6.1-sol"
+            normalBadge.permissionMode = "default"
+            let normal = AgentRuntimePresentation.test(
+                kind: .codex,
+                badge: normalBadge,
+                paneIDs: [pane],
+                tmuxLocations: [pane: Self.tmuxLocation(window: "@1", pane: "%2", isActive: true, isVisible: true)]
+            )
+            attention.replaceRuntimes([normal], kind: .codex)
+        }
+
+        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
+        #expect(label.runsWithoutAsking)
+        #expect(label.permissionMode == .bypassPermissions)
+        #expect(label.model == "Opus 5.5")
+        #expect(label.agentName == AgentProviderRegistry.displayName(for: .claude))
+    }
+
+    /// A retained record from a crashed run must not supply settings once
+    /// another invocation has reported from the same terminal endpoint.
+    @Test(arguments: [true, false], [AgentState.running, .unknown])
+    func paneHeaderLabel_newInvocationSupersedesAnOldBypassRun(isTmux: Bool, newState: AgentState) throws {
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
+        let pane = try #require(tab.splitTree.allLeafIDs().first)
+        let attention = AttentionState()
+        let locations: [UUID: TmuxPaneLocation] = isTmux
+            ? [pane: Self.tmuxLocation(window: "@1", pane: "%1", isActive: true, isVisible: true)]
+            : [:]
+        var oldBadge = Self.badge(state: .finished, updatedAt: Date(timeIntervalSince1970: isTmux ? 2 : 1))
+        oldBadge.sessionStartedAt = isTmux ? Date(timeIntervalSince1970: 1) : nil
+        oldBadge.runLaunchOrder = isTmux ? nil : 200
+        oldBadge.model = "Opus 5.5"
+        oldBadge.permissionMode = "bypassPermissions"
+        var newBadge = Self.badge(state: newState, updatedAt: Date(timeIntervalSince1970: 2))
+        newBadge.sessionStartedAt = isTmux ? Date(timeIntervalSince1970: 2) : nil
+        newBadge.runLaunchOrder = isTmux ? nil : 100
+        newBadge.model = "gpt-6.1-sol"
+        newBadge.permissionMode = "default"
+        let oldRun = AgentRuntimePresentation.test(
+            runID: "old", badge: oldBadge, paneIDs: [pane], tmuxLocations: locations
+        )
+        let newRun = AgentRuntimePresentation.test(
+            kind: .codex, runID: "new", badge: newBadge, paneIDs: [pane], tmuxLocations: locations
+        )
+        attention.replaceRuntimes([oldRun], kind: .claude)
+        attention.replaceRuntimes([newRun], kind: .codex)
+
+        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
+        #expect(!label.runsWithoutAsking)
+        #expect(label.model == (newState == .unknown ? nil : "gpt-6.1-sol"))
+        #expect(label.permissionMode == (newState == .unknown ? nil : .default))
+        if newState != .unknown {
+            #expect(label.agentName == AgentProviderRegistry.displayName(for: .codex))
+        }
+    }
+
+    /// Wall-clock stamps and UUID ordering cannot identify the current run.
+    @Test(arguments: [false, true], [false, true])
+    func paneHeaderLabel_launchOrderResolvesEqualTimestamps(newBypasses: Bool, oldHasOrder: Bool) throws {
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
+        let pane = try #require(tab.splitTree.allLeafIDs().first)
+        let attention = AttentionState()
+        let location = Self.tmuxLocation(window: "@1", pane: "%1", isActive: true, isVisible: true)
+        var old = Self.badge(updatedAt: Date(timeIntervalSince1970: 1))
+        old.sessionStartedAt = old.updatedAt
+        old.runLaunchOrder = oldHasOrder ? 100 : nil
+        old.model = "old"
+        old.permissionMode = newBypasses ? "default" : "bypassPermissions"
+        var new = old
+        new.runLaunchOrder = 101
+        new.model = "new"
+        new.permissionMode = newBypasses ? "bypassPermissions" : "default"
+        attention.replaceRuntimes([
+            .test(runID: "ZZZ-old", badge: old, paneIDs: [pane], tmuxLocations: [pane: location]),
+            .test(runID: "AAA-new", badge: new, paneIDs: [pane], tmuxLocations: [pane: location])
+        ], kind: .claude)
+        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
+        #expect(label.model == "new")
+        #expect(label.runsWithoutAsking == newBypasses)
+        #expect(!label.settingsAreAmbiguous)
+    }
+
+    @Test func paneHeaderLabel_equalLegacyStampsDoNotGuessCurrentSettings() throws {
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
+        let pane = try #require(tab.splitTree.allLeafIDs().first)
+        let attention = AttentionState()
+        var badge = Self.badge(updatedAt: Date(timeIntervalSince1970: 1))
+        badge.permissionMode = "bypassPermissions"
+        let location = Self.tmuxLocation(window: "@1", pane: "%1", isActive: true, isVisible: true)
+        attention.replaceRuntimes([
+            .test(runID: "a", badge: badge, paneIDs: [pane], tmuxLocations: [pane: location]),
+            .test(runID: "b", badge: badge, paneIDs: [pane], tmuxLocations: [pane: location])
+        ], kind: .claude)
+        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
+        #expect(label.settingsAreAmbiguous)
+        #expect(label.model == nil)
+        #expect(label.permissionMode == nil)
+        #expect(label.settingsText(locale: Locale(identifier: "en")) == nil)
+        #expect(PaneHeaderLabel.unavailableSettings.resolved(in: Locale(identifier: "en")) == "Agent settings unavailable")
+        #expect(PaneHeaderLabel.unavailableSettings.resolved(in: Locale(identifier: "ja")) == "エージェントの設定を特定できません")
+    }
+
+    private static func tmuxLocation(window: String, pane: String, isActive: Bool, isVisible: Bool? = nil) -> TmuxPaneLocation {
+        TmuxPaneLocation(
+            socketPath: "/tmp/tmux-test/default",
+            serverPID: "1",
+            serverStartedAt: "1",
+            sessionID: "$1",
+            windowID: window,
+            paneID: pane,
+            isActive: isActive,
+            isVisible: isVisible
+        )
+    }
+
     // MARK: - Forms
 
     /// Narrowing drops the directory first, then the model and mode, then
@@ -552,4 +744,150 @@ struct PaneHeaderTests {
         let restored = try JSONDecoder().decode(Tab.self, from: JSONEncoder().encode(live))
         #expect(restored.paneStates[paneID] == PaneState(unreadCount: 1, name: "watcher"))
     }
+}
+
+// MARK: - Nested agent ownership
+
+extension PaneHeaderTests {
+    @Test func paneHeaderLabel_activeChildSuppliesItsOwnSettings() throws {
+        let fixture = try Self.headerFamilyFixture()
+        let session = fixture.session
+        let pane = fixture.pane
+        let attention = fixture.attention
+        let parent = Self.familyRun("parent", launched: 100, observed: 110, pane: pane, bypasses: true)
+        let child = Self.familyRun("child", parent: "parent", launched: 101, observed: 120, pane: pane)
+        attention.replaceRuntimes([parent, child], kind: .claude)
+        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
+        #expect(label.model == "child")
+        #expect(!label.runsWithoutAsking)
+    }
+
+    @Test(arguments: [AgentState.running, .finished, .unknown])
+    func paneHeaderLabel_parentActivityAfterChildRestoresTheParent(childState: AgentState) throws {
+        let fixture = try Self.headerFamilyFixture()
+        let session = fixture.session
+        let pane = fixture.pane
+        let attention = fixture.attention
+        let parent = Self.familyRun("parent", launched: 100, observed: 130, pane: pane, bypasses: true)
+        let child = Self.familyRun("child", parent: "parent", launched: 101, observed: 120, pane: pane, state: childState)
+        attention.replaceRuntimes([child, parent], kind: .claude)
+        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
+        #expect(label.model == "parent")
+        #expect(label.runsWithoutAsking)
+        #expect(!label.settingsAreAmbiguous)
+    }
+
+    @Test func paneHeaderLabel_endedGrandchildReturnsToTheNearestKnownAncestor() throws {
+        let fixture = try Self.headerFamilyFixture()
+        let session = fixture.session
+        let pane = fixture.pane
+        let attention = fixture.attention
+        let parent = Self.familyRun("parent", launched: 100, observed: 110, pane: pane, bypasses: true)
+        let child = Self.familyRun("child", parent: "parent", launched: 101, observed: 120, pane: pane, state: .unknown)
+        let grandchild = Self.familyRun("grandchild", parent: "child", launched: 102, observed: 130, pane: pane, state: .unknown)
+        attention.replaceRuntimes([child, grandchild, parent], kind: .claude)
+        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
+        #expect(label.model == "parent")
+        #expect(label.runsWithoutAsking)
+    }
+
+    @Test func paneHeaderLabel_endedChildReturnsToItsKnownParent() throws {
+        let fixture = try Self.headerFamilyFixture()
+        let session = fixture.session
+        let pane = fixture.pane
+        let attention = fixture.attention
+        let parent = Self.familyRun("parent", launched: 100, observed: 110, pane: pane, bypasses: true)
+        let child = Self.familyRun("child", parent: "parent", launched: 101, observed: 120, pane: pane, state: .unknown)
+        attention.replaceRuntimes([parent, child], kind: .claude)
+        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
+        #expect(label.model == "parent")
+        #expect(label.runsWithoutAsking)
+    }
+
+    @Test(arguments: [AgentState.running, .unknown])
+    func paneHeaderLabel_newRootSupersedesTheOldFamily(newState: AgentState) throws {
+        let fixture = try Self.headerFamilyFixture()
+        let session = fixture.session
+        let pane = fixture.pane
+        let attention = fixture.attention
+        let parent = Self.familyRun("old-parent", launched: 100, observed: 400, pane: pane, bypasses: true)
+        let child = Self.familyRun("old-child", parent: "old-parent", launched: 101, observed: 500, pane: pane)
+        let replacement = Self.familyRun("new-root", launched: 200, observed: 210, pane: pane, state: newState)
+        attention.replaceRuntimes([replacement, child, parent], kind: .claude)
+        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
+        #expect(label.model == (newState == .unknown ? nil : "new-root"))
+        #expect(!label.runsWithoutAsking)
+    }
+
+    @Test func paneHeaderLabel_parentAtAnotherEndpointIsNotAnAncestor() throws {
+        let fixture = try Self.headerFamilyFixture()
+        let session = fixture.session
+        let pane = fixture.pane
+        let attention = fixture.attention
+        let parent = Self.familyRun("parent", launched: 100, observed: 110, pane: pane, bypasses: true, tmuxPane: "%2")
+        let child = Self.familyRun("child", parent: "parent", launched: 101, observed: 120, pane: pane, state: .unknown)
+        attention.replaceRuntimes([parent, child], kind: .claude)
+        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
+        #expect(label.model == "parent")
+        #expect(label.runsWithoutAsking)
+    }
+
+    @Test func paneHeaderLabel_cyclicParentEvidenceIsAmbiguous() throws {
+        let fixture = try Self.headerFamilyFixture()
+        let session = fixture.session
+        let pane = fixture.pane
+        let attention = fixture.attention
+        let parent = Self.familyRun("parent", parent: "child", launched: 100, observed: 110, pane: pane)
+        let child = Self.familyRun("child", parent: "parent", launched: 101, observed: 120, pane: pane)
+        attention.replaceRuntimes([parent, child], kind: .claude)
+        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
+        #expect(label.settingsAreAmbiguous)
+        #expect(label.model == nil)
+    }
+
+    @Test func ambiguityWarningCountsTowardTheInlineRenameWidth() {
+        var label = PaneHeaderLabel(name: "Pane", detail: nil, isAgent: true, agentName: "Claude Code")
+        label.settingsAreAmbiguous = true
+        #expect(label.showsWarning)
+        let withoutWarning = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, showsWarning: false, isZoomed: false)
+        let withWarning = PaneHeaderMetrics.inlineRenameMinimumWidth(
+            showsPromptCacheClock: false, showsWarning: label.showsWarning, isZoomed: false
+        )
+        #expect(withWarning == withoutWarning + PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.warningSlot)
+        #expect(PaneHeaderRules.renameStyle(headerWidth: withoutWarning, threshold: withWarning) == .floating)
+    }
+
+    private struct HeaderFamilyFixture {
+        let session: WorkspaceSession
+        let pane: UUID
+        let attention: AttentionState
+    }
+
+    private static func headerFamilyFixture() throws -> HeaderFamilyFixture {
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
+        return try HeaderFamilyFixture(session: session, pane: #require(tab.splitTree.allLeafIDs().first), attention: AttentionState())
+    }
+
+    private static func familyRun(
+        _ id: String,
+        parent: String? = nil,
+        launched: UInt64,
+        observed: UInt64,
+        pane: UUID,
+        state: AgentState = .running,
+        bypasses: Bool = false,
+        tmuxPane: String = "%1"
+    ) -> AgentRuntimePresentation {
+        var badge = Self.badge(state: state, updatedAt: Date(timeIntervalSince1970: 1))
+        badge.runLaunchOrder = launched
+        badge.runObservedOrder = observed
+        badge.parentRunID = parent
+        badge.model = id
+        badge.permissionMode = bypasses ? "bypassPermissions" : "default"
+        return .test(
+            runID: id, badge: badge, paneIDs: [pane],
+            tmuxLocations: [pane: Self.tmuxLocation(window: "@1", pane: tmuxPane, isActive: true, isVisible: true)]
+        )
+    }
+
 }

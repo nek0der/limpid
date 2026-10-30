@@ -122,7 +122,7 @@ one_shot_flags="--version -v -V --help -h -p --print --bg --background"
 # the server's is the first pane's that started it. `CODEX_HOME` too: the
 # home this pane's Codex reads its config and trust from, made absolute
 # below.
-hosted_env_names="LIMPID_PANE_ID LIMPID_CODEX_SESSIONS_DIR LIMPID_CODEX_AGENT_STATES_DIR LIMPID_AGENT_RUN_ID LIMPID_AGENT_TMUX_HOST_MODE LIMPID_AGENT_TMUX PATH CODEX_HOME"
+hosted_env_names="LIMPID_PANE_ID LIMPID_CODEX_SESSIONS_DIR LIMPID_CODEX_AGENT_STATES_DIR LIMPID_AGENT_RUN_ID LIMPID_AGENT_PARENT_RUN_ID LIMPID_AGENT_LAUNCH_ORDER LIMPID_AGENT_TMUX_HOST_MODE LIMPID_AGENT_TMUX PATH CODEX_HOME"
 
 hosts_in_tmux=0
 # Decided against the user's own arguments, before we add any of ours

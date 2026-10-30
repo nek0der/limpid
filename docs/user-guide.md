@@ -119,6 +119,19 @@ set to never), the header says **Runs without asking** beside a warning
 sign. As the pane narrows, the folder goes first, then the model and the
 mode, then the name. The warning stays as its sign.
 
+When tmux shows several agents in one terminal, the header gives priority
+to a visible agent that runs without asking, keeping its warning even when
+another split has focus. The model and provider name describe that same
+agent. Otherwise, the focused agent takes priority. When an agent launches
+another CLI in the same tmux pane, settings follow the child while it works.
+The header returns to the parent with its next model or permission-mode
+report, or when the child reports that its session has ended.
+Agents in hidden tmux windows or panes hidden by zoom do not supply the
+header settings.
+If older records do not identify which invocation is current, the header
+says **Agent settings unavailable** with a warning sign instead of guessing
+the model or permission mode. A new invocation records its launch order.
+
 ### Decision bar
 
 Under each agent pane. One line sums up the unviewed turns (their numbers,

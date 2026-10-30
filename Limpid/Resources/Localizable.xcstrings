@@ -22960,6 +22960,23 @@
           }
         }
       }
+    },
+    "Agent settings unavailable": {
+      "comment": "Pane header: older run records do not establish which agent settings are current",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent settings unavailable"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エージェントの設定を特定できません"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
