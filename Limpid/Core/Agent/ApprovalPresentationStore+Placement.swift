@@ -382,11 +382,19 @@ extension ApprovalPresentationStore {
         return started > firstSeenAt
     }
 
-    /// Whether the run reports its turn over.
+    /// Whether the run reports its turn over. An ended session (`unknown`)
+    /// counts: the agent was quit at its dialog, and no answer will come.
+    /// A run whose record outlives it (one hosted in tmux, which gc leaves
+    /// alone until the next launch) would otherwise keep a request left to
+    /// its terminal listed for as long as Limpid runs, under whatever
+    /// conversation the person started next. `unknown` is also a run not
+    /// yet heard from, but a turn's end counts only once the turn was seen
+    /// under way (`showsTurnUnderWay`), and a run seen in a turn is never
+    /// unheard from again.
     nonisolated static func turnIsOver(_ state: AgentState) -> Bool {
         switch state {
-        case .finished, .error, .idle: true
-        case .unknown, .running, .compacting, .needsInput: false
+        case .finished, .error, .idle, .unknown: true
+        case .running, .compacting, .needsInput: false
         }
     }
 

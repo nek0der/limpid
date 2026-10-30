@@ -121,6 +121,20 @@ struct ApprovalEpisodeEndTests {
         #expect(!fixture.isKeptAfterAPass())
     }
 
+    /// The agent quit at its dialog (`SessionEnd`) ends the request it
+    /// left to the terminal: a run hosted in tmux keeps its record, so
+    /// nothing else would. Only after its turn was seen under way, since an
+    /// unknown state is also a run not yet heard from.
+    @Test func aHandedOverRequest_leavesWhenItsSessionEnds() {
+        let fixture = Self.storeWithEndedRequest(state: .unknown, terminal: .resolved(.delegate))
+        #expect(fixture.isKeptAfterAPass())
+
+        fixture.agent(.needsInput, runStartedAt: nil)
+        #expect(fixture.isKeptAfterAPass())
+        fixture.agent(.unknown, runStartedAt: nil)
+        #expect(!fixture.isKeptAfterAPass())
+    }
+
     @Test func aHandedOverRequest_isNotEndedByTheTurnBeforeItsOwn() {
         // The request reached the TUI before the projection read its turn:
         // the badge still shows the turn before, which says nothing about
