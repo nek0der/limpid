@@ -232,6 +232,10 @@ as they are fixed or confirmed.
   not answer within half a second, or Limpid has not yet matched the client
   to the pane, Limpid treats the resume as successful. A resume that failed
   there then lists no stop, and only the terminal shows why.
+- **A stop stays over a Codex you start by hand until its first prompt.**
+  Starting an agent again in a stopped pane ends the stop once the new
+  agent reports to Limpid. Codex reports nothing until its first prompt, so
+  until then the pane still shows the stop.
 
 ## For contributors: not yet confirmed on a real machine
 

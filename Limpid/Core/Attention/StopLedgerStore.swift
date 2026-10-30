@@ -264,9 +264,9 @@ final class StopLedgerStore {
         runtimes: [RuntimeFact],
         paneExists: (UUID) -> Bool,
         cwd: (RuntimeFact) -> String? = { _ in nil }
-    ) -> [StopLedger.Resumed] {
+    ) -> StopLedger.Ended {
         var next = ledger
-        let resumed = next.update(
+        let ended = next.update(
             runtimes: runtimes,
             paneExists: { [keepsStopsWithoutPanes] in keepsStopsWithoutPanes || paneExists($0) },
             cwd: cwd
@@ -284,7 +284,7 @@ final class StopLedgerStore {
         for itemID in timeouts.keys where ledger.record(itemID) == nil && !launchClocks.contains(itemID) {
             timeouts.removeValue(forKey: itemID)?.cancel()
         }
-        return resumed
+        return ended
     }
 
     /// Each stop's resume, and what keeps it from starting a new

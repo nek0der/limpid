@@ -299,7 +299,7 @@ extension AppState {
             launches: Array(sessionLaunches.launches.values)
         )
         // A stop outlives its run, until its conversation is back.
-        let resumed = stopLedger.update(
+        let endedStops = stopLedger.update(
             runtimes: input.runtimes,
             paneExists: { [session] in session.tab(containing: $0) != nil },
             cwd: { [session] runtime in
@@ -314,7 +314,7 @@ extension AppState {
         // or after its agent left, and the line must not outlive the change
         // there. The runs are noted before the list is applied, so the bar
         // that sees the list change already knows which runs are in its pane.
-        windowRegistry.noteRuns(runtimes.map(PaneRunLedger.Run.init), resumed: resumed)
+        windowRegistry.noteRuns(runtimes.map(PaneRunLedger.Run.init), endedStops: endedStops)
         refreshStopResumeOffers()
         attentionQueue.apply(input, announces: hasMatchedRuntimes)
     }
