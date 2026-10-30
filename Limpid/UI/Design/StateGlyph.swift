@@ -408,7 +408,6 @@ struct RunningArc: View {
 
     var body: some View {
         arc(angle: .degrees(isTurning && isAtFullTurn ? 360 : 0))
-            .animation(Self.turn(isTurning: isTurning), value: isAtFullTurn)
             .onAppear { isAtFullTurn = isTurning }
             .onChange(of: isTurning) { _, isTurning in
                 isAtFullTurn = isTurning
@@ -423,7 +422,11 @@ struct RunningArc: View {
             Circle()
                 .trim(from: 0, to: 0.25)
                 .stroke(SupervisionTokens.running.color, style: StrokeStyle(lineWidth: width, lineCap: .round))
-                .rotationEffect(angle)
+                // The repeating turn reaches the angle and nothing else. Set
+                // on the whole view, it also applies to any move of the glyph
+                // in the update that starts it, which could then repeat
+                // forever and draw the arc out of place.
+                .animation(Self.turn(isTurning: isTurning)) { $0.rotationEffect(angle) }
         }
         .padding(width / 2)
     }
@@ -458,7 +461,6 @@ struct StateGlyphOrbit: View {
 
     var body: some View {
         dot(angle: Self.restingAngle + .degrees(isTurning && isAtFullTurn ? 360 : 0))
-            .animation(Self.turn(isTurning: isTurning), value: isAtFullTurn)
             .onAppear { isAtFullTurn = isTurning }
             .onChange(of: isTurning) { _, isTurning in
                 isAtFullTurn = isTurning
@@ -473,6 +475,7 @@ struct StateGlyphOrbit: View {
             .frame(width: diameter, height: diameter)
             .offset(y: -geometry.orbitRadius(on: ring))
             .frame(width: geometry.size, height: geometry.size)
-            .rotationEffect(angle)
+            // Only the angle turns, for the reason the running arc gives.
+            .animation(Self.turn(isTurning: isTurning)) { $0.rotationEffect(angle) }
     }
 }
