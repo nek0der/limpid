@@ -131,7 +131,7 @@ enum LimpidLayout {
     /// so it still rounds.
     static let paneBannerCornerRadius: CGFloat = 10
 
-    /// The split pane header's geometry. Core's rules count it too, so the
+    /// The pane header's geometry. Core's rules count it too, so the
     /// values live in `PaneHeaderMetrics`; these names keep the views
     /// reading from one place with the rest of the layout.
     static let paneHeaderHeight = PaneHeaderMetrics.height
@@ -139,6 +139,7 @@ enum LimpidLayout {
     static let paneHeaderItemSpacing = PaneHeaderMetrics.itemSpacing
     static let paneHeaderGlyphSlot = PaneHeaderMetrics.glyphSlot
     static let paneHeaderMenuSlot = PaneHeaderMetrics.menuSlot
+    static let paneHeaderWarningSlot = PaneHeaderMetrics.warningSlot
 
     /// The header's type, sized to fit one line in `paneHeaderHeight`: the
     /// kind glyph, the pane's name, and the directory beside it, which is a

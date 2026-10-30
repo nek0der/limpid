@@ -17,8 +17,8 @@ mod unprompted;
 use limpid_agent_model::{
     AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe, ListDirectory,
     MAX_HOOK_INPUT_BYTES, NormalizeError, PlanUsageAnswer, ProviderAdapter, ProviderDescriptor,
-    ProviderOutput, RawHookInput, RunRecord, Titles, TurnReading, TurnUsage, UnpromptedPrompt,
-    WorktreeIntent, parse_object, transcript_path_for_events,
+    ProviderOutput, RawHookInput, RunRecord, SessionSettings, Titles, TurnReading, TurnUsage,
+    UnpromptedPrompt, WorktreeIntent, parse_object, transcript_path_for_events,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -65,6 +65,10 @@ impl ProviderAdapter for CodexAdapter {
 
     fn approval_output(&self, decision: &ApprovalDecision, request: &Value) -> ProviderOutput {
         approval::approval_output(decision, request)
+    }
+
+    fn session_settings(&self, input: RawHookInput<'_>, context: &HookContext) -> SessionSettings {
+        normalize::session_settings(input, context)
     }
 
     fn worktree_intent(

@@ -606,7 +606,13 @@ enum DemoFixture {
     /// `DemoFixtureTests` catches.
     private static func agentTab(_ slot: Slot, _ agent: AgentKind, in container: ContainerID, badge staged: AgentBadge) -> Tab {
         let name = conversationTitle(of: slot) ?? agent.rawValue
-        let badge = titled(staged, slot: slot, agent: agent)
+        var badge = titled(staged, slot: slot, agent: agent)
+        // What every agent pane's header shows beside its name, as a hook
+        // would have said it.
+        badge.model = switch agent {
+        case .claude: "Opus 5.5"
+        case .codex: "gpt-5.5"
+        }
         var tab = Tab(
             id: slot.tabID,
             title: name,

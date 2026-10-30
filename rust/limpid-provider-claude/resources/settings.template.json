@@ -58,6 +58,9 @@
     ],
     "PermissionDenied": [
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+    ],
+    "PostModelSwitch": [
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
     ]
   }
 }

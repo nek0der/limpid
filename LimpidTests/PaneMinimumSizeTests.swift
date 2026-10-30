@@ -13,19 +13,14 @@ struct PaneMinimumSizeTests {
 
     // MARK: - Derivation
 
-    @Test func resolved_headersOff_isUniform() {
-        let size = PaneMinimumSize.resolved(minPaneSize: 80, showsHeaders: false)
-        #expect(size == PaneMinimumSize(uniform: 80))
-    }
-
-    @Test func resolved_headersOn_addsHeaderHeightAndKeepsUserWidth() {
-        let size = PaneMinimumSize.resolved(minPaneSize: 80, showsHeaders: true, headerHeight: 24)
+    @Test func resolved_addsHeaderHeightAndKeepsUserWidth() {
+        let size = PaneMinimumSize.resolved(minPaneSize: 80, headerHeight: 24)
         #expect(size.width == 80)
         #expect(size.height == 104)
     }
 
     @Test func resolved_defaultsReadTheHeaderLayout() {
-        let size = PaneMinimumSize.resolved(minPaneSize: 60, showsHeaders: true)
+        let size = PaneMinimumSize.resolved(minPaneSize: 60)
         #expect(size.width == 60)
         #expect(size.height == 60 + LimpidLayout.paneHeaderHeight)
     }
@@ -38,13 +33,10 @@ struct PaneMinimumSizeTests {
         #expect(CGFloat(TerminalSettings.minPaneSizeRange.lowerBound) >= PaneHeaderMetrics.minimumWidth)
     }
 
-    @Test func terminalSettings_followsTheHeaderToggle() {
+    @Test func terminalSettings_countsTheHeaderEverySplitPaneCarries() {
         var settings = TerminalSettings()
         settings.minPaneSize = 100
-        settings.showsSplitPaneHeaders = true
-        #expect(settings.paneMinimumSize.height == 100 + LimpidLayout.paneHeaderHeight)
-        settings.showsSplitPaneHeaders = false
-        #expect(settings.paneMinimumSize == PaneMinimumSize(uniform: 100))
+        #expect(settings.paneMinimumSize == PaneMinimumSize(width: 100, height: 100 + LimpidLayout.paneHeaderHeight))
     }
 
     @Test func extent_horizontalIsWidthAndVerticalIsHeight() {

@@ -111,6 +111,14 @@ The **▾** at the strip's left end (⇧⌘A) opens **Open Tabs**: every tab of 
 session, with who runs in it and its state, to search, switch to, or close.
 Use it when the strip has more tabs than fit.
 
+Each agent pane, and every pane of a split tab, has a one-line header with
+the pane's name and folder. For an agent it adds the model and, unless it
+is the default, the permission mode. When the agent runs every
+action without asking (Claude Code's bypass mode, or Codex with approvals
+set to never), the header says **Runs without asking** beside a warning
+sign. As the pane narrows, the folder goes first, then the model and the
+mode, then the name. The warning stays as its sign.
+
 ### Decision bar
 
 Under each agent pane. One line sums up the unviewed turns (their numbers,

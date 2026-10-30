@@ -14,7 +14,9 @@
           "firstPrompt": "<prompt for stop-failure>",
           "conversationId": "00000000-0000-4000-8000-000000000001",
           "sessionStartedAt": "2026-09-14T12:00:00Z",
-          "hasPrompt": true
+          "hasPrompt": true,
+          "model": "Fable 5.1 1M",
+          "permissionMode": "auto"
         },
         "panes": [
           "11111111-1111-4111-8111-111111111111"
@@ -41,7 +43,9 @@
           "firstPrompt": "<prompt for stop-failure>",
           "conversationId": "00000000-0000-4000-8000-000000000001",
           "sessionStartedAt": "2026-09-14T12:00:00Z",
-          "hasPrompt": true
+          "hasPrompt": true,
+          "model": "Fable 5.1 1M",
+          "permissionMode": "auto"
         }
       }
     },

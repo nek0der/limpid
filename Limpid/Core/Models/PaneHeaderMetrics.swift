@@ -1,5 +1,5 @@
 // PaneHeaderMetrics.swift
-// Limpid — the split pane header's sizes that rules outside the view
+// Limpid — the pane header's sizes that rules outside the view
 // depend on.
 
 import CoreGraphics
@@ -30,6 +30,10 @@ enum PaneHeaderMetrics {
     static let glyphSlot: CGFloat = 16
     static let menuSlot: CGFloat = 18
     static let markSlot: CGFloat = 16
+
+    /// Square slot for the symbol of the warning that the agent runs without
+    /// asking, the size of the state mark's beside it.
+    static let warningSlot: CGFloat = markSlot
 
     /// Room the rename field needs to be usable in place: about a dozen
     /// characters of the name.
@@ -72,14 +76,16 @@ enum PaneHeaderMetrics {
         + itemSpacing // state mark's gap
         + markSlot
 
-    /// The same, counting the prompt cache clock while the header draws one
-    /// and the unzoom button while the pane is zoomed: each sits in the row
-    /// beside the field, in a slot of its own, and would otherwise take its
-    /// width out of the field. The split floor reads `minimumWidth`, not
-    /// this, so neither changes how narrow a pane may get.
-    static func inlineRenameMinimumWidth(showsPromptCacheClock: Bool, isZoomed: Bool) -> CGFloat {
+    /// The same, counting the prompt cache clock while the header draws one,
+    /// the warning's symbol while the agent runs without asking, and the
+    /// unzoom button while the pane is zoomed: each sits in the row beside
+    /// the field, in a slot of its own, and would otherwise take its width
+    /// out of the field. The split floor reads `minimumWidth`, not this, so
+    /// none changes how narrow a pane may get.
+    static func inlineRenameMinimumWidth(showsPromptCacheClock: Bool, showsWarning: Bool, isZoomed: Bool) -> CGFloat {
         inlineRenameMinimumWidth
             + (showsPromptCacheClock ? itemSpacing + markSlot : 0)
+            + (showsWarning ? itemSpacing + warningSlot : 0)
             + (isZoomed ? itemSpacing + menuSlot : 0)
     }
 }

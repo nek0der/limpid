@@ -429,12 +429,9 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
             guard let tab = session.tab(containing: paneID) else { return false }
             return tab.splitTree.allLeafIDs().count > 1
         }
-        view.canRenamePane = { [weak session, settings] in
+        view.canRenamePane = { [weak session] in
             guard let session else { return false }
-            return PaneHeaderRules.showsHeader(
-                in: session.tab(containing: paneID),
-                isEnabled: settings.settings.terminal.showsSplitPaneHeaders
-            )
+            return PaneHeaderRules.showsHeader(paneID: paneID, in: session.tab(containing: paneID))
         }
         view.onRequestRenamePane = { [weak renamePresentation] in
             renamePresentation?.requestRename(paneID: paneID)

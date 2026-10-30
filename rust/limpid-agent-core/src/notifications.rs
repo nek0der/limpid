@@ -458,6 +458,8 @@ mod tests {
                 background_work: None,
                 stop_reason: None,
                 has_prompt: None,
+                model: None,
+                permission_mode: None,
             },
             panes: vec![pane()],
             attachment: AttachmentResolution::Attached,

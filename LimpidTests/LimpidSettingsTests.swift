@@ -166,18 +166,17 @@ struct LimpidSettingsTests {
         #expect(decoded.terminal.quickTabCwdPath == nil)
     }
 
-    @Test func splitPaneHeadersSetting_defaultsOnAndDecodesWithoutKey() throws {
-        #expect(TerminalSettings().showsSplitPaneHeaders)
-        let decoded = try JSONDecoder().decode(TerminalSettings.self, from: Data("{}".utf8))
-        #expect(decoded.showsSplitPaneHeaders)
-
-        var off = TerminalSettings()
-        off.showsSplitPaneHeaders = false
-        let roundTripped = try JSONDecoder().decode(
+    /// The pane header setting is gone: panes show their header by the
+    /// rule alone. A file an earlier build wrote still decodes, and its
+    /// value is kept as written for that build to read again.
+    @Test func retiredPaneHeaderSetting_decodesAndIsKeptForEarlierBuilds() throws {
+        let decoded = try JSONDecoder().decode(
             TerminalSettings.self,
-            from: JSONEncoder().encode(off)
+            from: Data(#"{"showsSplitPaneHeaders":false}"#.utf8)
         )
-        #expect(!roundTripped.showsSplitPaneHeaders)
+        #expect(decoded.unknownFields["showsSplitPaneHeaders"] == .bool(false))
+        let written = try JSONSerialization.jsonObject(with: JSONEncoder().encode(decoded)) as? [String: Any]
+        #expect(written?["showsSplitPaneHeaders"] as? Bool == false)
     }
 
     /// A pane minimum saved under the old 40pt floor is raised to 60, the

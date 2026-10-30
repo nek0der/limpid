@@ -6,13 +6,6 @@ import SwiftUI
 struct TabsAndPanesPane: View {
     @Environment(SettingsStore.self) private var store
 
-    /// Stored separately so the literal stays under SwiftLint's
-    /// line-length cap. The exact string is the `Localizable.xcstrings`
-    /// key, and splitting it across source lines would change the key.
-    private let paneHeadersFooterKey: LocalizedStringKey =
-        // swiftlint:disable:next line_length
-        "Names each pane of a split tab and shows what it is running. Double-click a pane’s name to rename it. A zoomed pane shows its header even when this is off."
-
     var body: some View {
         @Bindable var store = store
         SettingsForm(title: "Tabs & Panes", section: .tabsAndPanes) {
@@ -61,18 +54,6 @@ struct TabsAndPanesPane: View {
                 Text("Pane Layout")
             } footer: {
                 SettingsFootnote("Splits and divider drags can’t make a pane smaller than this.")
-            }
-
-            Section {
-                SettingsToggle(
-                    "Show headers on split panes",
-                    isOn: $store.settings.terminal.showsSplitPaneHeaders
-                )
-                .settingsSearchTarget(SettingsSearchCatalog.splitPaneHeaders.id)
-            } header: {
-                Text("Pane Headers")
-            } footer: {
-                SettingsFootnote(paneHeadersFooterKey)
             }
 
             Section {

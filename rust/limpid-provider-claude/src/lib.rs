@@ -8,6 +8,7 @@ mod awaited;
 mod cache;
 mod descriptor;
 mod normalize;
+mod settings;
 mod status_line;
 mod tokens;
 mod transcript;
@@ -16,8 +17,8 @@ mod usage;
 use limpid_agent_model::{
     AgentEvent, ApprovalDecision, ApprovalRequest, CommandRun, DeniedAction, EventId, HookContext,
     InstallRecipe, ListDirectory, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter,
-    ProviderDescriptor, ProviderOutput, RawHookInput, StatusLineAdapter, TurnReading, TurnUsage,
-    WorktreeIntent, parse_object,
+    ProviderDescriptor, ProviderOutput, RawHookInput, SessionSettings, StatusLineAdapter,
+    TurnReading, TurnUsage, WorktreeIntent, parse_object,
 };
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -90,6 +91,12 @@ impl ProviderAdapter for ClaudeAdapter {
 
     fn transcript_shows_wait_declined(&self, transcript: &[u8]) -> bool {
         awaited::transcript_awaited_call_interrupted(transcript)
+    }
+
+    fn session_settings(&self, input: RawHookInput<'_>, _: &HookContext) -> SessionSettings {
+        parse_object(input.bytes, MAX_HOOK_INPUT_BYTES)
+            .map(|object| settings::session_settings(&object))
+            .unwrap_or_default()
     }
 
     fn worktree_intent(

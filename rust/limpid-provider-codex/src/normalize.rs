@@ -24,9 +24,9 @@
 use crate::failure::{RolloutFailure, USAGE_LIMIT_KIND, rollout_failure};
 use crate::json::string;
 use limpid_agent_model::{
-    AgentEvent, HookContext, MAX_HOOK_INPUT_BYTES, NormalizeError, RawHookInput, RunRecord,
-    SessionSource, UsageLimit, format_utc_seconds, parse_object, parse_utc_seconds,
-    transcript_path_for_events,
+    AgentEvent, HookContext, MAX_HOOK_INPUT_BYTES, NormalizeError, PermissionMode, RawHookInput,
+    RunRecord, SessionSettings, SessionSource, UsageLimit, format_utc_seconds, parse_object,
+    parse_utc_seconds, transcript_path_for_events,
 };
 use serde_json::{Map, Value};
 use std::borrow::Cow;
@@ -291,6 +291,28 @@ fn is_internal_agent(object: &Map<String, Value>, context: &HookContext) -> bool
         .is_internal_agent_directory(&resolved(home), &resolved(thread_directory))
 }
 
+/// What the call says of the session's model and permission mode. Codex
+/// sends both on nearly every event: `model` as the id the person picked
+/// (`gpt-6.1-sol`), which is the name its own interface shows, and
+/// `permission_mode` as `bypassPermissions` for an approval policy that never
+/// asks and `default` for any other (`hook_permission_mode` in Codex's
+/// `hook_runtime.rs`). A subagent runs its own model, and the memory agent is
+/// not the person's thread, so neither says anything of the session.
+pub(crate) fn session_settings(input: RawHookInput<'_>, context: &HookContext) -> SessionSettings {
+    let Ok(object) = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES) else {
+        return SessionSettings::default();
+    };
+    if is_subagents(&object) || is_internal_agent(&object, context) {
+        return SessionSettings::default();
+    }
+    SessionSettings {
+        model: string(&object, "model")
+            .filter(|model| !model.is_empty())
+            .map(str::to_owned),
+        permission_mode: string(&object, "permission_mode").and_then(PermissionMode::parse),
+    }
+}
+
 /// Whether the payload comes from a subagent (Codex names it with
 /// `agent_id`), its tools among them.
 pub(crate) fn is_subagents(object: &Map<String, Value>) -> bool {
@@ -429,6 +451,52 @@ mod tests {
             &context,
         )
         .expect("normalizes")
+    }
+
+    fn settings_under(home: Option<&str>, payload: &str) -> SessionSettings {
+        let context = HookContext {
+            provider_home: home.map(std::path::PathBuf::from),
+            ..HookContext::fixture()
+        };
+        session_settings(
+            RawHookInput {
+                bytes: payload.as_bytes(),
+                transcript: None,
+            },
+            &context,
+        )
+    }
+
+    /// The fields as the recordings carry them (`gpt-6.1-sol`,
+    /// `bypassPermissions` in `fixtures/codex/2026-10/interrupted-turn`),
+    /// taken from the session's own calls only.
+    #[test]
+    fn the_sessions_own_calls_say_its_model_and_mode() {
+        let home = Some("/Users/example/.codex");
+        assert_eq!(
+            settings_under(
+                home,
+                r#"{"hook_event_name":"PreToolUse","cwd":"/r","model":"gpt-6.1-sol","permission_mode":"bypassPermissions"}"#
+            ),
+            SessionSettings {
+                model: Some("gpt-6.1-sol".to_owned()),
+                permission_mode: Some(PermissionMode::BypassPermissions),
+            }
+        );
+        assert_eq!(
+            settings_under(
+                home,
+                r#"{"hook_event_name":"Stop","cwd":"/r","model":"gpt-6.1-sol","permission_mode":"default"}"#
+            )
+            .permission_mode,
+            Some(PermissionMode::Default)
+        );
+        for payload in [
+            r#"{"hook_event_name":"PreToolUse","cwd":"/r","agent_id":"019a","agent_type":"explorer","model":"gpt-6-luna","permission_mode":"default"}"#,
+            r#"{"hook_event_name":"PreToolUse","cwd":"/Users/example/.codex/memories","model":"gpt-6-luna","permission_mode":"default"}"#,
+        ] {
+            assert!(settings_under(home, payload).is_empty(), "{payload}");
+        }
     }
 
     /// The payloads Codex's memory agent sends, as recorded: its own

@@ -1,0 +1,54 @@
+[
+  [
+    {
+      "compact": false,
+      "cwd": "/tmp/example",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "source": "startup",
+      "type": "session_started"
+    }
+  ],
+  [
+    {
+      "name": "PostModelSwitch",
+      "payload": {
+        "cache_ttl": "1h",
+        "context_tokens": 0,
+        "cwd": "/tmp/example",
+        "estimated_cache_write_usd": 0,
+        "from_model": "claude-opus-5-5",
+        "hook_event_name": "PostModelSwitch",
+        "pricing": "catalog",
+        "prompt_cache_warm": false,
+        "prompt_id": "00000000-0000-4000-8000-000000000002",
+        "requested_model": "haiku",
+        "scratchpad_dir": "/tmp/example",
+        "session_id": "00000000-0000-4000-8000-000000000001",
+        "source": "command",
+        "to_model": "claude-haiku-5-5",
+        "transcript_path": "/Users/example/.claude-work/projects/-tmp-example/00000000-0000-4000-8000-0000000000ff.jsonl"
+      },
+      "type": "extension"
+    }
+  ],
+  [
+    {
+      "cwd": "/tmp/example",
+      "prompt": "<prompt for model-switch>",
+      "type": "prompt_submitted"
+    }
+  ],
+  [
+    {
+      "reply": "<last_assistant_message for model-switch>",
+      "type": "turn_finished"
+    }
+  ],
+  [
+    {
+      "reason": "other",
+      "session_id": "00000000-0000-4000-8000-000000000001",
+      "type": "session_ended"
+    }
+  ]
+]

@@ -279,6 +279,36 @@ struct LimpidProjectionBridgeTests {
         #expect(badge.asAgentBadge.backgroundWork == BackgroundWork(shells: 1))
     }
 
+    /// The record comes from replaying a recorded Codex turn run with an
+    /// approval policy that never asks, so the model and the mode are
+    /// checked from the payload through the rules to the badge the pane
+    /// header reads.
+    @Test("the model and permission mode a recorded turn said reach the badge", .disabled(if: !RepoFixture.hasLocalRepo))
+    func sessionSettings_crossFromACorpusRecord() throws {
+        let root = try #require(RepoFixture.limpidRoot)
+        let name = "BBBBBBBB-2222-4222-8222-BBBBBBBBBBB2"
+        let pane = try #require(UUID(uuidString: "11111111-1111-4111-8111-111111111111"))
+        let url = root.appendingPathComponent("rust/fixtures/projection/codex-turn/codex-agent-states/\(name).state.json")
+        var input = AgentProjectionInput()
+        input.providers = try JSONDecoder().decode(
+            [String: AgentProviderDescriptor].self,
+            from: LimpidProjectionBridge.providers()
+        )
+        input.records = try [AgentProjectionFile(provider: "codex", name: name, content: String(contentsOf: url, encoding: .utf8))]
+        input.pidStatus = ["4242": "alive"]
+        input.tabs = [AgentProjectionTabPanes(id: UUID(), panes: [pane])]
+
+        let pass = try LimpidProjectionBridge.Engine().pass(
+            input: JSONEncoder().encode(input),
+            now: Data(#"{"wall":"2026-09-14T12:10:00Z","monotonicMs":600000}"#.utf8)
+        )
+        let response = try JSONDecoder().decode(AgentProjectionResponse.self, from: pass.body)
+
+        let badge = try #require(response.projection.badgesByPane[pane]?["codex"]).asAgentBadge
+        #expect(badge.model == "gpt-5.6-sol")
+        #expect(badge.agentPermissionMode == .bypassPermissions)
+    }
+
     @Test("a field of an unexpected type reads as absent without hiding the others")
     func runRecordFacts_unexpectedTypeIsAbsent() throws {
         let facts = try #require(AgentRunRecordFacts(content: #"{"pid": 42, "sessionId": "S"}"#))

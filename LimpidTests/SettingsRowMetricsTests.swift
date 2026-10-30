@@ -51,9 +51,9 @@ struct SettingsRowMetricsTests {
 
     /// Tabs & Panes lays its minimum pane size out by hand, a readout
     /// rather than a field before the stepper: its stepper, ↺ shown or not,
-    /// ends where the pane's switch does.
+    /// ends where a native switch in a form as wide ends.
     @Test(arguments: [TerminalSettings.defaultMinPaneSize, TerminalSettings.defaultMinPaneSize + 40])
-    func theMinimumPaneSizeRow_endsWhereTheSwitchDoes(minPaneSize: Double) async throws {
+    func theMinimumPaneSizeRow_endsWhereASwitchDoes(minPaneSize: Double) async throws {
         try await withTempDir { directory in
             let store = SettingsStore(directory: directory, writesFiles: false)
             store.settings.terminal.minPaneSize = minPaneSize
@@ -62,10 +62,17 @@ struct SettingsRowMetricsTests {
                 .environment(ReduceTransparencyResolver())
             let (window, host) = hostedInWindow(pane, width: SettingsScene.windowWidth, height: 900)
             defer { window.close() }
-            let edges = try #require(await Self.trailingEdges(in: host, switches: 1, steppers: 1))
-            let edge = try #require(edges.switches.first)
-            let stepper = try #require(edges.steppers.first)
-            #expect(abs(stepper - edge) <= 0.5, "the stepper ends at \(stepper), the switch at \(edge)")
+            let probe = SettingsForm(title: "Probe", section: .tabsAndPanes) {
+                Section {
+                    Toggle("Native", isOn: .constant(true))
+                        .toggleStyle(.switch)
+                }
+            }
+            let (probeWindow, probeHost) = hostedInWindow(probe, width: SettingsScene.windowWidth, height: 400)
+            defer { probeWindow.close() }
+            let stepper = try #require(await Self.trailingEdges(in: host, switches: 0, steppers: 1)?.steppers.first)
+            let edge = try #require(await Self.trailingEdges(in: probeHost, switches: 1, steppers: 0)?.switches.first)
+            #expect(abs(stepper - edge) <= 0.5, "the stepper ends at \(stepper), a switch at \(edge)")
         }
     }
 

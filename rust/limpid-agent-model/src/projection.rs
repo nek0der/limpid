@@ -21,6 +21,7 @@ use crate::cache::CacheWindow;
 use crate::command::{CommandOutcome, ResumeIntent};
 use crate::provider::{ProviderDescriptor, ProviderId};
 use crate::record::{RunRecord, RunState, WaitKind};
+use crate::session_settings::PermissionMode;
 use crate::turn::{ConversationKey, ConversationTurns, TurnSummary};
 use crate::usage::UsageLimit;
 use serde::{Deserialize, Serialize};
@@ -554,6 +555,12 @@ pub struct Badge {
     /// not say.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_prompt: Option<bool>,
+    /// The model the session runs and how freely it may act (`RunRecord`),
+    /// for the pane's header. Absent until a hook has said.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission_mode: Option<PermissionMode>,
 }
 
 /// A stop the projection read from the facts rather than from a hook.

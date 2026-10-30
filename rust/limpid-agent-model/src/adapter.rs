@@ -2,7 +2,8 @@
 
 use crate::{
     AgentEvent, ApprovalDecision, ApprovalRequest, DeniedAction, EventId, InstallRecipe, PlanUsage,
-    PlanUsageAnswer, PromptKind, ProviderDescriptor, Titles, TurnUsage, WorktreeIntent,
+    PlanUsageAnswer, PromptKind, ProviderDescriptor, SessionSettings, Titles, TurnUsage,
+    WorktreeIntent,
 };
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
@@ -289,6 +290,17 @@ pub trait ProviderAdapter: Send + Sync {
     fn transcript_shows_wait_declined(&self, transcript: &[u8]) -> bool {
         let _ = transcript;
         false
+    }
+
+    /// What this call says of the session's model and permission mode,
+    /// reported alongside the neutral events because it is a reading of the
+    /// session, not something that happened in it, and any event may carry
+    /// it. A call that is not the session's own (a subagent's, an agent the
+    /// provider runs for itself) says nothing, as does a provider that keeps
+    /// the default.
+    fn session_settings(&self, input: RawHookInput<'_>, context: &HookContext) -> SessionSettings {
+        let _ = (input, context);
+        SessionSettings::default()
     }
 
     /// Reads a `git worktree add` the agent is about to run out of a tool

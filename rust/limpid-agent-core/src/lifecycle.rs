@@ -11,14 +11,17 @@
 //! work clears it again, because that window no longer describes the cache.
 //! A stop also records what it left running in the background, which stays
 //! through work outside the turn and goes with the next turn, failure,
-//! interrupt, or session start or end. The function owns no file,
+//! interrupt, or session start or end. The session's model and permission
+//! mode come with the call rather than with an event (`ApplyContext`), and
+//! are kept from the last call that said them, even on a call whose events
+//! change nothing else. The function owns no file,
 //! clock, or provider branch. Directory names and the git operations behind
 //! `SideWrite` and `TurnSnapshotOp` belong to the runtime.
 
 use limpid_agent_model::{
     AgentEvent, BackgroundWork, CacheWindow, Capability, MAX_RECORD_TEXT_BYTES, PromptKind,
-    ProviderDescriptor, RunRecord, RunState, SessionSource, Titles, TmuxEndpoint, WaitKind,
-    classify_prompt, seconds_between,
+    ProviderDescriptor, RunRecord, RunState, SessionSettings, SessionSource, Titles, TmuxEndpoint,
+    WaitKind, classify_prompt, seconds_between,
 };
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +48,9 @@ pub struct ApplyContext {
     /// the person declined the call, and what a turn the person stopped
     /// used.
     pub transcript_path: Option<String>,
+    /// What this call says of the session's model and permission mode
+    /// (`ProviderAdapter::session_settings`).
+    pub settings: SessionSettings,
 }
 
 /// What the runtime must write after one event.
@@ -140,6 +146,38 @@ pub fn apply(
     descriptor: &ProviderDescriptor,
     now: &str,
 ) -> RecordWrites {
+    let mut writes = apply_event(prev, event, context, descriptor, now);
+    // An event that changes no run state still brings what the call said of
+    // the session's settings: Claude's model switch is such a call, and so
+    // is the idle prompt of a run that already rests. Only an existing
+    // record takes it, since one the event did not create has nothing for it
+    // to describe yet. The revision moves, so the write orders after the
+    // last; `updated_at` does not, because the projection reads it as when
+    // the run last changed (the newest run in a pane, a viewed finish's age,
+    // whether an agent's status report is newer than the record), and a
+    // setting changes none of that.
+    if writes.run.is_none()
+        && let Some(prev) = prev
+    {
+        let mut next = prev.clone();
+        observe_settings(&mut next, &context.settings);
+        if next.model != prev.model || next.permission_mode != prev.permission_mode {
+            next.revision = Some(prev.revision.unwrap_or(0) + 1);
+            writes.run = Some(next);
+        }
+    }
+    writes
+}
+
+/// `apply` for the event alone; the call's settings reach only the record it
+/// writes.
+fn apply_event(
+    prev: Option<&RunRecord>,
+    event: &AgentEvent,
+    context: &ApplyContext,
+    descriptor: &ProviderDescriptor,
+    now: &str,
+) -> RecordWrites {
     let mut writes = RecordWrites::default();
     match event {
         AgentEvent::CwdChanged { new_cwd, old_cwd } => {
@@ -228,6 +266,7 @@ pub fn apply(
         _ => next.revision.map(|revision| revision.to_string()),
     };
     next.transcript_path = turn_transcript(prev, context, &next);
+    observe_settings(&mut next, &context.settings);
     let works_outside_a_turn = !is_in_a_turn(&next) && next.state.is_at_work();
     if !works_outside_a_turn {
         next.outside_turn_rest = None;
@@ -800,7 +839,21 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
         // to the rest the stop described. What the stop left running stays
         // until the next prompt, failure, interrupt, or session start or end.
         background_work: prev.and_then(|record| record.background_work),
+        // Kept until a call says otherwise (`observe_settings`): most calls
+        // do not say, and a session start does not reset them.
+        model: prev.and_then(|record| record.model.clone()),
+        permission_mode: prev.and_then(|record| record.permission_mode),
         extra: prev.map(|record| record.extra.clone()).unwrap_or_default(),
+    }
+}
+
+/// As with titles, a setting the call did not say is kept, never cleared.
+fn observe_settings(record: &mut RunRecord, settings: &SessionSettings) {
+    if let Some(model) = settings.model.as_deref().and_then(title_field) {
+        record.model = Some(model);
+    }
+    if let Some(mode) = settings.permission_mode {
+        record.permission_mode = Some(mode);
     }
 }
 

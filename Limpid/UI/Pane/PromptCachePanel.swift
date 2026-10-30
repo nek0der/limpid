@@ -126,10 +126,7 @@ struct PromptCachePanelHost: View {
                 paneID: pane.paneID,
                 in: PromptCacheAutoOpenWindow(
                     tabID: pane.tabID,
-                    showsPaneHeader: PaneHeaderRules.showsHeader(
-                        in: tab,
-                        isEnabled: settingsStore.settings.terminal.showsSplitPaneHeaders
-                    ),
+                    showsPaneHeader: PaneHeaderRules.showsHeader(paneID: pane.paneID, in: tab),
                     // Read now, when the panel would open: a surface that
                     // came up during the wait counts.
                     isAnotherPanelOpen: presentation.isAnotherSurfaceOpen,

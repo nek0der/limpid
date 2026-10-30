@@ -1,6 +1,7 @@
 // PaneHeaderView.swift
-// Limpid — the one-line header above each pane of a split tab: what the
-// pane is, what it is called, and what its agent is doing.
+// Limpid — the one-line header above each pane of a split tab and above an
+// agent's pane: what the pane is, what it is called, what its agent is doing,
+// and which model it runs and how freely.
 //
 // The header sits above the terminal rather than over it, so the grid it
 // draws is never covered; the terminal gives up the header's height
@@ -46,17 +47,26 @@ struct PaneHeaderView: View {
     /// starts one dragging session.
     @State private var hasStartedPaneDrag = false
 
+    /// Whether the pane shares its tab: only then can it be zoomed or moved
+    /// to a tab of its own. An agent's pane alone in its tab has a header
+    /// too (`PaneHeaderRules.showsHeader`).
+    private var isSplit: Bool {
+        PaneHeaderRules.menuZoomAction(for: paneID, in: session.tab(containing: paneID)) != nil
+    }
+
     /// Whether this pane is the one its tab shows zoomed.
     private var isZoomed: Bool {
         PaneHeaderRules.isZoomed(paneID, in: session.tab(containing: paneID))
     }
 
     /// The width a usable in-place field needs here, counting the prompt
-    /// cache clock while this header draws one and the unzoom button while
-    /// the pane is zoomed.
+    /// cache clock while this header draws one, the warning's symbol while
+    /// the agent runs without asking, and the unzoom button while the pane
+    /// is zoomed.
     private var inlineRenameThreshold: CGFloat {
         PaneHeaderMetrics.inlineRenameMinimumWidth(
             showsPromptCacheClock: attention.promptCacheMark(paneID: paneID) != nil,
+            showsWarning: label.runsWithoutAsking,
             isZoomed: isZoomed
         )
     }
@@ -133,9 +143,9 @@ struct PaneHeaderView: View {
         // and the field goes with it.
         .onDisappear {
             renamePresentation.headerDisappeared(paneID: paneID)
-            // A header remounted mid-edit (a sibling closed, the setting
-            // went off) drops its field without the edit ending, so the
-            // keyboard would stay with a field that no longer exists.
+            // A header remounted mid-edit (a sibling closed, a lone pane's
+            // agent run retired) drops its field without the edit ending, so
+            // the keyboard would stay with a field that no longer exists.
             if isEditing {
                 KeyboardHandoff.returnToTerminal(paneID: paneID, registry: registry, keeper: .terminalOrTextField, timing: .nextTurn)
             }
@@ -170,16 +180,21 @@ struct PaneHeaderView: View {
                 hasStartedPaneDrag = false
             }
         }
-        .help(Text(verbatim: [label.name, label.agentName, label.detail].compactMap(\.self).joined(separator: " — ")))
+        .help(Text(verbatim: hoverText(label)))
         .accessibilityElement(children: isEditing ? .contain : .ignore)
         .accessibilityLabel(Text(verbatim: accessibilityDescription(label, mark: mark)))
         .accessibilityAddTraits(.isHeader)
         .accessibilityAction { focusPane() }
         .accessibilityAction(named: Text("Rename Pane…")) { beginRename(label: label) }
-        .accessibilityAction(named: Text(verbatim: zoomActionTitle.resolved(in: locale))) { performZoomAction() }
         // The ellipsis menu sits inside this single element, so its actions
-        // are offered on the header itself as well.
-        .accessibilityAction(named: Text("Move Pane to New Tab")) { movePaneToNewTab() }
+        // are offered on the header itself as well, and only those the menu
+        // offers: a lone agent pane has no split to zoom out of or leave.
+        .accessibilityActions {
+            if isSplit {
+                Button(zoomActionTitle) { performZoomAction() }
+                Button("Move Pane to New Tab") { movePaneToNewTab() }
+            }
+        }
         .accessibilityAction(named: Text("Close Pane")) { onSurface { $0.onRequestCloseActivePane?() } }
         .promptCacheAccessibilityAction(attention.promptCacheMark(paneID: paneID)) { _ in
             // The header's own clock, or, in the narrowest form that draws
@@ -242,6 +257,14 @@ struct PaneHeaderView: View {
                 detailText(detail)
             }
             Spacer(minLength: LimpidLayout.paneHeaderItemSpacing)
+            // Kept for as long as the state mark is: in words while the row
+            // has room for the model, else as the symbol alone.
+            if form.showsMark, label.runsWithoutAsking {
+                warning(inWords: form.showsSettings)
+            }
+            if form.showsSettings, let settings = label.settingsText(locale: locale) {
+                settingsText(settings)
+            }
             if form.showsPromptCacheClock {
                 PromptCachePaneClock(paneID: paneID)
             }
@@ -274,6 +297,34 @@ struct PaneHeaderView: View {
         }
     }
 
+    /// The model and the mode. Never truncated: a row without room for it
+    /// all takes the next narrower form, which leaves it out.
+    private func settingsText(_ settings: String) -> some View {
+        Text(verbatim: settings)
+            .font(.supervision(LimpidLayout.paneHeaderDetailFontSize))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .fixedSize()
+    }
+
+    /// The warning that the agent runs every action without asking: a
+    /// symbol and, while there is room, the words, so its color is never
+    /// the only thing that says it.
+    private func warning(inWords: Bool) -> some View {
+        HStack(spacing: LimpidLayout.paneHeaderItemSpacing / 2) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.supervision(LimpidLayout.paneHeaderGlyphFontSize, weight: .semibold))
+                .frame(width: LimpidLayout.paneHeaderWarningSlot, height: LimpidLayout.paneHeaderWarningSlot)
+            if inWords {
+                Text(AgentPermissionMode.bypassPermissions.spokenName)
+                    .font(.supervision(LimpidLayout.paneHeaderDetailFontSize, weight: .medium))
+                    .lineLimit(1)
+            }
+        }
+        .foregroundStyle(SupervisionTokens.waitingText.color)
+        .fixedSize()
+    }
+
     private func styledDetail(_ detail: String) -> some View {
         Text(verbatim: detail)
             .font(.supervision(LimpidLayout.paneHeaderDetailFontSize))
@@ -288,6 +339,21 @@ struct PaneHeaderView: View {
         AgentStatusText.pane(name: StateGlyph.Kind(mark.glyph).name.resolved(in: locale), detail: mark.detail, locale: locale)
     }
 
+    /// The name, the agent, the directory, then the model and the mode in
+    /// full, which the row shortens or leaves out as it narrows.
+    private func hoverText(_ label: PaneHeaderLabel) -> String {
+        ([label.name, label.agentName, label.detail] + settingsDescription(label))
+            .compactMap(\.self)
+            .joined(separator: " — ")
+    }
+
+    /// The model and the mode as the hover text and VoiceOver say them. The
+    /// default mode is said here too, unlike in the row: a reader asking
+    /// what the agent may do is told.
+    private func settingsDescription(_ label: PaneHeaderLabel) -> [String] {
+        [label.model, label.permissionMode?.spokenName.resolved(in: locale)].compactMap(\.self)
+    }
+
     private func accessibilityDescription(_ label: PaneHeaderLabel, mark: PaneHeaderMark?) -> String {
         var pieces = [label.name]
         if let agentName = label.agentName {
@@ -296,6 +362,7 @@ struct PaneHeaderView: View {
         if let detail = label.detail {
             pieces.append(detail)
         }
+        pieces += settingsDescription(label)
         // The mark's own name, as the glyph reads it everywhere.
         if let mark {
             pieces.append(StateGlyph.Kind(mark.glyph).name.resolved(in: locale))
@@ -401,11 +468,9 @@ struct PaneHeaderView: View {
     /// the focused pane, which these items make this one first.
     private func actionsMenuEntries(label: PaneHeaderLabel) -> [PopUpMenuEntry] {
         let keyboard = settingsStore.settings.keyboard
-        return [
-            .item(PopUpMenuItem(title: "Rename Pane…", systemImage: "pencil") {
-                beginRename(label: label)
-            }),
-            .separator,
+        // A lone agent pane has no split to zoom out of or leave, so its
+        // menu holds only what can be done to it.
+        let splitEntries: [PopUpMenuEntry] = isSplit ? [
             .item(PopUpMenuItem(
                 title: zoomActionTitle,
                 systemImage: zoomActionSymbol,
@@ -417,7 +482,14 @@ struct PaneHeaderView: View {
             .item(PopUpMenuItem(title: "Move Pane to New Tab", systemImage: "rectangle.split.2x1") {
                 movePaneToNewTab()
             }),
-            .separator,
+            .separator
+        ] : []
+        return [
+            .item(PopUpMenuItem(title: "Rename Pane…", systemImage: "pencil") {
+                beginRename(label: label)
+            }),
+            .separator
+        ] + splitEntries + [
             .item(PopUpMenuItem(
                 title: "Close Pane",
                 systemImage: "xmark.square",

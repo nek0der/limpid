@@ -21,6 +21,7 @@ mod provider;
 mod record;
 mod restore;
 mod serde_helpers;
+mod session_settings;
 mod timestamp;
 mod turn;
 mod usage;
@@ -74,6 +75,7 @@ pub use restore::{
     StageReason, restore_current_ref, restore_expected_ref, restore_refs, restore_target_ref,
     restore_undo_ref,
 };
+pub use session_settings::{PermissionMode, SessionSettings};
 pub use timestamp::{
     days_from_civil, format_utc_seconds, parse_utc_seconds, seconds_between, unix_seconds,
 };
