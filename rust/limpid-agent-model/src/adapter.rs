@@ -42,6 +42,15 @@ pub struct HookContext {
     /// `internal_agent_directories` lie under this one. `None` when the
     /// environment names no home at all.
     pub provider_home: Option<PathBuf>,
+    /// The directory the provider ran this hook in. Codex runs every hook in
+    /// the folder of the thread it belongs to, which a payload's `cwd` does
+    /// not always say: since Codex 0.166 a tool's `PreToolUse`,
+    /// `PostToolUse`, and `PermissionRequest` name the folder the tool runs
+    /// in, which the model may point anywhere with `workdir` (recorded in
+    /// `fixtures/codex/2026-10/tool-workdir`). `None` when the runtime could
+    /// not read it or its environment names none (a `HookEnv` built from
+    /// pairs alone, as the fixtures' replays are).
+    pub hook_directory: Option<PathBuf>,
 }
 
 /// The tmux server and pane hosting the agent, captured from `TMUX` and

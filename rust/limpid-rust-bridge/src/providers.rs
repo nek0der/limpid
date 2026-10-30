@@ -63,6 +63,10 @@ pub const LIMPID_HOOK_KIND_WORKTREE: u32 = 1;
 /// code zero so the agent is never blocked. `env_json` is a JSON object of
 /// the process environment; the runtime reads the shim's variables from it
 /// rather than from the process so the host controls what the hook sees.
+/// The working directory, which no variable says, is read from the process:
+/// the Hook Helper makes this call in the process the provider started for
+/// the hook, in the directory it started it in
+/// (`HookContext::hook_directory`).
 /// This call opens no approval service connection. On success, ownership
 /// of `*out` transfers to the caller, which must release it with
 /// `limpid_approval_bytes_free_v1`.
@@ -99,6 +103,10 @@ pub unsafe extern "C" fn limpid_hook_run_v1(
         let variables: std::collections::BTreeMap<String, String> =
             serde_json::from_slice(env_json).map_err(|_| PROVIDER_INVALID_INPUT)?;
         let env = HookEnv::from_pairs(variables);
+        let env = match std::env::current_dir() {
+            Ok(directory) => env.in_directory(directory),
+            Err(_) => env,
+        };
         let git = GitSnapshots;
         let none = NoSnapshots;
         let snapshots: &dyn SnapshotRunner = if env.turn_snapshots_disabled() {
@@ -563,6 +571,57 @@ mod tests {
         let (status, body) = hook("nope", LIMPID_HOOK_KIND_LIFECYCLE, payload, env.as_bytes());
         assert_eq!(status, PROVIDER_OK);
         assert_eq!(body.expect("body")["outcome"], "unknown_provider");
+    }
+
+    /// The thread is told by the directory the hook runs in, not by a tool's
+    /// `cwd` (Codex 0.166): a tool of the person's run in Codex's memories
+    /// directory is recorded, though the payload names that directory. The
+    /// test runs in the crate's directory, which is not under the home.
+    #[test]
+    fn hook_abi_tells_the_thread_by_the_hooks_own_directory() {
+        let scratch_dir = tempfile::tempdir().expect("scratch");
+        let scratch = scratch_dir.path().to_path_buf();
+        let home = scratch.join("codex-home");
+        std::fs::create_dir_all(home.join("memories")).expect("memories directory");
+        let run = "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F21";
+        let env = serde_json::json!({
+            "LIMPID_PANE_ID": "6F1D6A1E-0E34-4A1A-9A8E-2F2B6C1D7F20",
+            "LIMPID_AGENT_RUN_ID": run,
+            "LIMPID_CODEX_AGENT_STATES_DIR": scratch.join("states"),
+            "LIMPID_CODEX_SESSIONS_DIR": scratch.join("sessions"),
+            "LIMPID_TURN_SNAPSHOT": "0",
+            "CODEX_HOME": home,
+        })
+        .to_string();
+        let payload = serde_json::json!({
+            "hook_event_name": "PreToolUse",
+            "session_id": "s",
+            "turn_id": "t",
+            "cwd": home.join("memories"),
+            "tool_name": "Bash",
+            "tool_input": {"command": "ls"},
+            "tool_use_id": "exec-1",
+        })
+        .to_string();
+        let (status, body) = hook(
+            "codex",
+            LIMPID_HOOK_KIND_LIFECYCLE,
+            payload.as_bytes(),
+            env.as_bytes(),
+        );
+        assert_eq!(status, PROVIDER_OK);
+        assert_eq!(body.expect("body")["outcome"], "applied");
+        let record = std::fs::read(
+            scratch
+                .join("states")
+                .join(limpid_agent_model::run_record_file_name(run)),
+        )
+        .expect("the tool's call is recorded");
+        assert!(
+            String::from_utf8_lossy(&record).contains(r#""lastHookEvent":"tool_started""#),
+            "{}",
+            String::from_utf8_lossy(&record)
+        );
     }
 
     #[test]

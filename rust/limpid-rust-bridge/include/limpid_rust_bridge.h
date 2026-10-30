@@ -426,6 +426,10 @@ int32_t limpid_projection_on_terminate_v1(const uint8_t *input,
 // code zero so the agent is never blocked. `env_json` is a JSON object of
 // the process environment; the runtime reads the shim's variables from it
 // rather than from the process so the host controls what the hook sees.
+// The working directory, which no variable says, is read from the process:
+// the Hook Helper makes this call in the process the provider started for
+// the hook, in the directory it started it in
+// (`HookContext::hook_directory`).
 // This call opens no approval service connection. On success, ownership
 // of `*out` transfers to the caller, which must release it with
 // `limpid_approval_bytes_free_v1`.
