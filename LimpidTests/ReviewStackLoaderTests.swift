@@ -37,7 +37,7 @@ struct ReviewStackLoaderTests {
         let loader = ReviewStackLoader(git: repository, root: root)
         let window = Set(files.map(\.id))
         loader.request(Self.requests(files), window: window)
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { loader.entries.count == files.count }
+        await pollUntilStackRead { loader.entries.count == files.count }
         let ticket = loader.beginSearch()
 
         loader.release(listed: files)
@@ -61,7 +61,7 @@ struct ReviewStackLoaderTests {
         // The review is drawn again: reads follow.
         loader.resume()
         loader.request(Self.requests(files), window: window)
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { loader.entries.count == files.count }
+        await pollUntilStackRead { loader.entries.count == files.count }
         #expect(!loader.isReleased)
         #expect(loader.entries.count == files.count)
     }
@@ -71,7 +71,7 @@ struct ReviewStackLoaderTests {
         let repository = try StackReviewRepository(files: files, diffs: Self.diffs(files))
         let session = session(repository)
         session.stackLoader.request(Self.requests(files), window: Set(files.map(\.id)))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { session.stackLoader.entries.count == files.count }
+        await pollUntilStackRead { session.stackLoader.entries.count == files.count }
 
         session.releaseStack()
 
@@ -90,7 +90,7 @@ struct ReviewStackLoaderTests {
         // Asked twice, as a scroll asks on every event.
         loader.request(Self.requests(Array(files.prefix(6))), window: window)
         loader.request(Self.requests(files), window: window)
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { loader.entries.count == files.count }
+        await pollUntilStackRead { loader.entries.count == files.count }
 
         #expect(loader.entries.count == files.count)
         #expect(repository.peak <= 4, "never more Git processes than the cap")
@@ -104,7 +104,7 @@ struct ReviewStackLoaderTests {
         let loader = ReviewStackLoader(git: repository, root: root)
         loader.request(Self.requests(files), window: Set(files.map(\.id)))
         // The reads are under way when the range changes.
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { repository.diffReads > 0 }
+        await pollUntilStackRead { repository.diffReads > 0 }
 
         loader.retire(.anotherScope, listed: files)
         try await Task.sleep(for: .milliseconds(200))
@@ -133,7 +133,7 @@ struct ReviewStackLoaderTests {
         loader.publishInterval = .seconds(30)
 
         loader.request(Self.requests(files), window: [files[0].id])
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { !loader.entries.isEmpty }
+        await pollUntilStackRead { !loader.entries.isEmpty }
 
         #expect(loader.entries.count == 1, "not held for the interval")
     }
@@ -223,7 +223,7 @@ struct ReviewStackLoaderTests {
             let session = session(repository)
             _ = await session.reload(scope: scope, selectedFileID: files[0].id)
             session.loadStacked(window: files.map(\.id))
-            await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { !session.stackLoader.needsDiff(files[1].id) }
+            await pollUntilStackRead { !session.stackLoader.needsDiff(files[1].id) }
             // Changed since it was read: opening it still shows what was read.
             try repository.replace(ReviewDiffFixture.rewritten(files[1], lines: 2, fingerprint: "edited"))
             let reads = repository.diffReads
@@ -241,7 +241,7 @@ struct ReviewStackLoaderTests {
         let session = session(repository)
         _ = await session.reload(scope: .uncommitted, selectedFileID: files[0].id)
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { !session.stackLoader.needsDiff(files[1].id) }
+        await pollUntilStackRead { !session.stackLoader.needsDiff(files[1].id) }
 
         _ = await session.reload(scope: .uncommitted, selectedFileID: files[0].id)
 
@@ -258,7 +258,7 @@ struct ReviewStackLoaderTests {
         let range = try TurnSummaryFixture.range()
         _ = await session.reload(scope: .turns(range), selectedFileID: files[0].id)
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { !session.stackLoader.needsDiff(files[1].id) }
+        await pollUntilStackRead { !session.stackLoader.needsDiff(files[1].id) }
 
         _ = await session.reload(scope: .turns(range), selectedFileID: files[0].id)
 
@@ -271,7 +271,7 @@ struct ReviewStackLoaderTests {
         let session = session(repository)
         _ = await session.reload(scope: .uncommitted, selectedFileID: files[0].id)
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { !session.stackLoader.needsDiff(files[1].id) }
+        await pollUntilStackRead { !session.stackLoader.needsDiff(files[1].id) }
 
         await session.detectChanges()
         #expect(!session.hasPendingChanges)
@@ -293,7 +293,7 @@ struct ReviewStackLoaderTests {
         try repository.replace(ReviewDiffFixture.rewritten(files[1], lines: 2, fingerprint: "edited"))
         _ = await session.reload(scope: .uncommitted, selectedFileID: files[0].id)
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) {
+        await pollUntilStackRead {
             session.stackLoader.entries[files[1].id]?.diff?.fingerprint == "edited"
         }
 
@@ -308,7 +308,7 @@ struct ReviewStackLoaderTests {
         let session = session(repository)
         _ = await session.reload(scope: .uncommitted, selectedFileID: files[0].id)
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { files.allSatisfy { !session.stackLoader.needsDiff($0.id) } }
+        await pollUntilStackRead { files.allSatisfy { !session.stackLoader.needsDiff($0.id) } }
         let indexReads = repository.indexStateReads
         let fingerprints = repository.fingerprintCalls
 
@@ -327,7 +327,7 @@ struct ReviewStackLoaderTests {
         let session = session(repository)
         _ = await session.reload(scope: .uncommitted, selectedFileID: other.id)
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) {
+        await pollUntilStackRead {
             !session.stackLoader.needsDiff(staged.id) && !session.stackLoader.needsDiff(unstaged.id)
         }
 
@@ -347,7 +347,7 @@ struct ReviewStackLoaderTests {
         let session = session(repository)
         _ = await session.reload(scope: .uncommitted, selectedFileID: files[0].id)
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { !session.stackLoader.needsDiff(files[1].id) }
+        await pollUntilStackRead { !session.stackLoader.needsDiff(files[1].id) }
 
         repository.moveHead()
         await session.detectChanges()
@@ -364,7 +364,7 @@ struct ReviewStackLoaderTests {
         loader.hold(true)
         loader.request(Self.requests(files), window: [files[0].id])
         // The read ends held, not published: wait for that, not for a time.
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { loader.isWaitingToPublish(files[0].id) }
+        await pollUntilStackRead { loader.isWaitingToPublish(files[0].id) }
         repository.onRead(nil)
         loader.hold(false)
 
@@ -379,7 +379,7 @@ struct ReviewStackLoaderTests {
         repository.failStateReads(true)
         _ = await session.reload(scope: .uncommitted, selectedFileID: files[0].id)
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { !session.stackLoader.needsDiff(files[1].id) }
+        await pollUntilStackRead { !session.stackLoader.needsDiff(files[1].id) }
 
         await session.detectChanges()
         #expect(!session.hasPendingChanges, "not \"changed\" for good")
@@ -391,7 +391,7 @@ struct ReviewStackLoaderTests {
         try repository.replace(ReviewDiffFixture.rewritten(files[1], lines: 2, fingerprint: "edited"))
         _ = await session.reload(scope: .uncommitted, selectedFileID: files[0].id)
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) {
+        await pollUntilStackRead {
             session.stackLoader.entries[files[1].id]?.diff?.fingerprint == "edited" && !session.stackLoader.needsDiff(files[1].id)
         }
         await session.detectChanges()
@@ -407,7 +407,7 @@ struct ReviewStackLoaderTests {
         // long it takes.
         loader.hold(true)
         loader.request(Self.requests(files), window: [files[0].id])
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { loader.isWaitingToPublish(files[0].id) }
+        await pollUntilStackRead { loader.isWaitingToPublish(files[0].id) }
         // The file is opened, and its own load is kept before the stack's
         // is published.
         let newer = try ReviewDiffFixture.rewritten(files[0], lines: 2, fingerprint: "newer")
@@ -426,7 +426,7 @@ struct ReviewStackLoaderTests {
         let session = session(repository)
         _ = await session.reload(scope: .uncommitted, selectedFileID: files[0].id)
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { files.allSatisfy { !session.stackLoader.needsDiff($0.id) } }
+        await pollUntilStackRead { files.allSatisfy { !session.stackLoader.needsDiff($0.id) } }
         // The reader scrolled back up: the last file is off screen.
         session.loadStacked(window: [files[0].id, files[1].id])
 
@@ -482,7 +482,7 @@ struct ReviewStackLoaderTests {
         repository.failStateReads(true)
         _ = await session.reload(scope: .uncommitted, selectedFileID: files[0].id)
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { files.allSatisfy { !session.stackLoader.needsDiff($0.id) } }
+        await pollUntilStackRead { files.allSatisfy { !session.stackLoader.needsDiff($0.id) } }
         // The last of the forty in the order the check walks them.
         let last = try #require(files.dropFirst().map(\.id).max())
         repository.change(last, fingerprint: "edited")
@@ -504,7 +504,7 @@ struct ReviewStackLoaderTests {
         let session = session(repository)
         _ = await session.reload(scope: .uncommitted, selectedFileID: files[0].id)
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { !session.stackLoader.needsDiff(files[1].id) }
+        await pollUntilStackRead { !session.stackLoader.needsDiff(files[1].id) }
         repository.failStateReads(true)
 
         await session.detectChanges()
@@ -526,7 +526,7 @@ struct ReviewStackLoaderTests {
 
         loader.request(Self.requests(files), window: window)
         // One published at once, the other waiting out the interval.
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { repository.diffReads == 2 && loader.entries.count == 1 }
+        await pollUntilStackRead { repository.diffReads == 2 && loader.entries.count == 1 }
         loader.request(Self.requests(files), window: window)
         try await Task.sleep(for: .milliseconds(50))
 
@@ -541,7 +541,7 @@ struct ReviewStackLoaderTests {
         let revision = loader.revision
 
         loader.request(Self.requests(files), window: [files[0].id])
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { loader.isWaitingToPublish(files[0].id) }
+        await pollUntilStackRead { loader.isWaitingToPublish(files[0].id) }
         #expect(loader.isWaitingToPublish(files[0].id), "the read ended")
         #expect(loader.revision == revision, "the rows under the composer stay as they are")
 
@@ -555,13 +555,13 @@ struct ReviewStackLoaderTests {
         let loader = ReviewStackLoader(git: repository, root: root)
         loader.retire(.anotherScope, listed: files)
         loader.requestAll(Self.requests(files), estimates: [:], ticket: loader.beginSearch())
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { loader.entries.count == 3 }
+        await pollUntilStackRead { loader.entries.count == 3 }
 
         loader.retire(.sameScope, listed: files)
         #expect(loader.searchCoverage == .everyFile, "the note does not come and go")
         // As the review asks when the list is read again with Find open.
         loader.requestAll(Self.requests(files), estimates: [:], ticket: loader.beginSearch())
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { files.allSatisfy { !loader.needsDiff($0.id) } }
+        await pollUntilStackRead { files.allSatisfy { !loader.needsDiff($0.id) } }
 
         #expect(files.allSatisfy { !loader.needsDiff($0.id) })
     }
@@ -577,7 +577,7 @@ struct ReviewStackLoaderTests {
         #expect(session.stackLoader.highestLine == 12000, "the open file's whole content")
 
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { !session.stackLoader.needsDiff(files[1].id) }
+        await pollUntilStackRead { !session.stackLoader.needsDiff(files[1].id) }
         let generation = try #require(session.openFromStack(files[1]))
         await session.readSource(of: files[1], generation: generation)
 
@@ -590,7 +590,7 @@ struct ReviewStackLoaderTests {
         let session = session(repository)
         _ = await session.reload(scope: .uncommitted, selectedFileID: files[0].id)
         session.loadStacked(window: files.map(\.id))
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { !session.stackLoader.needsDiff(files[1].id) }
+        await pollUntilStackRead { !session.stackLoader.needsDiff(files[1].id) }
         // Newer than the diff, or the file as a clean filter does not show it.
         repository.setSource(files[1].id, lines: 4)
 
@@ -628,15 +628,18 @@ struct ReviewStackLoaderTests {
 
         _ = await session.reload(scope: .uncommitted, selectedFileID: otherID)
         session.loadStacked(window: [manualID, otherID])
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { !session.stackLoader.needsDiff(manualID) }
+        await pollUntilStackRead { !session.stackLoader.needsDiff(manualID) }
 
-        #expect(session.stackLoader.entries[manualID]?.diff?.fingerprint == marked, "the stack reads what the open file read")
+        // Apart from the fingerprint, so a read that never ended does not read
+        // as a read that failed.
+        let entry = try #require(session.stackLoader.entries[manualID], "the read ended")
+        #expect(entry.diff?.fingerprint == marked, "the stack reads what the open file read")
         #expect(session.viewed[manualID] != nil, "unchanged, so still read")
 
         try Data("let handEdited = true\nlet edited = 2\n".utf8).write(to: manual)
         _ = await session.reload(scope: .uncommitted, selectedFileID: otherID)
         session.loadStacked(window: [manualID, otherID])
-        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) {
+        await pollUntilStackRead {
             session.stackLoader.entries[manualID]?.diff?.fingerprint != marked && !session.stackLoader.needsDiff(manualID)
         }
 
