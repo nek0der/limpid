@@ -46,6 +46,17 @@ func pollUntilTurnsDeleted(
     await pollUntil(timeout: .seconds(10), interval: .milliseconds(20), isolation: isolation, condition)
 }
 
+/// `pollUntil` for the review stack's reads. The deadline stands well past
+/// `GitProcess.readTimeout`, because a read against a real repository runs Git
+/// several times: a shorter one gave up on a read a loaded machine was still
+/// finishing, and the expectation that followed blamed the read.
+func pollUntilStackRead(
+    isolation: isolated (any Actor)? = #isolation,
+    _ condition: () -> Bool
+) async {
+    await pollUntil(timeout: .seconds(30), interval: .milliseconds(5), isolation: isolation, condition)
+}
+
 extension Process {
     /// Waits for the process to exit, at most `seconds`, and stops it when
     /// it has not: a script that hangs (a shim waiting on input) then fails
