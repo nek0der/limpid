@@ -689,3 +689,46 @@ fn a_late_tool_after_a_failure_joins_the_failed_turn_as_failed() {
     );
     assert_eq!(turn.applied_events.len(), 3);
 }
+
+/// A turn Codex begins itself (a `/goal`) is snapshotted in the directory
+/// Codex runs the hook in, the session's, though its first hook is a tool's,
+/// whose `cwd` names the folder the tool runs in (Codex 0.166).
+#[test]
+fn a_codex_goal_turn_is_snapshotted_where_the_hook_runs_not_where_its_first_tool_does() {
+    let session = Repo::new("goal-session");
+    let other = Repo::new("goal-tool");
+    let states = session.root.join("support/states");
+    let env = || {
+        provider_env("codex", &states, &uuid::Uuid::new_v4().to_string())
+            .in_directory(session.path.clone())
+    };
+    let start = format!(
+        r#"{{"hook_event_name":"SessionStart","session_id":"s","cwd":"{}","source":"startup"}}"#,
+        session.path.display()
+    );
+    assert_eq!(
+        run_hook(
+            "codex",
+            start.as_bytes(),
+            &HookRuntime::new(&env(), &NoSnapshots)
+        ),
+        HookOutcome::Applied
+    );
+    let tool = format!(
+        r#"{{"hook_event_name":"PreToolUse","session_id":"s","turn_id":"t1","cwd":"{}","tool_name":"Bash","tool_input":{{"command":"pwd"}},"tool_use_id":"exec-1"}}"#,
+        other.path.display()
+    );
+    assert_eq!(
+        run_hook(
+            "codex",
+            tool.as_bytes(),
+            &HookRuntime::new(&env(), &GitSnapshots)
+        ),
+        HookOutcome::Applied
+    );
+    let (_, root) = captured(&only_turn(&states).begin);
+    assert_eq!(
+        Path::new(&root).canonicalize().ok(),
+        session.path.canonicalize().ok()
+    );
+}

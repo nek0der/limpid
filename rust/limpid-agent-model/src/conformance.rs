@@ -56,6 +56,7 @@ impl HookContext {
             pid: Some(4242),
             invocation_id: Some(Uuid::from_u128(0x0000_0000_0000_4000_8000_0000_0000_0030)),
             provider_home: None,
+            hook_directory: None,
         }
     }
 

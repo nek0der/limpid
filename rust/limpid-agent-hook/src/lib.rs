@@ -658,6 +658,7 @@ fn identity(
         pid,
         invocation_id: env.invocation_id(),
         provider_home: env.provider_home(adapter.home_directory_variable(), descriptor),
+        hook_directory: env.directory().map(Path::to_path_buf),
     };
     let apply_context = ApplyContext {
         run_id,
@@ -719,11 +720,14 @@ fn call_events<'a>(
 /// turn's begin snapshot before the call's tool runs, so the turn shows what
 /// it changed; a call that ends the turn comes too late for one
 /// (`UnpromptedStart::is_from_end`). A call of the turn the run last had,
-/// which comes after its end, is that turn's, as before.
+/// which comes after its end, is that turn's, as before. A call that names
+/// no folder for the turn (a tool's, whose `cwd` is the tool's own) begins it
+/// in `hook_directory`, where the provider runs the hook: the session's.
 fn unprompted_start(
     call: &HookCall<'_>,
     turns: &turn::Turns<'_>,
     record: Option<&RunRecord>,
+    hook_directory: Option<&Path>,
 ) -> Option<UnpromptedStart> {
     if call.events.is_empty()
         || call
@@ -759,7 +763,9 @@ fn unprompted_start(
             prompt: begun.prompt,
             kind: begun.kind,
             titles: None,
-            cwd: begun.cwd,
+            cwd: begun
+                .cwd
+                .or_else(|| hook_directory.and_then(Path::to_str).map(str::to_owned)),
         },
         is_from_end: call.events.iter().any(|event| {
             matches!(
@@ -899,7 +905,12 @@ fn write_events(
         record_path: &record_path,
         turns: &turns,
     };
-    let start = unprompted_start(call, &turns, records::read_record(&record_path).as_ref());
+    let start = unprompted_start(
+        call,
+        &turns,
+        records::read_record(&record_path).as_ref(),
+        runtime.env.directory(),
+    );
     for (event, event_id, is_start) in call_events(call, start.as_ref().map(|start| &start.event)) {
         writer.write(event, event_id, start.as_ref().filter(|_| is_start));
     }
