@@ -189,7 +189,7 @@ struct CatalogWordingBundleTests {
     /// a switch turns something on, so its label says what it does.
     static let switches = [
         "Show in menu bar", "Notify when a usage limit resets", "Automatically check for updates",
-        "Translucent window", "Ligatures", "Blink", "Show headers on split panes", "Use Ghostty config file",
+        "Translucent window", "Ligatures", "Blink", "Use Ghostty config file",
         "Run agents in tmux", "Hide when focus leaves", "Open Review when jumping to an unread turn"
     ]
 

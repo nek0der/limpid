@@ -10,6 +10,7 @@
 use crate::background::BackgroundWork;
 use crate::cache::CacheWindow;
 use crate::serde_helpers::lenient;
+use crate::session_settings::PermissionMode;
 use crate::usage::UsageLimit;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -278,6 +279,25 @@ pub struct RunRecord {
         deserialize_with = "lenient"
     )]
     pub background_work: Option<BackgroundWork>,
+    /// The model the session runs, as the adapter names it for a person to
+    /// read (`SessionSettings`). Kept from the last call that said, since
+    /// most calls do not. Absent until one does, and in records written
+    /// before the field existed. Read leniently like the cache window, as is
+    /// the mode below: a value this build cannot read costs the header that
+    /// value, never the record.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    pub model: Option<String>,
+    /// How freely the session may act without asking, kept as `model` is.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    pub permission_mode: Option<PermissionMode>,
     /// Fields this version does not model, preserved verbatim.
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
@@ -427,6 +447,9 @@ impl From<RunRecordV2> for RunRecord {
             usage_limit: None,
             outside_turn_rest: None,
             background_work: None,
+            // The shell receivers recorded neither.
+            model: None,
+            permission_mode: None,
             extra: record.extra,
         }
     }
@@ -660,6 +683,37 @@ mod tests {
             assert_eq!(record.background_work, None, "{shape}");
             assert_eq!(record.revision, Some(1));
         }
+    }
+
+    #[test]
+    fn session_settings_round_trip_and_a_mode_this_build_cannot_read_costs_only_it() {
+        let json = V2.replace("\"schemaVersion\":2", "\"schemaVersion\":3");
+        let record = RunRecord::decode(json.as_bytes()).expect("decodes without the fields");
+        assert_eq!(
+            (record.model.as_deref(), record.permission_mode),
+            (None, None)
+        );
+
+        let with_settings = RunRecord {
+            model: Some("Opus 5.5".to_owned()),
+            permission_mode: Some(PermissionMode::BypassPermissions),
+            ..record
+        };
+        let encoded = with_settings.encode().expect("encodes");
+        let text = String::from_utf8(encoded.clone()).expect("utf8");
+        assert!(text.contains(r#""model":"Opus 5.5""#));
+        assert!(text.contains(r#""permissionMode":"bypassPermissions""#));
+        assert_eq!(
+            RunRecord::decode(&encoded).expect("decodes again"),
+            with_settings
+        );
+
+        let json = V2
+            .replace("\"schemaVersion\":2", "\"schemaVersion\":3")
+            .replace("\"revision\":1", r#""revision":1,"permissionMode":"yolo""#);
+        let record = RunRecord::decode(json.as_bytes()).expect("the record still decodes");
+        assert_eq!(record.permission_mode, None);
+        assert_eq!(record.revision, Some(1));
     }
 
     #[test]

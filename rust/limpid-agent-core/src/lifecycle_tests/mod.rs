@@ -6,6 +6,7 @@ use limpid_agent_model::ProviderAdapter;
 mod background_work;
 mod outside_a_turn;
 mod prompts_and_waits;
+mod session_settings;
 
 const NOW: &str = "2026-09-14T00:00:00Z";
 const LATER: &str = "2026-09-14T00:00:05Z";
@@ -18,6 +19,7 @@ fn context() -> ApplyContext {
         tmux: None,
         is_tmux_hosted: false,
         transcript_path: None,
+        settings: SessionSettings::default(),
     }
 }
 

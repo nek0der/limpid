@@ -15,7 +15,9 @@
           "conversationId": "00000000-0000-4000-8000-000000000001",
           "sessionStartedAt": "2026-09-14T12:00:00Z",
           "stopReason": "processExited",
-          "hasPrompt": true
+          "hasPrompt": true,
+          "model": "Fable 5.1",
+          "permissionMode": "auto"
         },
         "panes": [
           "33333333-3333-4333-8333-333333333333"
@@ -43,7 +45,9 @@
           "conversationId": "00000000-0000-4000-8000-000000000001",
           "sessionStartedAt": "2026-09-14T12:00:00Z",
           "stopReason": "processExited",
-          "hasPrompt": true
+          "hasPrompt": true,
+          "model": "Fable 5.1",
+          "permissionMode": "auto"
         }
       }
     },

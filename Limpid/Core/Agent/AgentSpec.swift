@@ -150,6 +150,21 @@ struct AgentBadge: Codable, Equatable {
     /// persisted before this field existed keeps decoding.
     var backgroundWork: BackgroundWork?
 
+    /// The model the session runs, as the provider's adapter names it for a
+    /// person (`Opus 5.5`, `gpt-6.1-sol`), for the pane header. `nil` until
+    /// a hook has said, and in a badge persisted before this field existed.
+    var model: String?
+
+    /// How freely the session may act without asking, as the projection
+    /// spells it ("bypassPermissions"). Kept as the word, as `waitKind` is,
+    /// so a mode a newer build writes still decodes, as none
+    /// (`agentPermissionMode`).
+    var permissionMode: String?
+
+    var agentPermissionMode: AgentPermissionMode? {
+        permissionMode.flatMap(AgentPermissionMode.init(rawValue:))
+    }
+
     var promptWaitKind: PromptWaitKind? {
         waitKind.flatMap(PromptWaitKind.init(rawValue:))
     }

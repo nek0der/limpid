@@ -90,6 +90,7 @@ pub trait ProviderAdapter: Send + Sync {
         -> Result<Option<PathBuf>, NormalizeError>;
     fn indexed_titles(&self, input: RawHookInput<'_>, index: &[u8]) -> Option<Titles>;
     fn denied_action(&self, input: RawHookInput<'_>) -> Option<DeniedAction>;
+    fn session_settings(&self, input: RawHookInput<'_>, ctx: &HookContext) -> SessionSettings;
     fn worktree_intent(&self, input: RawHookInput<'_>)
         -> Result<Option<WorktreeIntent>, NormalizeError>;
 }
@@ -133,6 +134,13 @@ pub trait ProviderAdapter: Send + Sync {
   separate from the neutral events because it changes no run state: the
   runtime adds it to the current turn's record, and a refusal with no turn
   running is no turn's. Only Claude reports one.
+- `session_settings` reads the model the session runs and its permission
+  mode, in Claude Code's words for the mode, which Codex's hooks use too.
+  It is reported apart from the neutral events because any call may carry
+  it, including one whose events change nothing else (Claude's
+  `PostModelSwitch`). The run record keeps each value until a call says
+  another, and the pane header shows them. A call that is not the session's
+  own, a subagent's or an agent the provider runs for itself, says nothing.
 - `worktree_intent` reports a `git worktree add` the agent is about to run, so
   the runtime can intercept it before the tool runs; it is separate from the
   neutral events because it is a request to act, not an observation.

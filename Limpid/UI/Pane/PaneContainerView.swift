@@ -55,10 +55,7 @@ struct PaneContainerView: View {
     /// The same predicate the terminal's "Rename Pane…" item reads, so the
     /// item is offered exactly while this header is drawn.
     private var showsHeader: Bool {
-        PaneHeaderRules.showsHeader(
-            in: session.tab(containing: paneID),
-            isEnabled: settingsStore.settings.terminal.showsSplitPaneHeaders
-        )
+        PaneHeaderRules.showsHeader(paneID: paneID, in: session.tab(containing: paneID))
     }
 
     private var resolvedOpacity: Double {

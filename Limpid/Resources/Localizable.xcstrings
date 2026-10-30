@@ -5865,71 +5865,6 @@
         }
       }
     },
-    "Show headers on split panes": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show headers on split panes"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分割したペインにヘッダーを表示する"
-          }
-        }
-      }
-    },
-    "Pane Headers": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pane Headers"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ペインのヘッダー"
-          }
-        }
-      }
-    },
-    "Pane header": {
-      "comment": "Settings search keyword for the split pane header toggle, matching the header's earlier Japanese name",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pane header"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "ペインの見出し"
-          }
-        }
-      }
-    },
-    "Names each pane of a split tab and shows what it is running. Double-click a pane’s name to rename it. A zoomed pane shows its header even when this is off.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Names each pane of a split tab and shows what it is running. Double-click a pane’s name to rename it. A zoomed pane shows its header even when this is off."
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "分割したタブの各ペインに名前と実行中の内容を表示します。ペインの名前をダブルクリックすると名前を変更できます。最大化したペインには、オフのときもヘッダーを表示します。"
-          }
-        }
-      }
-    },
     "Pane actions": {
       "comment": "Help tag and accessibility label of the ellipsis menu on a split pane's header",
       "localizations": {
@@ -22852,6 +22787,176 @@
           "stringUnit": {
             "state": "translated",
             "value": "ほか %lld 件"
+          }
+        }
+      }
+    },
+    "Asks as its settings say": {
+      "comment": "Pane header hover: what a mode lets the agent do",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Asks as its settings say"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "設定に従って確認する"
+          }
+        }
+      }
+    },
+    "Plan": {
+      "comment": "Pane header: a permission mode, after the model",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plan"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プラン"
+          }
+        }
+      }
+    },
+    "Don’t ask": {
+      "comment": "Pane header: a permission mode, after the model",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Don’t ask"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可外は拒否"
+          }
+        }
+      }
+    },
+    "Plans without making changes": {
+      "comment": "Pane header hover: what a mode lets the agent do",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plans without making changes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更せずに計画だけ立てる"
+          }
+        }
+      }
+    },
+    "Refuses what is not allowed": {
+      "comment": "Pane header hover: what a mode lets the agent do",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Refuses what is not allowed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "許可されていない操作は拒否する"
+          }
+        }
+      }
+    },
+    "Runs without asking": {
+      "comment": "Pane header: the warning for a mode that never asks",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Runs without asking"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認なしで実行"
+          }
+        }
+      }
+    },
+    "Accept edits": {
+      "comment": "Pane header: a permission mode, after the model",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accept edits"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "編集を自動承認"
+          }
+        }
+      }
+    },
+    "Auto": {
+      "comment": "Pane header: a permission mode, after the model",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動"
+          }
+        }
+      }
+    },
+    "Accepts edits without asking": {
+      "comment": "Pane header hover: what a mode lets the agent do",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Accepts edits without asking"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "編集は確認なしで実行する"
+          }
+        }
+      }
+    },
+    "Auto mode decides what to ask": {
+      "comment": "Pane header hover: what a mode lets the agent do",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Auto mode decides what to ask"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "確認するかを自動モードが判断する"
           }
         }
       }

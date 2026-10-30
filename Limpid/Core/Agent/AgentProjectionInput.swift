@@ -478,6 +478,8 @@ struct AgentProjectedBadge: Decodable, Sendable {
     var stopReason: String?
     var hasPrompt: Bool?
     var backgroundWork: AgentProjectedBackgroundWork?
+    var model: String?
+    var permissionMode: String?
 
     private enum CodingKeys: String, CodingKey {
         case state, detail, runStartedAt, isTmuxHosted, updatedAt
@@ -485,7 +487,7 @@ struct AgentProjectedBadge: Decodable, Sendable {
         case conversationID = "conversationId"
         case providerSessionTitle, providerGeneratedTitle, sessionStartedAt
         case cacheWindow, usageLimit, waitKind, tool, stopReason, hasPrompt
-        case backgroundWork
+        case backgroundWork, model, permissionMode
     }
 
     /// The badge as the interface holds it. An unreadable state shows as
@@ -513,7 +515,9 @@ struct AgentProjectedBadge: Decodable, Sendable {
             tool: tool,
             stopReason: stopReason,
             hasPrompt: hasPrompt,
-            backgroundWork: backgroundWork?.work
+            backgroundWork: backgroundWork?.work,
+            model: model,
+            permissionMode: permissionMode
         )
     }
 }

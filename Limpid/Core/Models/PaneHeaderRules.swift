@@ -1,6 +1,5 @@
 // PaneHeaderRules.swift
-// Limpid — when the panes of a tab carry a header, and what each header
-// calls its pane.
+// Limpid — which panes carry a header, and what each header calls its pane.
 //
 // Kept in Core and free of SwiftUI so the rules can be pinned by tests:
 // the header is drawn from several sources (a name the user typed, the
@@ -9,12 +8,16 @@
 
 import Foundation
 
-/// The agent a header speaks for, reduced to two strings: `title` names the
-/// pane, and `providerName` goes only into the hover text and VoiceOver.
-/// `title` is nil while the conversation has not produced one yet.
+/// The agent a header speaks for: `title` names the pane, `providerName` goes
+/// only into the hover text and VoiceOver, and the model and permission mode
+/// go on the header's trailing side. Each is nil until the agent has said it:
+/// the title until the conversation has produced one, the model and the mode
+/// until a hook has carried them.
 struct PaneHeaderAgent: Equatable {
     var providerName: String
     var title: String?
+    var model: String?
+    var permissionMode: AgentPermissionMode?
 }
 
 /// What a pane header shows, left to right: the name, then the dimmer
@@ -30,20 +33,44 @@ struct PaneHeaderLabel: Equatable {
     /// The name is one the person gave the pane, rather than one read from
     /// its agent or its folder.
     var isNamedByPerson = false
+    /// The model the pane's agent runs, as its adapter names it.
+    var model: String?
+    /// How freely the pane's agent may act without asking.
+    var permissionMode: AgentPermissionMode?
+
+    /// Whether the header warns that the agent runs every action without
+    /// asking.
+    var runsWithoutAsking: Bool {
+        permissionMode?.runsWithoutAsking == true
+    }
+
+    /// The model and the mode's short name, as the header's trailing text
+    /// shows them ("Opus 5.5 · Plan"), or nil when there is neither. The
+    /// default mode is left unsaid, and the mode that runs without asking is
+    /// named by the warning instead.
+    func settingsText(locale: Locale) -> String? {
+        let pieces = [model, permissionMode?.headerName?.resolved(in: locale)].compactMap(\.self)
+        return pieces.isEmpty ? nil : pieces.joined(separator: " · ")
+    }
 }
 
 /// How much of a header a row has room for, widest first. The kind glyph
 /// and the "⋯" menu are in every form: the glyph says what the pane is and
 /// the menu is how to act on it. Between them the detail goes first, then
-/// the name, then the state mark, then the prompt cache clock, which is
-/// what a narrow pane most needs to say while it shows: the next message
-/// will cost a re-write, and the clock is the way to deal with it.
+/// the agent's model and mode, then the warning's words, then the name, then
+/// the state mark with the warning's symbol, then the prompt cache clock,
+/// which is what a narrow pane most needs to say while it shows: the next
+/// message will cost a re-write, and the clock is the way to deal with it.
 enum PaneHeaderForm: CaseIterable, Equatable {
-    /// Glyph, name, detail, cache clock, state mark, menu.
+    /// Glyph, name, detail, warning, model and mode, cache clock, state
+    /// mark, menu.
     case all
-    /// Glyph, name (truncating), cache clock, state mark, menu.
+    /// Glyph, name, warning, model and mode, cache clock, state mark, menu.
+    case withSettings
+    /// Glyph, name (truncating), warning's symbol, cache clock, state mark,
+    /// menu.
     case withName
-    /// Glyph, cache clock, state mark, menu.
+    /// Glyph, warning's symbol, cache clock, state mark, menu.
     case withMark
     /// Glyph, cache clock, menu: `PaneHeaderMetrics.clockFormWidth`. Tried
     /// only while the pane has a clock to show.
@@ -54,15 +81,24 @@ enum PaneHeaderForm: CaseIterable, Equatable {
     case glyphAndMenu
 
     var showsName: Bool {
-        self == .all || self == .withName
+        self == .all || self == .withSettings || self == .withName
     }
 
     var showsDetail: Bool {
         self == .all
     }
 
+    /// The model and mode, and the warning in words rather than its symbol
+    /// alone.
+    var showsSettings: Bool {
+        self == .all || self == .withSettings
+    }
+
+    /// The state mark, and the warning, which stays as long as the mark
+    /// does: as words while the form has room for the settings, else as
+    /// its symbol.
     var showsMark: Bool {
-        self == .all || self == .withName || self == .withMark
+        self == .all || self == .withSettings || self == .withName || self == .withMark
     }
 
     /// Whether the form has a place for the prompt cache clock; the clock
@@ -92,23 +128,30 @@ enum PaneNameChange: Equatable {
 }
 
 enum PaneHeaderRules {
-    /// Whether the panes of a tab show headers. A single pane is named by
-    /// its tab row already, so the header would repeat it; a split tab's
-    /// panes carry one each while the setting is on. A zoomed pane of a
-    /// split tab shows its header whatever the setting says: the header's
-    /// unzoom button is the way back to the split, and without it a zoomed
-    /// pane looks like a tab with one pane.
-    static func showsHeaders(leafCount: Int, isZoomed: Bool, isEnabled: Bool) -> Bool {
-        leafCount > 1 && (isZoomed || isEnabled)
+    /// Whether a pane shows a header. Every pane of a split tab carries
+    /// one, zoomed or not: the tab row names only the tab, and a zoomed
+    /// pane's unzoom button is the way back to the split. An agent's pane
+    /// carries one even alone, because the header is where its model and
+    /// permission mode show, and where a session that runs without asking
+    /// is warned of. There is no setting to hide it, so that warning cannot
+    /// be hidden. A shell alone in its tab is named by the tab row, and a
+    /// header would only repeat it.
+    static func showsHeader(leafCount: Int, isAgent: Bool) -> Bool {
+        leafCount > 1 || isAgent
     }
 
-    /// Whether `paneID`'s header is on screen, zoomed or not: the one
-    /// predicate the header itself and the terminal's "Rename Pane…" item
-    /// both read, so the item never offers a rename with no header to take
-    /// it.
-    static func showsHeader(in tab: Tab?, isEnabled: Bool) -> Bool {
+    /// Whether `paneID`'s header is on screen: the one predicate the header
+    /// itself, the terminal's "Rename Pane…" item, and the prompt cache
+    /// panel read, so the item never offers a rename with no header to take
+    /// it. An agent counts from the moment the tab wears it for the pane
+    /// (`Tab.agentKind(inPane:)`), before its record, until its run is
+    /// retired.
+    static func showsHeader(paneID: UUID, in tab: Tab?) -> Bool {
         guard let tab else { return false }
-        return showsHeaders(in: tab, isEnabled: isEnabled)
+        return showsHeader(
+            leafCount: tab.splitTree.allLeafIDs().count,
+            isAgent: tab.agentKind(inPane: paneID) != nil
+        )
     }
 
     /// The forms a header tries, widest first, the first that fits winning.
@@ -167,15 +210,6 @@ enum PaneHeaderRules {
         return submittedName.map(PaneNameChange.set) ?? .clear
     }
 
-    /// The same rule read off a tab.
-    static func showsHeaders(in tab: Tab, isEnabled: Bool) -> Bool {
-        showsHeaders(
-            leafCount: tab.splitTree.allLeafIDs().count,
-            isZoomed: isZoomed(tab),
-            isEnabled: isEnabled
-        )
-    }
-
     /// Whether `paneID` is the pane its tab shows zoomed. Zoom counts only
     /// while the zoomed leaf is still in the tree, because that is when
     /// `PaneAreaView` renders the zoomed pane alone; a stale id falls back
@@ -183,11 +217,6 @@ enum PaneHeaderRules {
     static func isZoomed(_ paneID: UUID, in tab: Tab?) -> Bool {
         guard let tab, tab.zoomedLeafID == paneID else { return false }
         return tab.splitTree.contains(leafID: paneID)
-    }
-
-    /// Whether the tab shows one of its panes zoomed; see `isZoomed(_:in:)`.
-    static func isZoomed(_ tab: Tab) -> Bool {
-        tab.zoomedLeafID.map { isZoomed($0, in: tab) } ?? false
     }
 
     /// What the header's zoom item, and its VoiceOver action, do: zoom this
@@ -260,7 +289,8 @@ enum PaneHeaderRules {
     /// component of the pane's directory, and `fallbackName`. The detail is
     /// always the pane's directory, home-abbreviated, because that is what
     /// tells two panes with the same name apart; the agent's provider goes
-    /// to the hover text and VoiceOver as `agentName`.
+    /// to the hover text and VoiceOver as `agentName`, and its model and
+    /// mode pass through as they are.
     static func label(
         customName: String?,
         agent: PaneHeaderAgent?,
@@ -279,7 +309,9 @@ enum PaneHeaderRules {
             detail: detail == name ? nil : detail,
             isAgent: agent != nil,
             agentName: agent.flatMap { normalizedName($0.providerName) },
-            isNamedByPerson: personName != nil
+            isNamedByPerson: personName != nil,
+            model: normalizedName(agent?.model),
+            permissionMode: agent?.permissionMode
         )
     }
 }

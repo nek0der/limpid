@@ -45,9 +45,9 @@ use limpid_agent_core::{
 };
 use limpid_agent_model::{
     AgentEvent, Capability, CheckResult, DeniedAction, EventId, HookContext, InstallRecipe,
-    ProviderAdapter, ProviderDescriptor, ProviderId, RawHookInput, RunRecord, SnapshotStatus,
-    Titles, TmuxEndpoint, TurnReading, TurnUsage, cwd_event_file_name, parse_utc_seconds,
-    run_record_file_name, session_hint_file_name,
+    ProviderAdapter, ProviderDescriptor, ProviderId, RawHookInput, RunRecord, SessionSettings,
+    SnapshotStatus, Titles, TmuxEndpoint, TurnReading, TurnUsage, cwd_event_file_name,
+    parse_utc_seconds, run_record_file_name, session_hint_file_name,
 };
 use limpid_provider_claude::ClaudeAdapter;
 use limpid_provider_codex::CodexAdapter;
@@ -220,6 +220,7 @@ pub fn run_hook(provider: &str, stdin: &[u8], runtime: &HookRuntime<'_>) -> Hook
     // it ends a turn the person stopped (`stopped_turns`), so this call
     // costs no read.
     apply_context.transcript_path = adapter.turn_transcript_path(input).ok().flatten();
+    apply_context.settings = adapter.session_settings(input, &context);
 
     let mut events = match adapter.normalize(input, &context) {
         Ok(events) => events,
@@ -666,8 +667,10 @@ fn identity(
         pid,
         tmux,
         is_tmux_hosted,
-        // The payload names it, not the environment; `run_hook` sets it.
+        // The payload names these, not the environment; `run_hook` sets
+        // them.
         transcript_path: None,
+        settings: SessionSettings::default(),
     };
     (context, apply_context)
 }

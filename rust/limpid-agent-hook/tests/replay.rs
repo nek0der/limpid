@@ -5,8 +5,8 @@ use limpid_agent_hook::{
     HookEnv, HookOutcome, HookRuntime, NoSnapshots, TURNS_DIRECTORY, run_hook,
 };
 use limpid_agent_model::{
-    ChangeSummary, DeniedAction, LOCK_FILE_SUFFIX, PromptKind, RecordedPromptKind, RunRecord,
-    RunState, SnapshotStatus, TurnPhase, TurnRecord, TurnUsage, cwd_event_file_name,
+    ChangeSummary, DeniedAction, LOCK_FILE_SUFFIX, PermissionMode, PromptKind, RecordedPromptKind,
+    RunRecord, RunState, SnapshotStatus, TurnPhase, TurnRecord, TurnUsage, cwd_event_file_name,
     run_record_file_name, session_hint_file_name,
 };
 use serde_json::Value;
@@ -252,6 +252,31 @@ fn the_fixture_cases_refusal_stays_on_its_turn_through_the_stop() {
         "git push --force origin main"
     );
     assert_eq!(scratch.record().expect("record").state, RunState::Finished);
+}
+
+/// A Claude session switched with `/model haiku`, then prompted once: the
+/// switch's call, which changes no state, still writes the model, and the
+/// prompt the mode, each kept through the calls after it.
+#[test]
+fn a_recorded_model_switch_reaches_the_record_and_stays() {
+    let scratch = Scratch::new("claude-model-switch");
+    let payloads = dated_fixture_case("claude", "2026-10", "model-switch");
+    let outcomes = replay(&scratch, "claude", &payloads[..2]);
+    assert!(
+        outcomes
+            .iter()
+            .all(|outcome| *outcome == HookOutcome::Applied)
+    );
+    let switched = scratch.record().expect("record after the switch");
+    assert_eq!(switched.model.as_deref(), Some("Haiku 5.5"));
+    assert_eq!(switched.permission_mode, None);
+    assert_eq!(switched.last_hook_event.as_deref(), Some("session_started"));
+
+    replay(&scratch, "claude", &payloads[2..4]);
+    let stopped = scratch.record().expect("record after the stop");
+    assert_eq!(stopped.state, RunState::Finished);
+    assert_eq!(stopped.model.as_deref(), Some("Haiku 5.5"));
+    assert_eq!(stopped.permission_mode, Some(PermissionMode::Default));
 }
 
 #[test]

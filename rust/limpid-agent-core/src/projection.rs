@@ -551,6 +551,8 @@ fn badge_from(record: &RunRecord, descriptor: Option<&ProviderDescriptor>) -> Ba
             .flatten(),
         stop_reason: None,
         has_prompt: record.has_prompt,
+        model: present(&record.model),
+        permission_mode: record.permission_mode,
     }
 }
 

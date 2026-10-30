@@ -1,7 +1,7 @@
 // PaneMinimumSize.swift
 // Limpid — the smallest width and height a pane in a split may take.
 //
-// One floor per axis. A split pane can carry a header, which takes
+// One floor per axis. A split pane carries a header, which takes
 // height from the terminal and needs a width of its own to keep its glyph
 // and menu, so the two axes do not share a floor.
 
@@ -44,22 +44,18 @@ struct PaneMinimumSize: Equatable {
         }
     }
 
-    /// The floor for a split pane under the user's settings. Without
-    /// headers both axes take the user's minimum. With them the terminal
-    /// keeps that minimum and the header's height is added on top, so a
-    /// header never eats into the rows the user asked for. The width needs
-    /// no adjustment: `TerminalSettings.minPaneSizeRange` starts at the
-    /// header's narrowest form, so any minimum the user can pick already
-    /// leaves room for its glyph and menu. `showsHeaders` is the setting
-    /// alone: a zoomed pane shows its header with the setting off, but it
-    /// is alone on screen and never held to this floor.
+    /// The floor for a split pane under the user's settings. Every split
+    /// pane carries a header (`PaneHeaderRules.showsHeader`), so the
+    /// terminal keeps the user's minimum and the header's height is added
+    /// on top, so a header never eats into the rows the user asked for. The
+    /// width needs no adjustment: `TerminalSettings.minPaneSizeRange`
+    /// starts at the header's narrowest form, so any minimum the user can
+    /// pick already leaves room for its glyph and menu.
     static func resolved(
         minPaneSize: Double,
-        showsHeaders: Bool,
         headerHeight: CGFloat = PaneHeaderMetrics.height
     ) -> PaneMinimumSize {
         let minimum = CGFloat(minPaneSize)
-        guard showsHeaders else { return PaneMinimumSize(uniform: minimum) }
         return PaneMinimumSize(width: minimum, height: minimum + headerHeight)
     }
 }
@@ -67,6 +63,6 @@ struct PaneMinimumSize: Equatable {
 extension TerminalSettings {
     /// The floor every split pane is held to under these settings.
     var paneMinimumSize: PaneMinimumSize {
-        .resolved(minPaneSize: minPaneSize, showsHeaders: showsSplitPaneHeaders)
+        .resolved(minPaneSize: minPaneSize)
     }
 }

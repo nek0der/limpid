@@ -1,5 +1,5 @@
 // PaneHeaderTests.swift
-// Limpid — when split panes carry a header, what the header calls its pane and marks it with, and how a rename is written.
+// Limpid — which panes carry a header, what the header calls its pane and marks it with, and how a rename is written.
 
 import Foundation
 import Testing
@@ -42,42 +42,43 @@ struct PaneHeaderTests {
 
     // MARK: - Visibility
 
-    /// A split tab's panes carry headers while the setting is on, and a
-    /// zoomed pane keeps its header with it off. A tab with one pane cannot
-    /// be zoomed, and its tab row names it.
+    /// Every pane of a split tab carries a header, and an agent's pane
+    /// carries one alone; a shell alone in its tab is named by its tab row.
     @Test(arguments: [
-        (1, false, true, false),
-        (1, true, false, false),
-        (2, false, true, true),
-        (4, false, true, true),
-        (3, false, false, false),
-        (3, true, false, true)
+        (1, false, false),
+        (1, true, true),
+        (2, false, true),
+        (4, true, true)
     ])
-    func showsHeaders_onASplit_whileTheSettingIsOnOrThePaneIsZoomed(leafCount: Int, isZoomed: Bool, isEnabled: Bool, shows: Bool) {
-        #expect(PaneHeaderRules.showsHeaders(leafCount: leafCount, isZoomed: isZoomed, isEnabled: isEnabled) == shows)
+    func showsHeader_onASplitOrForAnAgent(leafCount: Int, isAgent: Bool, shows: Bool) {
+        #expect(PaneHeaderRules.showsHeader(leafCount: leafCount, isAgent: isAgent) == shows)
     }
 
-    @Test func showsHeaderInTab_zoomedPaneKeepsItsHeaderWhateverTheSetting() throws {
-        let singleTab = WorkspaceSessionFixture.withLooseTab().tab
-        #expect(!PaneHeaderRules.showsHeader(in: singleTab, isEnabled: true))
+    @Test func showsHeaderInTab_aLoneAgentPaneKeepsItsHeaderUntilItsRunIsGone() throws {
+        let (session, single, _) = WorkspaceSessionFixture.withLooseTab()
+        let lone = try #require(single.splitTree.allLeafIDs().first)
+        #expect(!PaneHeaderRules.showsHeader(paneID: lone, in: single))
+        #expect(!PaneHeaderRules.showsHeader(paneID: lone, in: nil))
 
-        #expect(!PaneHeaderRules.showsHeader(in: nil, isEnabled: true))
+        // An agent in front before its record already counts.
+        session.update(single.id) { $0.agentsInFront[lone] = PaneAgentInFront(kind: .codex, isStaged: false) }
+        #expect(try PaneHeaderRules.showsHeader(paneID: lone, in: #require(session.tab(single.id))))
+        session.update(single.id) { $0.agentsInFront[lone] = nil }
 
-        let (session, tab) = try Self.splitTab()
-        #expect(PaneHeaderRules.showsHeader(in: tab, isEnabled: true))
-        #expect(!PaneHeaderRules.showsHeader(in: tab, isEnabled: false))
+        // The tab wears the agent from its first record, and the pane shows
+        // the header from then on; once the run is retired it goes again.
+        session.update(single.id) { $0.agentBadges[.claude] = [lone: Self.badge()] }
+        #expect(try PaneHeaderRules.showsHeader(paneID: lone, in: #require(session.tab(single.id))))
+        session.update(single.id) { $0.agentBadges[.claude] = [:] }
+        #expect(try !PaneHeaderRules.showsHeader(paneID: lone, in: #require(session.tab(single.id))))
 
-        // Zoomed, the header is the way back to the split, so it shows with
-        // the setting off too, and goes again once the tab unzooms.
-        let zoomed = try #require(tab.splitTree.allLeafIDs().first)
-        session.update(tab.id) { $0.zoomedLeafID = zoomed }
-        let zoomedTab = try #require(session.tab(tab.id))
-        #expect(PaneHeaderRules.showsHeader(in: zoomedTab, isEnabled: true))
-        #expect(PaneHeaderRules.showsHeader(in: zoomedTab, isEnabled: false))
-
-        PaneActions.unzoom(session, tabID: tab.id)
-        let unzoomedTab = try #require(session.tab(tab.id))
-        #expect(!PaneHeaderRules.showsHeader(in: unzoomedTab, isEnabled: false))
+        // A split's panes all carry one, zoomed or not.
+        let (splitSession, tab) = try Self.splitTab()
+        let leaves = tab.splitTree.allLeafIDs()
+        #expect(leaves.allSatisfy { PaneHeaderRules.showsHeader(paneID: $0, in: tab) })
+        let zoomed = try #require(leaves.first)
+        splitSession.update(tab.id) { $0.zoomedLeafID = zoomed }
+        #expect(try PaneHeaderRules.showsHeader(paneID: zoomed, in: #require(splitSession.tab(tab.id))))
     }
 
     @Test func isZoomed_onlyTheZoomedLeafStillInTheTree() throws {
@@ -91,15 +92,12 @@ struct PaneHeaderTests {
         let zoomedTab = try #require(session.tab(tab.id))
         #expect(PaneHeaderRules.isZoomed(zoomed, in: zoomedTab))
         #expect(!PaneHeaderRules.isZoomed(other, in: zoomedTab))
-        #expect(PaneHeaderRules.isZoomed(zoomedTab))
         #expect(!PaneHeaderRules.isZoomed(zoomed, in: nil))
 
-        // A zoom id that no longer names a leaf renders the split, so the
-        // setting decides as it does unzoomed.
+        // A zoom id that no longer names a leaf renders the split.
         session.update(tab.id) { $0.zoomedLeafID = UUID() }
         let staleTab = try #require(session.tab(tab.id))
-        #expect(!PaneHeaderRules.isZoomed(staleTab))
-        #expect(!PaneHeaderRules.showsHeader(in: staleTab, isEnabled: false))
+        #expect(!PaneHeaderRules.isZoomed(zoomed, in: staleTab))
     }
 
     @Test func zoomAction_flipsWhileZoomed() {
@@ -130,15 +128,15 @@ struct PaneHeaderTests {
     }
 
     @Test func metrics_zoomedHeaderKeepsTheUnzoomButtonBesideTheMenu() {
-        let plain = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, isZoomed: false)
-        let zoomed = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, isZoomed: true)
+        let plain = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, showsWarning: false, isZoomed: false)
+        let zoomed = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, showsWarning: false, isZoomed: true)
         #expect(zoomed - plain == PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.menuSlot)
         #expect(plain == PaneHeaderMetrics.inlineRenameMinimumWidth)
     }
 
     @Test func metrics_theCacheClockKeepsAUsableRenameFieldBesideIt() {
-        let plain = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, isZoomed: false)
-        let withClock = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: true, isZoomed: false)
+        let plain = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, showsWarning: false, isZoomed: false)
+        let withClock = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: true, showsWarning: false, isZoomed: false)
         #expect(withClock - plain == PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.markSlot)
         // Everything but the field, with the clock, still leaves the field
         // its minimum.
@@ -149,8 +147,14 @@ struct PaneHeaderTests {
         #expect(withClock - fixedParts >= PaneHeaderMetrics.inlineRenameFieldMinimumWidth)
     }
 
+    @Test func metrics_theWarningKeepsAUsableRenameFieldBesideIt() {
+        let plain = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, showsWarning: false, isZoomed: false)
+        let warned = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, showsWarning: true, isZoomed: false)
+        #expect(warned - plain == PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.warningSlot)
+    }
+
     @Test func inlineRename_endsWhenTheHeaderNarrowsBelowAUsableField() {
-        let threshold = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: true, isZoomed: false)
+        let threshold = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: true, showsWarning: false, isZoomed: false)
         #expect(PaneHeaderRules.shouldEndInlineRename(isEditing: true, headerWidth: threshold - 1, threshold: threshold))
         #expect(!PaneHeaderRules.shouldEndInlineRename(isEditing: true, headerWidth: threshold, threshold: threshold))
         #expect(!PaneHeaderRules.shouldEndInlineRename(isEditing: false, headerWidth: 40, threshold: threshold))
@@ -197,6 +201,37 @@ struct PaneHeaderTests {
         #expect(label.name == "project")
         #expect(label.detail == "/tmp/project")
         #expect(label.agentName == "Claude")
+    }
+
+    @Test func label_carriesTheAgentsModelAndMode() {
+        let label = PaneHeaderRules.label(
+            customName: nil,
+            agent: PaneHeaderAgent(providerName: "Claude", title: "Fix", model: " Opus 5.5 ", permissionMode: .plan),
+            workingDirectory: "/tmp/project",
+            fallbackName: "Terminal"
+        )
+        #expect(label.model == "Opus 5.5")
+        #expect(label.permissionMode == .plan)
+        #expect(!label.runsWithoutAsking)
+    }
+
+    // swiftlint:disable:next large_tuple
+    typealias SettingsCase = (model: String?, mode: AgentPermissionMode?, text: String?)
+
+    /// The row says the model and any mode but the default; the mode that
+    /// runs without asking is the warning's to name, not the row's.
+    @Test(arguments: [
+        ("Opus 5.5", AgentPermissionMode?.some(.plan), "Opus 5.5 · Plan"),
+        ("Opus 5.5", .some(.default), "Opus 5.5"),
+        ("gpt-6.1-sol", .some(.bypassPermissions), "gpt-6.1-sol"),
+        (nil, .some(.auto), "Auto"),
+        (nil, .some(.default), nil),
+        (nil, nil, nil)
+    ] as [Self.SettingsCase])
+    func settingsText_namesTheModelAndAnyModeButTheDefault(model: String?, mode: AgentPermissionMode?, text: String?) {
+        let label = PaneHeaderLabel(name: "x", detail: nil, isAgent: true, agentName: "Claude", model: model, permissionMode: mode)
+        #expect(label.settingsText(locale: Locale(identifier: "en")) == text)
+        #expect(label.runsWithoutAsking == (mode == .bypassPermissions))
     }
 
     @Test func label_shell_namesDirectoryAndShowsItsPath() {
@@ -382,21 +417,26 @@ struct PaneHeaderTests {
 
     // MARK: - Forms
 
-    @Test func forms_dropDetailThenNameThenMark() {
+    /// Narrowing drops the directory first, then the model and mode, then
+    /// the name; the warning stays while the state mark does, in words only
+    /// while the model and mode still show.
+    @Test func forms_dropDetailThenSettingsThenNameThenMark() {
         let forms = PaneHeaderRules.forms(isEditing: false, showsPromptCacheClock: false)
-        #expect(forms == [.all, .withName, .withMark, .glyphAndMenu])
-        #expect(forms.map(\.showsDetail) == [true, false, false, false])
-        #expect(forms.map(\.showsName) == [true, true, false, false])
-        #expect(forms.map(\.showsMark) == [true, true, true, false])
+        #expect(forms == [.all, .withSettings, .withName, .withMark, .glyphAndMenu])
+        #expect(forms.map(\.showsDetail) == [true, false, false, false, false])
+        #expect(forms.map(\.showsSettings) == [true, true, false, false, false])
+        #expect(forms.map(\.showsName) == [true, true, true, false, false])
+        #expect(forms.map(\.showsMark) == [true, true, true, true, false])
     }
 
     @Test func forms_withACacheClock_dropTheMarkBeforeTheClock() {
         let forms = PaneHeaderRules.forms(isEditing: false, showsPromptCacheClock: true)
-        #expect(forms == [.all, .withName, .withMark, .withClock, .glyphAndMenu])
-        #expect(forms.map(\.showsDetail) == [true, false, false, false, false])
-        #expect(forms.map(\.showsName) == [true, true, false, false, false])
-        #expect(forms.map(\.showsMark) == [true, true, true, false, false])
-        #expect(forms.map(\.showsPromptCacheClock) == [true, true, true, true, false])
+        #expect(forms == [.all, .withSettings, .withName, .withMark, .withClock, .glyphAndMenu])
+        #expect(forms.map(\.showsDetail) == [true, false, false, false, false, false])
+        #expect(forms.map(\.showsSettings) == [true, true, false, false, false, false])
+        #expect(forms.map(\.showsName) == [true, true, true, false, false, false])
+        #expect(forms.map(\.showsMark) == [true, true, true, true, false, false])
+        #expect(forms.map(\.showsPromptCacheClock) == [true, true, true, true, true, false])
     }
 
     @Test func metrics_theClockForm_is78PointsWide() {

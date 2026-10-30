@@ -197,6 +197,20 @@ as they are fixed or confirmed.
   after a turn, but its `Stop` does not list them and no hook reports their
   end.
 
+## Pane headers
+
+- **A permission mode changed at the agent's prompt shows with its next
+  report.** Neither Claude Code nor Codex reports a mode change, such as
+  Claude Code's Shift+Tab, when it happens. The header shows the new mode
+  once the next prompt, tool, or stop carries it, and a new Claude Code
+  session shows its mode from its first prompt. A Codex model change shows
+  the same way; Claude Code reports its model changes at once.
+- **Codex's header says only whether it asks.** Codex reports two modes to
+  its hooks: one for an approval policy that never asks, which the header
+  warns of as **Runs without asking**, and the default for every other
+  policy. Its sandbox is not reported, so the header does not say what the
+  agent may write.
+
 ## Plan usage
 
 - **Claude Code's usage is only as fresh as its last reply in Limpid.**
