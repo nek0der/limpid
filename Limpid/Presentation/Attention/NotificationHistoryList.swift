@@ -109,6 +109,11 @@ struct NotificationHistoryList: Equatable {
         /// The tab a shell's heading names, so a command's row names its
         /// own only when it was another; `nil` for an agent's.
         let headingTab: String?
+        /// Where the row stands among its source's lines, which are drawn
+        /// together in one edged group under the heading.
+        var isFirstOfSource = false
+        /// No row and no fold under it in its source.
+        var isLastOfSource = false
     }
 
     struct Source: Equatable {
@@ -304,6 +309,11 @@ struct NotificationHistoryList: Equatable {
                 }
             }
         }
+        // The fold, when there is one, closes the group.
+        for index in shown.indices {
+            shown[index].isFirstOfSource = index == shown.startIndex
+            shown[index].isLastOfSource = folded == 0 && index == shown.index(before: shown.endIndex)
+        }
         return Source(id: id, entries: entries, shown: shown, foldableCount: folded, isExpanded: isExpanded, heading: heading)
     }
 
@@ -375,6 +385,15 @@ struct NotificationHistoryHeading: Equatable {
         /// title: `shortTab` may already have cut a path's start, and what
         /// is left need not read as a path.
         var tabTruncation = SupervisionTruncation.name
+
+        /// Whether the tab leads the heading, the place after it. A short
+        /// tab tells this source from the others in one place at a glance;
+        /// one longer than the place is usually a prompt an agent set as
+        /// the title, which would fill the line and repeat the row under it.
+        var isTabLeading: Bool {
+            guard let tab else { return false }
+            return tab.count <= title.count
+        }
     }
 
     let badge: Badge

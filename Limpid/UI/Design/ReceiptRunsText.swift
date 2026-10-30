@@ -36,8 +36,8 @@ enum ReceiptRunRenderer {
         /// `emphasized` and emphasized counts in semibold while
         /// `showsEmphasis`.
         case receipt(base: Color, showsEmphasis: Bool)
-        /// These are the facts after a notification's headline: every word is
-        /// muted and regular, so the headline stays the one thing that reads first;
+        /// These are the facts at the end of a notification's row: every word is
+        /// muted and regular, so what the row is about stays what reads first;
         /// only the counts' diff colors and a failed check's red remain.
         case mutedFacts
     }

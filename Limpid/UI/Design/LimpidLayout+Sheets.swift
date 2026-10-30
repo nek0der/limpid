@@ -152,14 +152,23 @@ extension LimpidLayout.Supervision {
 
     // MARK: Notification history
 
-    /// Wide enough that what happened and the time share the first line,
+    /// Wide enough that what a row is about and the time share the first line,
     /// and a source's heading keeps its place and its note.
     static let notificationHistoryWidth: CGFloat = 400
     static let notificationHistoryPadding = popoverInset
     static let notificationRowInsets = popoverRowInsets
     static let notificationRowCornerRadius: CGFloat = 8
-    static let notificationRowSpacing = popoverTwoLineRowSpacing
-    /// Between what happened and its detail.
+    /// Between a source's heading and the edge of its group.
+    static let notificationHeadingGroupGap = spaceXS
+    /// Between a source's group edge and the fills of the rows inside it,
+    /// so a hovered or selected row never covers the edge.
+    static let notificationGroupInset = spaceHairline
+    static let notificationGroupCornerRadius = notificationRowCornerRadius + notificationGroupInset
+    /// Where the rule between a group's rows starts: at the words' column,
+    /// as the rows' glyphs need no rule between them.
+    static let notificationGroupRuleLeading = notificationGroupInset + notificationRowInsets.leading
+        + notificationGlyphColumnWidth + notificationColumnSpacing
+    /// Between what a row is about and what came of it.
     static let notificationLineSpacing = spaceHairline
     /// The first line's height, which the glyph centers on.
     static let notificationSourceLineHeight: CGFloat = 16

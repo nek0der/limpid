@@ -213,6 +213,17 @@ enum PopoverGround: Equatable, Sendable {
         }
     }
 
+    /// The edge around a group of rows and the rule between them, as in the
+    /// notification history's sources: the window's `line` on the opaque
+    /// ground, ink on the material, where `line` would read as a color of
+    /// its own over whatever the glass takes up.
+    var groupRule: RowFill {
+        switch self {
+        case .opaque: .solid(SupervisionTokens.line)
+        case .material: .overlay(SupervisionTokens.popoverRule)
+        }
+    }
+
     /// The edge drawn inside the selected row, on the material only: there
     /// the fill can stand only so far off it before the text on it drops
     /// under 4.5:1, so the edge is what makes the row the keys are on
@@ -463,6 +474,11 @@ enum SupervisionTokens {
     /// in dark, where the fill alone stands only about 1.15:1 off it. No
     /// text sits on it, so it can be stronger than the fill.
     static let popoverSelectionEdge = ThemedOverlay(lightOpacity: 0.10, darkOpacity: 0.10)
+    /// The edge around a group of rows on the material and the rules inside
+    /// it (`PopoverGround.groupRule`): a step under the selected row's edge,
+    /// so the row the keys are on still stands out within its group. No
+    /// text sits on it.
+    static let popoverRule = ThemedOverlay(lightOpacity: 0.08, darkOpacity: 0.08)
     /// The well an inline rename's field stands in, laid under the label
     /// and a few points past it (`InlineRenameEditingStyle`), as quiet as
     /// `popoverWell`: it marks where the field is, and gives its selection
