@@ -38,7 +38,7 @@ struct SessionHeaderModel: Equatable {
     let nameTruncation: SupervisionTruncation
     let gitChips: [GitChip]
 
-    /// `gitFacts` adds "3 Commits" and "2 Uncommitted" after the pull
+    /// `gitFacts` adds "+3 commits" and "2 files uncommitted" after the pull
     /// request's chip, the commits only while the request is not
     /// merged (`GitFactsText.chips`).
     init(

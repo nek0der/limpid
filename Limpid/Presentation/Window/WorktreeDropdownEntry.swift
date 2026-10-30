@@ -22,8 +22,8 @@ struct WorktreeDropdownEntry: Identifiable, Equatable {
     }
 
     /// The checkouts a person can open, in the sidebar's order
-    /// (`SidebarPresentedSections.ordered`): the working worktrees, the
-    /// folder, then those ready to clean up and the others, so the ▾ and the
+    /// (`SidebarPresentedSections.ordered`): the folder, the working
+    /// worktrees, then those ready to clean up and the others, so the ▾ and the
     /// sidebar never disagree on where a checkout is. Hidden ones stay
     /// hidden here too. Each goes by its row's name (one rule for every
     /// place a row is named), and by its branch while the sidebar has no

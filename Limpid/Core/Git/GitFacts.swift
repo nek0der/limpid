@@ -51,7 +51,7 @@ struct GitFacts: Equatable, Sendable {
     }
 
     /// The commits a pull request from this branch would carry, for the
-    /// "3 Commits" chip and the row's second line: none on the default
+    /// "+3 commits" chip and the row's second line: none on the default
     /// branch itself, whose own commits ahead of origin are no proposal.
     var proposedCommits: Int {
         isOnBase ? 0 : commitsNotOnBase ?? 0

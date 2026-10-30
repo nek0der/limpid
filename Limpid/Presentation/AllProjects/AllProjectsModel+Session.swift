@@ -50,7 +50,7 @@ extension AllProjectsModel {
             let byRow = Dictionary(rows.map { ($0.id, $0) }) { first, _ in first }
             // A card's row has a tab or an item, which keeps it among the
             // working rows however the sidebar holds its sections, so the
-            // working order (the worktrees, then the folder) is the
+            // working order (the folder, then the worktrees) is the
             // sidebar's for every card.
             let listed = SidebarPresentedSections().ordered(project).compactMap { byRow[$0.row] }
             let note = windowNote(of: project.id, currentProject: currentProject, sources: sources)

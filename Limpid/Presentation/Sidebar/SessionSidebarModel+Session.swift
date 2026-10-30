@@ -240,7 +240,8 @@ extension SessionSidebarModel {
                     SessionRowFact.PullRequest(number: $0.number, state: $0.state, isDraft: $0.isDraft)
                 },
                 uncommittedFiles: git.facts?.uncommittedFiles ?? 0,
-                proposedCommits: git.facts?.proposedCommits ?? 0
+                proposedCommits: git.facts?.proposedCommits ?? 0,
+                hasGitFacts: git.facts != nil
             ),
             lastActivity: rowRuntimes.map(\.badge.updatedAt).max(),
             isMissing: project.flatMap { project in

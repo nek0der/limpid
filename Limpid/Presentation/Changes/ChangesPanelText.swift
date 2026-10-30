@@ -380,25 +380,12 @@ enum ChangesPanelText {
         // "65m" where "1h 05m" took twice the room. Each unit is whole and
         // cut down, as a clock counts, so no unit reads more than ran.
         if total >= 100 * 60 {
-            let hours = total / 3600
-            return LocalizedStringResource(
-                "duration.compact.hours",
-                defaultValue: "\(hours)h",
-                comment: "A turn card's duration, of a hundred minutes or more; argument: the whole hours"
-            ).resolved(in: locale)
+            return CompactTimeText.hours(total / 3600, locale: locale)
         }
         if total >= 60 {
-            return LocalizedStringResource(
-                "duration.compact.minutes",
-                defaultValue: "\(total / 60)m",
-                comment: "A turn card's duration, over a minute; argument: the whole minutes"
-            ).resolved(in: locale)
+            return CompactTimeText.minutes(total / 60, locale: locale)
         }
-        return LocalizedStringResource(
-            "duration.compact.seconds",
-            defaultValue: "\(total)s",
-            comment: "A turn card's duration, under a minute; argument: the seconds"
-        ).resolved(in: locale)
+        return CompactTimeText.seconds(total, locale: locale)
     }
 
     private static func twoFigures(_ value: Int) -> String {

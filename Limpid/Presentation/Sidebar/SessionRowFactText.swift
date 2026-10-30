@@ -37,12 +37,8 @@ enum SessionRowFactText {
             action ?? LocalizedStringResource("Running").resolved(in: locale)
         case .compacting:
             LocalizedStringResource("Compacting", comment: "Worktree row: the agent is compacting its context").resolved(in: locale)
-        case let .pullRequest(number, state, isDraft):
-            pullRequest(number: number, state: state, isDraft: isDraft, locale: locale)
-        case let .uncommitted(files):
-            GitFactsText.uncommittedChip(files, locale: locale)
-        case let .commits(count):
-            GitFactsText.commitsChip(count, locale: locale)
+        case .pullRequest, .uncommitted, .commits, .noChanges:
+            gitFact(fact, locale: locale)
         case let .workingAfterTurn(work):
             // The rules give this fact only for work they count, so the
             // state's name stands in only for a count that names no kind.
@@ -53,6 +49,22 @@ enum SessionRowFactText {
         case .unknown:
             // The glyph's own name, so the line and the mark agree.
             LocalizedStringResource("Unknown").resolved(in: locale)
+        }
+    }
+
+    /// A row at rest's Git fact: what is not committed, the request, the
+    /// commits ahead, or that there is none of these. `make` hands only
+    /// these here, so the last case is `.noChanges`.
+    private static func gitFact(_ fact: SessionRowFact.Fact, locale: Locale) -> String {
+        switch fact {
+        case let .pullRequest(number, state, isDraft):
+            pullRequest(number: number, state: state, isDraft: isDraft, locale: locale)
+        case let .uncommitted(files):
+            GitFactsText.uncommittedChip(files, locale: locale)
+        case let .commits(count):
+            GitFactsText.commitsChip(count, locale: locale)
+        default:
+            GitFactsText.noChanges(locale: locale)
         }
     }
 
@@ -78,9 +90,9 @@ enum SessionRowFactText {
     /// the row offers no "Answer…" for it.
     static func tooltip(for row: SessionSidebarModel.Row, now: Date, locale: Locale) -> String {
         var parts = [row.name]
-        // The folder's row is named as any row is, so it says what it is.
+        // The repository's row is named as any row is, so it says what it is.
         if case .project = row.id {
-            parts.append(folder.resolved(in: locale))
+            parts.append(repositoryFolder.resolved(in: locale))
         }
         // The checkout goes in full: the line may show a folder less the
         // project's name.
@@ -94,6 +106,9 @@ enum SessionRowFactText {
         }
         if let agentSummary = row.agentSummary {
             parts.append(agentSummary)
+        }
+        if row.proposedCommits > 0 {
+            parts.append(commitsAhead(row.proposedCommits, locale: locale))
         }
         if let lastActivity = row.lastActivity {
             parts.append(sinceLastActivity(lastActivity, now: now, locale: locale))
@@ -126,9 +141,36 @@ enum SessionRowFactText {
         return facts
     }
 
-    /// What the project's folder row is, said in its tooltip, read by
-    /// VoiceOver, and on its second line at rest.
-    static let folder = LocalizedStringResource("Folder")
+    /// The commits ahead in full, where "+3 commits" does not say of
+    /// what.
+    private static func commitsAhead(_ count: Int, locale: Locale) -> String {
+        LocalizedStringResource(
+            "\(count) commits not on the default branch",
+            comment: "Sidebar row tooltip and VoiceOver: commits on the row's branch that the default branch does not have"
+        ).resolved(in: locale)
+    }
+
+    private static func isCommits(_ fact: SessionRowFact.Fact) -> Bool {
+        if case .commits = fact {
+            return true
+        }
+        return false
+    }
+
+    /// The tag beside the name of the project's own folder's row, the
+    /// repository the worktrees are made from. It is what the row is, not
+    /// a state, so it stays whatever the second line says.
+    static let repositoryTag = LocalizedStringResource(
+        "Repository",
+        comment: "Sidebar: the tag beside the name of the project's own folder's row, which the worktrees are made from"
+    )
+
+    /// What the repository's row is, in its tooltip and read by VoiceOver
+    /// after its name, where the tag's one word would read short.
+    static let repositoryFolder = LocalizedStringResource(
+        "Repository folder",
+        comment: "Sidebar row tooltip and VoiceOver: the row is the project's own folder, the repository the worktrees are made from"
+    )
 
     /// The tooltip's last line on one of the other worktrees.
     static let otherWorktreeHint = LocalizedStringResource(
@@ -154,11 +196,10 @@ enum SessionRowFactText {
         if row.section == .other, let other = SidebarSectionText.title(.other) {
             parts.append(other.resolved(in: locale))
         }
-        // "Folder" is said once: at rest, the second line read next says it
-        // already, and a labeled folder row's own folder said it before; its
-        // branch does not say it.
-        if case .project = row.id, row.checkout?.isBranch ?? true, row.factText != folder.resolved(in: locale) {
-            parts.append(folder.resolved(in: locale))
+        // The tag beside the name, read after the place as the tooltip
+        // says it.
+        if row.isMainFolder {
+            parts.append(repositoryFolder.resolved(in: locale))
         }
         let fact = AgentStatusText.spoken(current(row, now: now, locale: locale), locale: locale)
         if case .pullRequest = row.fact.fact {
@@ -166,12 +207,16 @@ enum SessionRowFactText {
             // mark's colored corner.
             parts.append(pullRequestSpoken(row, locale: locale) ?? fact)
         } else {
-            if row.showsFact {
+            // "+3 commits" is said in full below.
+            if row.showsFact, !isCommits(row.fact.fact) {
                 parts.append(fact)
             }
             if let pullRequest = pullRequestSpoken(row, locale: locale) {
                 parts.append(pullRequest)
             }
+        }
+        if row.proposedCommits > 0 {
+            parts.append(commitsAhead(row.proposedCommits, locale: locale))
         }
         // A shell's state is already "Shell"; its agent would say it again.
         if row.fact.glyph != .shell {
@@ -301,22 +346,26 @@ enum SessionRowFactText {
     }
 
     /// The time since the last activity on the row's first line, in the
-    /// largest whole unit ("12m", "3h", "2d"), so it fits the fixed column.
-    /// The same letters in every language, Japanese included: a localized unit ("12分", "12時間") would not fit the column, and
-    /// the tooltip and VoiceOver say the time in words. Rounded down, as
-    /// the tooltip's minutes are: 12m 40s is "12m", and 59m 30s is not yet
-    /// an hour.
-    static func elapsed(since date: Date, now: Date) -> String {
+    /// largest whole unit ("12m", "3h", "2d"; 「12分」「3時間」「2日」), in
+    /// the units a turn card's duration has (`CompactTimeText`), so the two
+    /// read as one rule beside each other. Under a minute it is "now":
+    /// counting seconds would redraw the column every second. Rounded
+    /// down, as the tooltip's minutes are: 12m 40s is "12m", and 59m 30s
+    /// is not yet an hour.
+    static func elapsed(since date: Date, now: Date, locale: Locale) -> String {
         let minutes = Int(max(0, now.timeIntervalSince(date)) / 60)
         let hours = minutes / 60
         let days = hours / 24
         if days > 0 {
-            return "\(days)d"
+            return CompactTimeText.days(days, locale: locale)
         }
         if hours > 0 {
-            return "\(hours)h"
+            return CompactTimeText.hours(hours, locale: locale)
         }
-        return "\(minutes)m"
+        if minutes > 0 {
+            return CompactTimeText.minutes(minutes, locale: locale)
+        }
+        return CompactTimeText.now(locale: locale)
     }
 
     /// Where the command sits in an approval's second line ("Waiting for

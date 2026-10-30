@@ -38,7 +38,7 @@ extension WorkspaceSession {
     ///
     /// The project's folder row shows its folder only when the folder is
     /// not the project's name: the header right above it says that name,
-    /// and the row's line keeps its "Folder", which says what the row is.
+    /// and the row's tag says it is the repository.
     /// We compare that folder with the name the header shows; a worktree's
     /// folder is instead shortened by the project's folder name, the start
     /// Limpid gave it.

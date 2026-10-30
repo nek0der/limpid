@@ -54,12 +54,20 @@ is used up. A click outside the panel or Escape closes it.
 ### Sidebar
 
 - Every project sits under its own header, in the order you give them (drag
-  a header, or ⌥⌘↑ ⌥⌘↓ while the sidebar has focus). Under a header are its
-  worktrees, one per row, with the project's own folder after them and the folded lists below.
+  a header, or ⌥⌘↑ ⌥⌘↓ while the sidebar has focus). Under a header comes
+  the project's own folder first, tagged **Repository**, then its worktrees,
+  one per row, and the folded lists below. The repository's row always stays
+  first; worktrees move only among themselves.
 - A row shows the state (running, waiting for approval, stopped, unread, or
   working in the background after a turn: the finished or unread ring with a
-  dot circling it), the name, the time, one fact such as "Unread · 4 files changed" or "PR #324 · Open", and
-  a badge for each agent.
+  dot circling it), the name, the time since an agent last moved ("now",
+  "12m", "3h", "2d"), one fact such as "Unread · 4 files changed" or
+  "PR #324 · Open", and a badge for each agent.
+- At rest, the fact is the folder's Git state: "3 files uncommitted" first,
+  else the PR, else "+2 commits" (commits the default branch does not have),
+  else "No changes". The PR's mark stays at the right while the line says
+  what is uncommitted, and the tooltip names the commits ahead whatever the
+  line shows.
 - A row goes by its branch, such as `main` or `feat/login`. A row with no
   branch, such as a worktree on a detached HEAD, goes by its first agent
   conversation, else by its folder.
@@ -70,7 +78,7 @@ is used up. A click outside the panel or Escape closes it.
   **Remove Label**, or clearing the field, hands the row back to its
   branch.
 - A labeled row starts its second line with its branch, as in
-  "feat/login · 3 Uncommitted", so it still says which worktree it is. A
+  "feat/login · 3 files uncommitted", so it still says which worktree it is. A
   fact that only repeats the state, such as "Idle", gives way to the branch
   alone. A worktree with no branch shows its folder there instead, without
   the project's folder name in front. A label that already matches what

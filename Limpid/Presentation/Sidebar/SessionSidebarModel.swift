@@ -5,8 +5,8 @@ import Foundation
 
 /// One project's rows in the sidebar, under its header
 /// (`SidebarListModel`): a row for each place to work in the project, each
-/// in the same two-line form. The working rows come first (the worktrees in
-/// the order they were made, then the folder), then a line for the missing
+/// in the same two-line form. The working rows come first (the folder, then
+/// the worktrees in the order they were made), then a line for the missing
 /// worktrees, one for the worktrees ready to clean up, and one for the other
 /// worktrees, each with its rows under it while it is open
 /// (`SidebarPresentedSections`). Rows are never sorted by state; the state
@@ -88,6 +88,10 @@ struct SessionSidebarModel: Equatable {
         var label: String?
         /// How many agents run in the row.
         var agentCount = 0
+        /// The commits the default branch does not have, for the tooltip
+        /// and VoiceOver, which say them whatever the second line states:
+        /// the line drops them for uncommitted files or a pull request.
+        var proposedCommits = 0
         /// The second line states an approval's command, rather than an
         /// edit's summary or a tool's name.
         var isFactCommand = false
@@ -105,15 +109,9 @@ struct SessionSidebarModel: Equatable {
         /// Whether the second line states the row's fact. A row that
         /// starts the line with its checkout drops a fact that only names
         /// the state its glyph shows (`SessionRowFact.repeatsGlyph`), and
-        /// shows the checkout alone. The project's folder row keeps
-        /// "Folder" after its branch: a branch, unlike the project's
-        /// folder, does not say the row is the folder rather than a
-        /// worktree.
+        /// shows the checkout alone.
         var showsFact: Bool {
-            guard let checkout else { return true }
-            if isMainFolder, checkout.isBranch, fact.fact == .idle {
-                return true
-            }
+            guard checkout != nil else { return true }
             return !SessionRowFact.repeatsGlyph(fact.fact)
         }
 
@@ -221,7 +219,7 @@ struct SessionSidebarModel: Equatable {
                 name: input.name,
                 nameTruncation: input.nameTruncation,
                 fact: fact,
-                factText: Self.factText(fact.fact, of: input.container, locale: locale),
+                factText: SessionRowFactText.make(fact.fact, locale: locale),
                 tone: Self.tone(of: fact.fact),
                 badgeText: SessionRowFactText.badge(fact.badge, locale: locale),
                 lastActivity: input.lastActivity,
@@ -249,6 +247,7 @@ struct SessionSidebarModel: Equatable {
                 checkout: input.checkout,
                 label: input.label,
                 agentCount: input.fact.agents.count,
+                proposedCommits: input.fact.proposedCommits,
                 isFactCommand: Self.isFactCommand(input),
                 requiresTerminalAnswer: PanePriority.dominant(input.fact.items)?.requiresTerminalAnswer ?? false,
                 isLeadPaneShown: isActive && input.leadPaneID.map(shownPanes.contains) ?? false
@@ -297,21 +296,12 @@ struct SessionSidebarModel: Equatable {
         }
     }
 
-    /// The second line. The project's folder at rest says it is the folder:
-    /// it closes the working rows under a name that may be a
-    /// conversation's or a branch's, like any worktree's.
-    private static func factText(_ fact: SessionRowFact.Fact, of container: ContainerID, locale: Locale) -> String {
-        if fact == .idle, case .project = container {
-            return SessionRowFactText.folder.resolved(in: locale)
-        }
-        return SessionRowFactText.make(fact, locale: locale)
-    }
-
     private static func tone(of fact: SessionRowFact.Fact) -> Tone {
         switch fact {
         case .question, .approval, .prompt: .waiting
         case .stopped: .stopped
-        case .unread, .running, .compacting, .pullRequest, .uncommitted, .commits, .workingAfterTurn, .idle, .unknown: .muted
+        case .unread, .running, .compacting, .pullRequest, .uncommitted, .commits, .workingAfterTurn, .noChanges, .idle,
+             .unknown: .muted
         }
     }
 

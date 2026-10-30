@@ -62,8 +62,8 @@ struct WorktreeDropdownTextTests {
             == "feat/turns, Running, ~/code/limpid")
     }
 
-    /// The ▾ lists the checkouts as the sidebar does: the working
-    /// worktrees, the folder closing them, then the other worktrees; a
+    /// The ▾ lists the checkouts as the sidebar does: the folder, the
+    /// working worktrees after it, then the other worktrees; a
     /// hidden one not at all. Each goes by its row's name, its branch while
     /// the sidebar has no row for it.
     @Test func theEntries_followTheSidebarsOrder_andItsNames() {
@@ -87,8 +87,8 @@ struct WorktreeDropdownTextTests {
 
         let entries = WorktreeDropdownEntry.entries(of: project, in: sections, rows: [workingRow: named])
 
-        #expect(entries.map(\.container) == [workingRow, .project(project.id), mergedRow, otherRow])
-        #expect(entries.map(\.name) == ["Fix login", CheckoutName.label(of: project), "fix/done", "agent-1"])
-        #expect(entries.first?.branch == "feat/a")
+        #expect(entries.map(\.container) == [.project(project.id), workingRow, mergedRow, otherRow])
+        #expect(entries.map(\.name) == [CheckoutName.label(of: project), "Fix login", "fix/done", "agent-1"])
+        #expect(entries.first { $0.container == workingRow }?.branch == "feat/a")
     }
 }

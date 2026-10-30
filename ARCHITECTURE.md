@@ -228,7 +228,7 @@ The sidebar, the worktree ▾, the project ▾, the palette's "#", ⌃⌘1…9, 
 and the all projects sheet list projects and rows in one order and name rows
 by one rule. The projects come in the window's `SidebarArrangement`; a
 project's rows come in the sections its sidebar shows them
-(`SidebarPresentedSections.ordered`: the working worktrees, the folder, then
+(`SidebarPresentedSections.ordered`: the folder, the working worktrees, then
 the folded sections); a row goes by `RowName`. Only the all projects sheet
 re-sorts, by state, which is what it is for: the sidebar never reorders
 itself. Core cannot name the presented sections, so the palette is
