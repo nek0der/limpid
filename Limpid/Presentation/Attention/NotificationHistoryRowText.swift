@@ -1,12 +1,15 @@
 // NotificationHistoryRowText.swift
-// Limpid — a notification history row's two lines: what happened, then its detail; and where it came from.
+// Limpid — a notification history row's two lines: what it is about, then what came of it; and where it came from.
 
 import Foundation
 
-/// A history row in two lines: what happened first ("Needs approval",
-/// "Turn finished · T4 · 2 files +94 −0", "Command failed · exit 1"), then
-/// the instruction or detail, quiet, on one line. Where the row came from is
-/// its source's heading (`NotificationHistoryList`), said once over its rows.
+/// A history row in two lines: what it is about first (the instruction a
+/// turn answered, the command an approval asks about), then what came of
+/// it (the reply, "Needs approval") with the facts at its end ("T4 +94 −0",
+/// "exit 1"). What happened is said in words only where the row has nothing
+/// more particular; the glyph says it on every row. Where the row came from
+/// is its source's heading (`NotificationHistoryList`), said once over its
+/// rows.
 ///
 /// An agent's entry is worded from its event, in the window's language. An
 /// entry from before events, or with one this build cannot read, is read
@@ -50,30 +53,53 @@ enum NotificationHistoryRowText {
     }
 
     struct Lines: Equatable {
-        /// What happened: "Needs approval", "Turn finished".
+        /// What happened: "Needs approval", "Turn finished". Drawn only
+        /// where the row has nothing more particular to say, and always
+        /// read by VoiceOver.
         let headline: String
-        /// The facts after it, set off by the separator: the receipt, the
-        /// exit code. Empty when there are none.
+        /// The first line: what the row is about. The instruction a turn
+        /// answered, what a wait names, why the agent stopped; else the
+        /// headline.
+        let subject: String
+        /// Whether the subject is a file's name or a command, which the
+        /// line cuts in the middle so both ends stay; prose is cut at its end.
+        let isSubjectAName: Bool
+        /// The second line: what came of it. `nil` when the subject said
+        /// all there is.
+        let outcome: Outcome?
+        /// At the second line's end: the turn's number and counts, a
+        /// command's exit and time. Empty when there are none.
         let facts: [ReceiptRun]
-        /// The second line; `nil` when there is nothing to add.
-        let detail: String?
-        /// Whether the detail is a file's name or a command, which the line
-        /// cuts in the middle so both ends stay; prose is cut at its end.
-        let isDetailASubject: Bool
-        /// A finished turn's reply, under the detail; `nil` for anything
-        /// else, and for a turn that kept none.
-        let reply: String?
 
-        /// The first line whole, for the tooltip and VoiceOver.
-        var firstLine: String {
-            facts.reduce(headline) { $0 + $1.text }
+        /// The facts on one run, as the row draws them.
+        var factsText: String {
+            facts.map(\.text).joined()
         }
 
         /// Every line whole, for the tooltip, which the row may cut; the
         /// reply said as one, as VoiceOver says it.
         func help(locale: Locale) -> String {
-            let reply = reply.map { TurnReplyText.labeled($0, locale: locale) }
-            return [firstLine, detail, reply].compactMap(\.self).joined(separator: "\n")
+            let second = outcome.map { $0.text(headline: headline, locale: locale) }
+            return [subject, second, facts.isEmpty ? nil : factsText].compactMap(\.self).joined(separator: "\n")
+        }
+    }
+
+    /// A row's second line.
+    enum Outcome: Equatable {
+        /// The headline, in the tone the glyph is in: "Needs approval"
+        /// under the command it asks about.
+        case headline
+        /// What the agent said as its turn ended.
+        case reply(String)
+        /// An alert's body.
+        case detail(String)
+
+        func text(headline: String, locale: Locale) -> String {
+            switch self {
+            case .headline: headline
+            case let .reply(reply): TurnReplyText.labeled(reply, locale: locale)
+            case let .detail(detail): detail
+            }
         }
     }
 
@@ -86,56 +112,69 @@ enum NotificationHistoryRowText {
     }
 
     static func lines(of happening: Happening, sourceTabTitle: String?, locale: Locale) -> Lines {
-        let separator = ReceiptRun(text: AgentStatusText.separator(locale: locale), role: .quiet)
         switch happening {
         case let .wait(wait, fact):
-            return Lines(headline: waitName(wait, locale: locale), facts: [], detail: fact, isDetailASubject: wait == .approval, reply: nil)
+            return named(fact, headline: waitName(wait, locale: locale), isAName: wait == .approval)
         case let .turn(receipt, instruction, reply):
-            return Lines(
-                headline: LocalizedStringResource(
-                    "Turn finished",
-                    comment: "Notification history: the headline of a finished turn"
-                ).resolved(in: locale),
-                facts: receipt.isEmpty ? [] : [separator] + receipt,
-                detail: instruction,
-                isDetailASubject: false,
-                reply: reply
-            )
+            let headline = LocalizedStringResource(
+                "Turn finished",
+                comment: "Notification history: the headline of a finished turn"
+            ).resolved(in: locale)
+            // The instruction tells one turn from the next; the reply is
+            // what came of it, else the headline says the turn ended.
+            let outcome: Outcome? = reply.map(Outcome.reply) ?? (instruction == nil ? nil : .headline)
+            return Lines(headline: headline, subject: instruction ?? headline, isSubjectAName: false, outcome: outcome, facts: receipt)
         case let .stopped(reason):
-            return Lines(
-                headline: LocalizedStringResource("Stopped").resolved(in: locale),
-                facts: [],
-                detail: reason,
-                isDetailASubject: false,
-                reply: nil
-            )
+            return named(reason, headline: LocalizedStringResource("Stopped").resolved(in: locale), isAName: false)
         case let .command(exitCode, durationSeconds, tabTitle):
             let hasFailed = (exitCode ?? 0) != 0
             let headline = hasFailed
                 ? LocalizedStringResource("Command failed", comment: "Notification history: a command that exited with a nonzero status")
                 : LocalizedStringResource("Command finished", comment: "Notification history: a command that exited with status 0")
-            let facts = exitCode.flatMap { code in
-                code == 0 ? nil : [separator, ReceiptRun(text: exitCodeText(code, locale: locale), role: .plain)]
-            } ?? []
+            let exit = exitCode.flatMap { code in
+                code == 0 ? nil : ReceiptRun(text: exitCodeText(code, locale: locale), role: .failed)
+            }
+            let duration = durationSeconds.map { ReceiptRun(text: DurationText.command($0, locale: locale), role: .plain) }
             // The tab only when the heading names another: a shell's heading
             // names the tab of its newest row.
             let tab = tabTitle.flatMap { $0.isEmpty || $0 == sourceTabTitle ? nil : $0 }
-            let duration = durationSeconds.map { DurationText.command($0, locale: locale) }
-            let detail = AgentStatusText.joined([tab ?? "", duration ?? ""], locale: locale)
+            let lines = named(tab, headline: headline.resolved(in: locale), isAName: false)
             return Lines(
-                headline: headline.resolved(in: locale),
-                facts: facts,
-                detail: detail.isEmpty ? nil : detail,
-                isDetailASubject: false,
-                reply: nil
+                headline: lines.headline,
+                subject: lines.subject,
+                isSubjectAName: false,
+                outcome: lines.outcome,
+                facts: spaced([exit, duration].compactMap(\.self).map { [$0] })
             )
         case let .alert(title, body):
             let message = message(body, locale: locale)
             let title = title.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !title.isEmpty else {
-                return Lines(headline: message, facts: [], detail: nil, isDetailASubject: false, reply: nil)
+                return Lines(headline: message, subject: message, isSubjectAName: false, outcome: nil, facts: [])
             }
-            return Lines(headline: title, facts: [], detail: message.isEmpty ? nil : message, isDetailASubject: false, reply: nil)
+            return Lines(
+                headline: title,
+                subject: title,
+                isSubjectAName: false,
+                outcome: message.isEmpty ? nil : .detail(message),
+                facts: []
+            )
+        }
+    }
+
+    /// `name` on the first line and the headline under it, in the glyph's
+    /// tone; the headline alone when nothing was named.
+    private static func named(_ name: String?, headline: String, isAName: Bool) -> Lines {
+        guard let name else {
+            return Lines(headline: headline, subject: headline, isSubjectAName: false, outcome: nil, facts: [])
+        }
+        return Lines(headline: headline, subject: name, isSubjectAName: isAName, outcome: .headline, facts: [])
+    }
+
+    /// Groups of runs a space apart, as the second line's end sets its facts.
+    private static func spaced(_ groups: [[ReceiptRun]]) -> [ReceiptRun] {
+        groups.enumerated().flatMap { index, group in
+            index == 0 ? group : [ReceiptRun(text: " ", role: .quiet)] + group
         }
     }
 
@@ -164,7 +203,7 @@ enum NotificationHistoryRowText {
         return entry.timestamp.formatted(Date.FormatStyle(date: .abbreviated, time: .omitted).locale(locale))
     }
 
-    /// "exit 1": a failed command's status, after its headline.
+    /// "exit 1": a failed command's status, among its row's facts.
     static func exitCodeText(_ code: Int, locale: Locale) -> String {
         LocalizedStringResource(
             "exit \(code)",
@@ -185,19 +224,24 @@ enum NotificationHistoryRowText {
         return SessionRowFactText.stateName(glyph, locale: locale)
     }
 
-    /// What VoiceOver reads for a row: what happened, its detail, when, and
+    /// What VoiceOver reads for a row: what it is about, what came of it,
+    /// what happened when the row does not draw it, its facts, when, and
     /// whether it is unread. The source is its heading's, read before it.
     static func spokenLabel(_ lines: Lines, timeLabel: String, isUnread: Bool, locale: Locale) -> String {
-        // The facts as a list and a turn in words: the line's " · " and
-        // "T7" would be read as a symbol and letter by letter.
-        let first = lines.firstLine
+        // The facts as a list and a turn in words: a receipt kept as text
+        // still holds " · ", and "T7" would be read letter by letter.
+        let facts = lines.factsText
             .components(separatedBy: AgentStatusText.separator(locale: locale))
-            .map { ReceiptText.spokenFact($0, locale: locale) }
+            .map { fact in
+                fact.split(separator: " ").map { ReceiptText.spokenFact(String($0), locale: locale) }.joined(separator: " ")
+            }
+        let isHeadlineDrawn = lines.subject == lines.headline || lines.outcome == .headline
         return AgentStatusText.spokenList(
             [
-                AgentStatusText.spokenList(first, locale: locale),
-                AgentStatusText.spoken(lines.detail ?? "", locale: locale),
-                lines.reply.map { TurnReplyText.labeled($0, locale: locale) } ?? "",
+                AgentStatusText.spoken(lines.subject, locale: locale),
+                lines.outcome.map { $0.text(headline: lines.headline, locale: locale) } ?? "",
+                isHeadlineDrawn ? "" : lines.headline,
+                AgentStatusText.spokenList(facts, locale: locale),
                 timeLabel,
                 isUnread ? LocalizedStringResource("Unread").resolved(in: locale) : ""
             ],
@@ -272,7 +316,7 @@ enum NotificationHistoryRowText {
             return .wait(wait, fact: fact)
         case .agentFinished:
             let (receipt, instruction) = LegacyText.turn(entry.body)
-            return .turn(receipt: receipt.map { [ReceiptRun(text: $0, role: .plain)] } ?? [], instruction: instruction, reply: nil)
+            return .turn(receipt: receipt.map { receiptRuns(recorded: $0, locale: locale) } ?? [], instruction: instruction, reply: nil)
         case .agentError:
             return .stopped(reason: LegacyText.stopReason(entry.body))
         case .commandFinished:
@@ -294,25 +338,56 @@ enum NotificationHistoryRowText {
         }
     }
 
-    /// "T4 · 2 files +94 −0 · ✓ Tests", its counts in the diff colors and a
-    /// count of zero quiet, since it is not a change.
+    /// "T4 +94 −0 ✓ Tests": the turn, its counts in the diff colors with
+    /// a count of zero quiet, since it is not a change, and its check. The
+    /// files counted and "No file changes" are left to the Changes panel:
+    /// at a row's end the counts say how much changed, and nothing at all
+    /// says nothing did.
     static func receiptRuns(_ turn: NotificationEvent.Turn, locale: Locale) -> [ReceiptRun] {
-        var parts: [[ReceiptRun]] = [[ReceiptRun(text: ReceiptText.turns(turn.number...turn.number, locale: locale), role: .plain)]]
-        var changes = ReceiptText.changeRuns(turn.changes, isEmphasized: false, locale: locale)
+        var groups: [[ReceiptRun]] = [[ReceiptRun(text: ReceiptText.turns(turn.number...turn.number, locale: locale), role: .plain)]]
         if case let .changed(_, added, removed) = turn.changes {
-            changes = changes.map { run in
-                switch run.role {
-                case .added where added == 0, .removed where removed == 0: ReceiptRun(text: run.text, role: .quiet)
-                default: run
-                }
+            groups.append(countRuns(added: added, removed: removed, locale: locale))
+        }
+        if let check = turn.check {
+            groups.append([ReceiptRun(text: ReceiptText.check(check, locale: locale), role: check.hasFailed ? .failed : .plain)])
+        }
+        return spaced(groups)
+    }
+
+    /// "+94 −0" in the diff colors, a count of zero quiet.
+    private static func countRuns(added: Int, removed: Int, locale: Locale) -> [ReceiptRun] {
+        [
+            ReceiptRun(text: ReceiptText.signed(added, sign: "+", locale: locale), role: added == 0 ? .quiet : .added(isEmphasized: false)),
+            ReceiptRun(text: " ", role: .quiet),
+            ReceiptRun(
+                text: ReceiptText.signed(removed, sign: "−", locale: locale),
+                role: removed == 0 ? .quiet : .removed(isEmphasized: false)
+            )
+        ]
+    }
+
+    /// A receipt recorded as text, as `receiptRuns` sets one from an event:
+    /// "T7 · 2 files +3 −1 · ✗ Tests" is "T7 +3 −1 ✗ Tests", so a row from
+    /// before events ends as a newer one does. What says only that nothing
+    /// changed ("Answer only") goes, in whichever language it was recorded.
+    /// A line that does not begin as a receipt is kept whole.
+    private static func receiptRuns(recorded text: String, locale: Locale) -> [ReceiptRun] {
+        guard LegacyText.isReceipt(text) else { return [ReceiptRun(text: text, role: .plain)] }
+        let parts = text.components(separatedBy: " · ")
+        var groups: [[ReceiptRun]] = [[ReceiptRun(text: parts[0], role: .plain)]]
+        for part in parts.dropFirst() {
+            if let match = part.firstMatch(of: /\+([\d,]+) −([\d,]+)/),
+               let added = Int(match.1.filter(\.isNumber)),
+               let removed = Int(match.2.filter(\.isNumber))
+            {
+                groups.append(countRuns(added: added, removed: removed, locale: locale))
+            } else if part.hasPrefix("✗") {
+                groups.append([ReceiptRun(text: part, role: .failed)])
+            } else if part.hasPrefix("✓") {
+                groups.append([ReceiptRun(text: part, role: .plain)])
             }
         }
-        parts.append(changes)
-        if let check = turn.check {
-            parts.append([ReceiptRun(text: ReceiptText.check(check, locale: locale), role: check.hasFailed ? .failed : .plain)])
-        }
-        let separator = ReceiptRun(text: AgentStatusText.separator(locale: locale), role: .quiet)
-        return parts.enumerated().flatMap { index, part in index == 0 ? part : [separator] + part }
+        return spaced(groups)
     }
 
     private static func words(_ text: String?) -> String? {
@@ -473,7 +548,7 @@ private enum LegacyText {
     }
 
     /// "T7 · …": the turn's number leads every receipt, in both languages.
-    private static func isReceipt(_ line: String) -> Bool {
+    static func isReceipt(_ line: String) -> Bool {
         line.first == "T" && line.dropFirst().first?.isNumber == true
     }
 }

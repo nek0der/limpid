@@ -402,6 +402,24 @@ struct NotificationHistoryListTests {
         #expect(model.selectableIDs == rows.prefix(3).map { .row($0.id) } + [.fold(source.id)])
     }
 
+    @Test func aSourcesGroup_opensOnItsFirstRow_andClosesOnItsLastUnlessAFoldDoes() throws {
+        let pane = UUID()
+        let folded = try #require(list((0..<5).map { entry(minutesAgo: Double($0), pane: pane) }).sources.first)
+        #expect(folded.shown.map(\.isFirstOfSource) == [true, false, false])
+        // The fold closes the group, so no row does.
+        #expect(folded.shown.map(\.isLastOfSource) == [false, false, false])
+        let whole = try #require(list((0..<2).map { entry(minutesAgo: Double($0), pane: UUID()) }).sources.first)
+        #expect(whole.shown.map(\.isFirstOfSource) == [true])
+        #expect(whole.shown.map(\.isLastOfSource) == [true])
+    }
+
+    @Test func aTabLeadsItsHeading_onlyWhenItIsNoLongerThanThePlace() {
+        typealias Words = NotificationHistoryList.Heading.Words
+        #expect(Words(title: "limpid / feat-x", tab: "zsh", note: nil).isTabLeading)
+        #expect(!Words(title: "limpid", tab: "Use the Write tool to create a file", note: nil).isTabLeading)
+        #expect(!Words(title: "limpid", tab: nil, note: nil).isTabLeading)
+    }
+
     @Test func aFold_isSpokenWithItsSource_andAShellsTab() throws {
         let shell = try #require(list([entry(.commandFinished, minutesAgo: 1, pane: UUID(), tab: "zsh")]).sources.first)
         #expect(shell.heading.foldName(locale: en) == "alpha, zsh")

@@ -3,8 +3,8 @@
 
 import SwiftUI
 
-/// A source's heading: the agent's badge or the shell's mark, where
-/// it ran, the tab when the heading names it, and a note that gives way
+/// A source's heading: the agent's badge or the shell's mark, where it ran
+/// and the tab when the heading names it, the shorter tab first, and a note that gives way
 /// first: "Closed Pane" for a pane that is gone, else "Other Window". Not a
 /// button: a row opens what it names, and the heading names only where they
 /// came from. What it says is the model's (`NotificationHistoryList.Heading`).
@@ -19,28 +19,17 @@ struct SupervisionHistorySourceHeading: View {
             badgeView
                 .frame(width: LimpidLayout.Supervision.notificationGlyphColumnWidth)
             HStack(spacing: LimpidLayout.Supervision.spaceXS) {
-                // A place's middle goes first: a worktree's name keeps its
-                // project and its own end.
-                Text(verbatim: words.title)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(heading.isClosed ? SupervisionTokens.muted.color : SupervisionTokens.text.color)
-                    .lineLimit(1)
-                    .supervisionTruncation(words.titleTruncation)
-                    // The place names the source: the tab and the note give
-                    // way before it, so a long tab never squeezes it to
-                    // nothing and leaves the line starting at "·".
-                    .layoutPriority(1)
-                if let tab = words.tab {
-                    // The separator on its own, so a path cut at its head
-                    // still starts with it.
-                    HStack(spacing: 0) {
-                        Text(verbatim: separated(""))
-                            .fixedSize()
-                        Text(verbatim: tab)
-                            .lineLimit(1)
-                            .supervisionTruncation(words.tabTruncation)
+                // What leads is whole for longer: the rest gives way first
+                // (`Words.isTabLeading`). A place's middle goes first, so a
+                // worktree's name keeps its project and its own end.
+                if words.isTabLeading, let tab = words.tab {
+                    leading(tab, truncation: words.tabTruncation)
+                    following(words.title, truncation: words.titleTruncation)
+                } else {
+                    leading(words.title, truncation: words.titleTruncation)
+                    if let tab = words.tab {
+                        following(tab, truncation: words.tabTruncation)
                     }
-                    .foregroundStyle(SupervisionTokens.muted.color)
                 }
                 if let note = words.note {
                     Text(verbatim: separated(note))
@@ -54,8 +43,10 @@ struct SupervisionHistorySourceHeading: View {
             Spacer(minLength: 0)
         }
         .frame(height: LimpidLayout.Supervision.notificationSourceHeadingHeight)
-        .padding(.horizontal, LimpidLayout.Supervision.notificationRowInsets.leading)
+        // The badge over the rows' glyphs, inside their group's edge.
+        .padding(.horizontal, LimpidLayout.Supervision.notificationRowInsets.leading + LimpidLayout.Supervision.notificationGroupInset)
         .padding(.top, isFirstOfDay ? 0 : LimpidLayout.Supervision.notificationSourceSpacing)
+        .padding(.bottom, LimpidLayout.Supervision.notificationHeadingGroupGap)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: heading.spokenLabel(locale: locale)))
         .accessibilityAddTraits(.isHeader)
@@ -83,19 +74,36 @@ struct SupervisionHistorySourceHeading: View {
         }
     }
 
-    /// A tab ("zsh") or a note ("Closed Pane") after the title, set off as
-    /// the row's facts are.
+    private func leading(_ text: String, truncation: SupervisionTruncation) -> some View {
+        Text(verbatim: text)
+            .fontWeight(.semibold)
+            .foregroundStyle(heading.isClosed ? SupervisionTokens.muted.color : SupervisionTokens.text.color)
+            .lineLimit(1)
+            .supervisionTruncation(truncation)
+            .layoutPriority(1)
+    }
+
+    private func following(_ text: String, truncation: SupervisionTruncation) -> some View {
+        Text(verbatim: text)
+            .foregroundStyle(SupervisionTokens.muted.color)
+            .lineLimit(1)
+            .supervisionTruncation(truncation)
+    }
+
+    /// A note ("Closed Pane") after the title, set off by the separator.
     private func separated(_ text: String) -> String {
         AgentStatusText.separator(locale: locale).trimmingCharacters(in: .whitespaces) + " " + text
     }
 }
 
-/// One history row: the state's glyph; what happened, bolder while
-/// unread, with its facts quiet after it, and when on the right with the
-/// unread dot; under it the instruction or detail, quiet, on one line, cut
-/// where it loses least. Hovered, its × takes the time's place. A closed
-/// source's row is muted and rests, with no hover fill, since opening it
-/// only marks it read.
+/// One history row in two lines: the state's glyph, then what the row is
+/// about, bolder while unread, with when on the right; under it what came
+/// of it, quiet or in the glyph's tone, with the facts on the right, so the
+/// times and the counts of every row stand in one column each. Each line
+/// is cut where it loses least. Hovered, its × takes the time's place. An
+/// unread row's glyph is the unread ring, as the sidebar marks an unread
+/// turn. A closed source's row is muted and rests, with no hover fill,
+/// since opening it only marks it read.
 struct SupervisionHistoryRow: View {
     let lines: NotificationHistoryRowText.Lines
     let mark: NotificationHistoryRowText.Mark
@@ -125,19 +133,8 @@ struct SupervisionHistoryRow: View {
                     )
                 VStack(alignment: .leading, spacing: LimpidLayout.Supervision.notificationLineSpacing) {
                     firstLine
-                    if let detail = lines.detail {
-                        Text(verbatim: detail)
-                            .font(.supervision(.row))
-                            .foregroundStyle(SupervisionTokens.muted.color)
-                            .lineLimit(1)
-                            .supervisionTruncation(lines.isDetailASubject ? .subject : .sentence)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    // One line, as the detail above it is: the tooltip has
-                    // the rest.
-                    if let reply = lines.reply {
-                        TurnReplyLine(reply: reply, size: .row, lineLimit: 1)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    if lines.outcome != nil || !lines.facts.isEmpty {
+                        secondLine
                     }
                 }
             }
@@ -190,19 +187,20 @@ struct SupervisionHistoryRow: View {
 
     private var firstLine: some View {
         HStack(alignment: .firstTextBaseline, spacing: LimpidLayout.Supervision.spaceS) {
-            Text(firstLineText)
+            Text(verbatim: lines.subject)
+                .font(.supervision(.body, weight: isUnread ? .semibold : .regular))
+                .foregroundStyle(isClosed ? SupervisionTokens.muted.color : SupervisionTokens.text.color)
                 .lineLimit(1)
-                .supervisionTruncation(.sentence)
+                .supervisionTruncation(lines.isSubjectAName ? .subject : .sentence)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            // The × replaces the time in the same place rather than covering
-            // the unread dot; laid over the time, so the line keeps the
-            // height of its text.
+            // The × replaces the time in the same place; laid over the
+            // time, so the line keeps the height of its text.
             Text(verbatim: timeLabel)
                 .font(.supervision(.meta))
                 .monospacedDigit()
                 .foregroundStyle(SupervisionTokens.muted.color)
                 // Relative labels run wider in ja ("5 分前") than in en; what
-                // happened gives way first.
+                // the row is about gives way first.
                 .fixedSize()
                 .opacity(isHovering ? 0 : 1)
                 .overlay(alignment: .trailing) {
@@ -210,26 +208,51 @@ struct SupervisionHistoryRow: View {
                         .opacity(isHovering ? 1 : 0)
                         .allowsHitTesting(isHovering)
                 }
-            // Kept in its place while read, so every row's time ends at the
-            // same edge. VoiceOver reads "Unread" in the row's label.
-            Circle()
-                .fill(isUnread ? SupervisionTokens.unread.color : Color.clear)
-                .frame(
-                    width: LimpidLayout.Supervision.notificationUnreadDotSize,
-                    height: LimpidLayout.Supervision.notificationUnreadDotSize
-                )
-                .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3 }
         }
         .frame(height: LimpidLayout.Supervision.notificationSourceLineHeight)
     }
 
-    /// What happened in the text color (muted for a closed source), then
-    /// its facts quiet, the receipt's counts in the diff colors.
-    private var firstLineText: AttributedString {
-        var headline = AttributedString(lines.headline)
-        headline.foregroundColor = isClosed ? SupervisionTokens.muted.color : SupervisionTokens.text.color
-        headline.font = .supervision(.body, weight: isUnread ? .semibold : .regular)
-        return headline + ReceiptRunRenderer.attributed(lines.facts, size: .body, style: .mutedFacts)
+    private var secondLine: some View {
+        HStack(alignment: .firstTextBaseline, spacing: LimpidLayout.Supervision.spaceS) {
+            Group {
+                switch lines.outcome {
+                case let .reply(reply)?:
+                    TurnReplyLine(reply: reply, size: .row, lineLimit: 1)
+                case .headline?:
+                    Text(verbatim: lines.headline)
+                        .font(.supervision(.row))
+                        .foregroundStyle(tone)
+                        .lineLimit(1)
+                        .supervisionTruncation(.sentence)
+                case let .detail(detail)?:
+                    Text(verbatim: detail)
+                        .font(.supervision(.row))
+                        .foregroundStyle(SupervisionTokens.muted.color)
+                        .lineLimit(1)
+                        .supervisionTruncation(.sentence)
+                case nil:
+                    Color.clear.frame(height: 0)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if !lines.facts.isEmpty {
+                // Whole, in the time's column: the reply gives way first.
+                Text(ReceiptRunRenderer.attributed(lines.facts, size: .meta, style: .mutedFacts))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+    }
+
+    /// The headline's color under what the row names: the glyph's tone
+    /// while the agent is still in that state, quiet once it has left it.
+    private var tone: Color {
+        switch mark {
+        case .approval, .question, .response, .signIn: SupervisionTokens.waitingText.color
+        case .stopped: SupervisionTokens.stoppedText.color
+        case .idle: SupervisionTokens.muted.color
+        }
     }
 
     private var glyph: StateGlyph.Kind {
@@ -239,7 +262,8 @@ struct SupervisionHistoryRow: View {
         case .response: .needsResponse
         case .signIn: .needsSignIn
         case .stopped: .stopped
-        case .idle: .idle
+        // A closed source's rows rest, read or not.
+        case .idle: isUnread && !isClosed ? .unread : .idle
         }
     }
 
@@ -249,6 +273,97 @@ struct SupervisionHistoryRow: View {
         let text = lines.help(locale: locale)
         guard isClosed else { return text }
         return NotificationHistoryHeading.paneClosed.resolved(in: locale) + "\n" + text
+    }
+}
+
+/// A source's rows and its fold drawn as one group under its heading: an
+/// edge around them all and a rule between each, from the words' column to
+/// the edge. Each line draws its own part, so the list stays flat and
+/// lazily drawn; the first closes the edge above it, the last below.
+struct NotificationSourceGroupSegment: ViewModifier {
+    let isFirst: Bool
+    let isLast: Bool
+    @Environment(\.popoverSurface.ground) private var ground
+
+    func body(content: Content) -> some View {
+        let inset = LimpidLayout.Supervision.notificationGroupInset
+        content
+            // Inside the edge, so a hovered or selected row's fill never
+            // covers it.
+            .padding(.horizontal, inset)
+            .padding(.top, isFirst ? inset : 0)
+            .padding(.bottom, isLast ? inset : 0)
+            .overlay {
+                NotificationSourceGroupEdge(
+                    isFirst: isFirst,
+                    isLast: isLast,
+                    cornerRadius: LimpidLayout.Supervision.notificationGroupCornerRadius
+                )
+                .stroke(ground.groupRule.color, lineWidth: 1)
+                .allowsHitTesting(false)
+            }
+            .overlay(alignment: .top) {
+                if !isFirst {
+                    ground.groupRule.color
+                        .frame(height: 1)
+                        .padding(.leading, LimpidLayout.Supervision.notificationGroupRuleLeading)
+                        .padding(.trailing, inset + LimpidLayout.Supervision.notificationRowInsets.trailing)
+                        .allowsHitTesting(false)
+                }
+            }
+    }
+}
+
+/// One line's part of its group's edge: the two sides, with the rounded
+/// top for the first line and the rounded bottom for the last. Drawn half
+/// a point in, so the 1pt stroke stays inside the line's frame.
+struct NotificationSourceGroupEdge: Shape {
+    let isFirst: Bool
+    let isLast: Bool
+    let cornerRadius: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let frame = rect.insetBy(dx: 0.5, dy: 0.5)
+        let radius = min(cornerRadius, frame.width / 2, frame.height / 2)
+        let top = isFirst ? frame.minY : rect.minY
+        let bottom = isLast ? frame.maxY : rect.maxY
+        var path = Path()
+        // Up the left side, across the top if this line opens the group,
+        // down the right side, and back along the bottom if it closes it.
+        path.move(to: CGPoint(x: frame.minX, y: isLast ? bottom - radius : bottom))
+        if isFirst {
+            path.addLine(to: CGPoint(x: frame.minX, y: top + radius))
+            path.addArc(tangent1End: CGPoint(x: frame.minX, y: top), tangent2End: CGPoint(x: frame.minX + radius, y: top), radius: radius)
+            path.addLine(to: CGPoint(x: frame.maxX - radius, y: top))
+            path.addArc(tangent1End: CGPoint(x: frame.maxX, y: top), tangent2End: CGPoint(x: frame.maxX, y: top + radius), radius: radius)
+        } else {
+            path.addLine(to: CGPoint(x: frame.minX, y: top))
+            path.move(to: CGPoint(x: frame.maxX, y: top))
+        }
+        if isLast {
+            path.addLine(to: CGPoint(x: frame.maxX, y: bottom - radius))
+            path.addArc(
+                tangent1End: CGPoint(x: frame.maxX, y: bottom),
+                tangent2End: CGPoint(x: frame.maxX - radius, y: bottom),
+                radius: radius
+            )
+            path.addLine(to: CGPoint(x: frame.minX + radius, y: bottom))
+            path.addArc(
+                tangent1End: CGPoint(x: frame.minX, y: bottom),
+                tangent2End: CGPoint(x: frame.minX, y: bottom - radius),
+                radius: radius
+            )
+        } else {
+            path.addLine(to: CGPoint(x: frame.maxX, y: bottom))
+        }
+        return path
+    }
+}
+
+extension View {
+    /// This line's part of its source's group (`NotificationSourceGroupSegment`).
+    func notificationSourceGroup(isFirst: Bool, isLast: Bool) -> some View {
+        modifier(NotificationSourceGroupSegment(isFirst: isFirst, isLast: isLast))
     }
 }
 

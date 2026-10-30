@@ -102,60 +102,80 @@ struct NotificationHistoryRowTextTests {
 
     // MARK: - What happened, from the event
 
-    @Test func aWait_saysWhichFirst_andWhatItNamesUnder() {
+    @Test func aWait_namesWhatItAsksAbout_thenWhich() {
         let approval = entry(event: .wait(agent: .claude, wait: .approval, fact: "limpid-u07-b.txt"))
         #expect(lines(approval, locale: ja) == .init(
             headline: "承認待ち",
-            facts: [],
-            detail: "limpid-u07-b.txt",
-            isDetailASubject: true,
-            reply: nil
+            subject: "limpid-u07-b.txt",
+            isSubjectAName: true,
+            outcome: .headline,
+            facts: []
         ))
         #expect(lines(approval, locale: en).headline == "Needs approval")
         let question = entry(event: .wait(agent: .claude, wait: .question, fact: "Which color?"))
-        #expect(lines(question, locale: ja).headline == "回答待ち")
-        #expect(lines(question, locale: ja).detail == "Which color?")
-        #expect(!lines(question, locale: ja).isDetailASubject)
+        #expect(lines(question, locale: ja).subject == "Which color?")
+        #expect(!lines(question, locale: ja).isSubjectAName)
+        // Nothing named: the wait's name alone.
         let response = entry(event: .wait(agent: .codex, wait: .response, fact: "  "))
-        #expect(lines(response, locale: ja) == .init(headline: "応答待ち", facts: [], detail: nil, isDetailASubject: false, reply: nil))
+        #expect(lines(response, locale: ja) == .init(headline: "応答待ち", subject: "応答待ち", isSubjectAName: false, outcome: nil, facts: []))
     }
 
-    @Test func aFinishedTurn_leadsWithItsReceipt_andAZeroCountIsQuiet() throws {
+    @Test func aFinishedTurn_leadsWithItsInstruction_andEndsWithItsCounts() throws {
         let turn = try TurnSummaryFixture.turn("T4", changes: #"{"kind":"changed","files":2,"added":94,"removed":0}"#, number: 4)
         let finished = entry(kind: .agentFinished, event: .finished(agent: .claude, turn: turn, head: "Unify the login errors"))
         let row = lines(finished, locale: ja)
         #expect(row.headline == "ターンが完了しました")
-        #expect(row.firstLine == "ターンが完了しました · T4 · 2 ファイル +94 −0")
-        #expect(row.detail == "Unify the login errors")
+        #expect(row.subject == "Unify the login errors")
+        #expect(row.outcome == .headline)
+        // The files counted are the Changes panel's; a zero count is quiet.
+        #expect(row.factsText == "T4 +94 −0")
         #expect(row.facts.contains(ReceiptRun(text: "+94", role: .added(isEmphasized: false))))
         #expect(row.facts.contains(ReceiptRun(text: "−0", role: .quiet)))
-        // No record: the headline alone, the prompt under it.
+        // No record: the prompt, and the headline under it.
         let bare = entry(kind: .agentFinished, event: .finished(agent: .claude, turn: nil, head: "Add the tests"))
         #expect(lines(bare, locale: en) == .init(
             headline: "Turn finished",
-            facts: [],
-            detail: "Add the tests",
-            isDetailASubject: false,
-            reply: nil
+            subject: "Add the tests",
+            isSubjectAName: false,
+            outcome: .headline,
+            facts: []
         ))
     }
 
-    @Test func aTurnTheHarnessPrompted_isWordedByItsKind() throws {
+    @Test func aFinishedTurnsReply_isWhatCameOfIt() {
+        let replied = NotificationHistoryRowText.lines(
+            of: .turn(receipt: [], instruction: "Add the tests", reply: "Added two tests."),
+            sourceTabTitle: nil,
+            locale: en
+        )
+        #expect(replied.subject == "Add the tests")
+        #expect(replied.outcome == .reply("Added two tests."))
+        // No instruction: the headline names the turn, the reply under it.
+        let unprompted = NotificationHistoryRowText.lines(
+            of: .turn(receipt: [], instruction: nil, reply: "Done."),
+            sourceTabTitle: nil,
+            locale: en
+        )
+        #expect(unprompted.subject == "Turn finished")
+        #expect(unprompted.outcome == .reply("Done."))
+    }
+
+    @Test func aTurnWithNoChanges_endsWithItsNumberAlone() throws {
         let turn = try TurnSummaryFixture.turn("T7", number: 7, extras: .init(promptKind: .backgroundTask))
         let finished = entry(kind: .agentFinished, event: .finished(agent: .claude, turn: turn, head: nil))
         let row = lines(finished, locale: ja)
-        #expect(row.firstLine == "ターンが完了しました · T7 · ファイルの変更なし")
-        #expect(row.detail == TurnPromptText.instruction(TurnPrompt(kind: .backgroundTask, head: nil), locale: ja))
+        #expect(row.factsText == "T7")
+        #expect(row.subject == TurnPromptText.instruction(TurnPrompt(kind: .backgroundTask, head: nil), locale: ja))
     }
 
-    @Test func aStop_saysWhy_under() {
+    @Test func aStop_saysWhy_thenThatItStopped() {
         let stop = entry(kind: .agentError, event: .stopped(agent: .claude, reason: "5-hour limit reached"))
         #expect(lines(stop, locale: ja) == .init(
             headline: "停止",
-            facts: [],
-            detail: "5-hour limit reached",
-            isDetailASubject: false,
-            reply: nil
+            subject: "5-hour limit reached",
+            isSubjectAName: false,
+            outcome: .headline,
+            facts: []
         ))
     }
 
@@ -166,29 +186,32 @@ struct NotificationHistoryRowTextTests {
         let duration = DurationText.command(48, locale: ja)
         #expect(lines(finished, tab: "zsh", locale: ja) == .init(
             headline: "コマンドが完了しました",
-            facts: [],
-            detail: duration,
-            isDetailASubject: false,
-            reply: nil
+            subject: "コマンドが完了しました",
+            isSubjectAName: false,
+            outcome: nil,
+            facts: [ReceiptRun(text: duration, role: .plain)]
         ))
-        #expect(lines(finished, tab: "server", locale: ja).detail == "zsh · \(duration)")
+        let elsewhere = lines(finished, tab: "server", locale: ja)
+        #expect(elsewhere.subject == "zsh")
+        #expect(elsewhere.outcome == .headline)
         let failed = entry(kind: .commandFinished, tabTitleSnapshot: "zsh", body: "", exitCode: 1, durationSeconds: 134)
-        let row = lines(failed, tab: "zsh", locale: ja)
-        #expect(row.firstLine == "コマンドが失敗しました · 終了コード 1")
-        #expect(lines(failed, tab: "zsh", locale: en).firstLine == "Command failed · exit 1")
+        #expect(lines(failed, tab: "zsh", locale: ja).subject == "コマンドが失敗しました")
+        #expect(lines(failed, tab: "zsh", locale: ja).factsText == "終了コード 1 \(DurationText.command(134, locale: ja))")
+        #expect(lines(failed, tab: "zsh", locale: en).facts.first == ReceiptRun(text: "exit 1", role: .failed))
     }
 
     @Test func anAlert_isItsTitle_thenItsBody_onOneLine() {
         let alert = entry(kind: .desktop, title: "Build", body: "Done.\nNext step")
         #expect(lines(alert, locale: en) == .init(
             headline: "Build",
-            facts: [],
-            detail: "Done. Next step",
-            isDetailASubject: false,
-            reply: nil
+            subject: "Build",
+            isSubjectAName: false,
+            outcome: .detail("Done. Next step"),
+            facts: []
         ))
         let untitled = entry(kind: .desktop, title: " ", body: "完了しました。\n次へ")
-        #expect(lines(untitled, locale: ja) == .init(headline: "完了しました。次へ", facts: [], detail: nil, isDetailASubject: false, reply: nil))
+        #expect(lines(untitled, locale: ja)
+            == .init(headline: "完了しました。次へ", subject: "完了しました。次へ", isSubjectAName: false, outcome: nil, facts: []))
     }
 
     // MARK: - Glyph
@@ -220,30 +243,31 @@ struct NotificationHistoryRowTextTests {
         #expect(mark(entry(kind: .agentFinished, event: .finished(agent: .claude, turn: nil, head: nil)), nil) == .idle)
     }
 
-    @Test func voiceOver_readsWhatHappened_itsDetail_when_andUnread() {
+    @Test func voiceOver_readsWhatItIsAbout_whatCameOfIt_when_andUnread() {
         let row = lines(entry(event: .wait(agent: .claude, wait: .approval, fact: "notes.txt")), locale: ja)
         #expect(NotificationHistoryRowText.spokenLabel(row, timeLabel: "たった今", isUnread: true, locale: ja)
-            == "承認待ち、notes.txt、たった今、未読")
+            == "notes.txt、承認待ち、たった今、未読")
         // A receipt kept as text is read as a list, its turn in words.
         let turn = NotificationHistoryRowText.Lines(
             headline: "Turn finished",
-            facts: [ReceiptRun(text: " · ", role: .quiet), ReceiptRun(text: "T7 · 2 files +3 −1", role: .plain)],
-            detail: "zsh · 3s",
-            isDetailASubject: false,
-            reply: nil
+            subject: "Add the tests",
+            isSubjectAName: false,
+            outcome: .headline,
+            facts: [ReceiptRun(text: "T7 · 2 files +3 −1", role: .plain)]
         )
-        #expect(NotificationHistoryRowText.spokenLabel(turn, timeLabel: "now", isUnread: false, locale: Locale(identifier: "en"))
-            == "Turn finished, Turn 7, 2 files +3 −1, zsh, 3s, now")
-        // A reply is said as one, after the prompt.
+        #expect(NotificationHistoryRowText.spokenLabel(turn, timeLabel: "now", isUnread: false, locale: en)
+            == "Add the tests, Turn finished, Turn 7, 2 files +3 −1, now")
+        // A reply is said as one, and the headline the row no longer draws
+        // is still read.
         let replied = NotificationHistoryRowText.Lines(
             headline: "Turn finished",
-            facts: [],
-            detail: "Add the tests",
-            isDetailASubject: false,
-            reply: "Added two tests."
+            subject: "Add the tests",
+            isSubjectAName: false,
+            outcome: .reply("Added two tests."),
+            facts: [ReceiptRun(text: "T2", role: .plain)]
         )
-        #expect(NotificationHistoryRowText.spokenLabel(replied, timeLabel: "now", isUnread: false, locale: Locale(identifier: "en"))
-            == "Turn finished, Add the tests, Reply: Added two tests., now")
+        #expect(NotificationHistoryRowText.spokenLabel(replied, timeLabel: "now", isUnread: false, locale: en)
+            == "Add the tests, Reply: Added two tests., Turn finished, Turn 2, now")
     }
 
     // MARK: - Entries from before events
@@ -283,14 +307,35 @@ struct NotificationHistoryRowTextTests {
         func turn(_ body: String) -> NotificationHistoryRowText.Happening {
             NotificationHistoryRowText.happening(of: entry(kind: .agentFinished, body: body), locale: en)
         }
-        #expect(turn("T7 · 2 files +3 −1\nAdd the tests")
-            == .turn(receipt: [ReceiptRun(text: "T7 · 2 files +3 −1", role: .plain)], instruction: "Add the tests", reply: nil))
-        #expect(turn("T2 · 回答のみ") == .turn(receipt: [ReceiptRun(text: "T2 · 回答のみ", role: .plain)], instruction: nil, reply: nil))
+        let counted = [
+            ReceiptRun(text: "T7", role: .plain),
+            ReceiptRun(text: " ", role: .quiet),
+            ReceiptRun(text: "+3", role: .added(isEmphasized: false)),
+            ReceiptRun(text: " ", role: .quiet),
+            ReceiptRun(text: "−0", role: .quiet)
+        ]
+        #expect(turn("T7 · 2 files +3 −0\nAdd the tests") == .turn(receipt: counted, instruction: "Add the tests", reply: nil))
+        // Saying only that nothing changed goes, in either language.
+        #expect(turn("T2 · 回答のみ") == .turn(receipt: [ReceiptRun(text: "T2", role: .plain)], instruction: nil, reply: nil))
+        // A check keeps its words, and a failed one its red.
+        #expect(turn("T4 · ファイルの変更なし · ✗ Tests")
+            == .turn(
+                receipt: [
+                    ReceiptRun(text: "T4", role: .plain),
+                    ReceiptRun(text: " ", role: .quiet),
+                    ReceiptRun(text: "✗ Tests", role: .failed)
+                ],
+                instruction: nil,
+                reply: nil
+            ))
+        // A first line that is no receipt is kept whole.
+        #expect(turn("Summary · done\nAdd the tests")
+            == .turn(receipt: [ReceiptRun(text: "Summary · done", role: .plain)], instruction: "Add the tests", reply: nil))
         #expect(turn("Add the tests") == .turn(receipt: [], instruction: "Add the tests", reply: nil))
         #expect(turn("Claude Code finished a turn") == .turn(receipt: [], instruction: nil, reply: nil))
         // A harness's prompt, quoted with its tags before events: no line.
         #expect(turn("T3 · Answer only\n<task-notification> <task-id>b1</task-id>")
-            == .turn(receipt: [ReceiptRun(text: "T3 · Answer only", role: .plain)], instruction: nil, reply: nil))
+            == .turn(receipt: [ReceiptRun(text: "T3", role: .plain)], instruction: nil, reply: nil))
     }
 
     @Test func anOlderStop_isItsReason_unlessItOnlyNamedTheAgent() {

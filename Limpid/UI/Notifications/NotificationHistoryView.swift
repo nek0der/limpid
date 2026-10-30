@@ -189,7 +189,8 @@ struct NotificationHistoryView: View {
 
     /// The panel: the name and what acts on the whole list over the
     /// filters, then each day's sources, a heading over each one's rows in
-    /// two lines, no rules between them, in the supervision colors.
+    /// two lines, edged as one group with a rule between each row, in the
+    /// supervision colors.
     /// Nothing sits under the rows unless a banner may not reach the person.
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -287,7 +288,9 @@ struct NotificationHistoryView: View {
         let selectable = model.selectableIDs
         return ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: LimpidLayout.Supervision.notificationRowSpacing) {
+                // No spacing: a source's lines meet, so its group's edge runs
+                // unbroken; the headings keep their own room.
+                LazyVStack(alignment: .leading, spacing: 0) {
                     ForEach(model.items) { item in
                         itemView(item, now: now)
                             .id(item.id)
@@ -341,6 +344,7 @@ struct NotificationHistoryView: View {
             SupervisionHistorySourceHeading(heading: source.heading, isFirstOfDay: isFirstOfDay)
         case let .row(historyRow):
             rowView(historyRow, now: now)
+                .notificationSourceGroup(isFirst: historyRow.isFirstOfSource, isLast: historyRow.isLastOfSource)
         case let .fold(source, count, isExpanded):
             SupervisionHistoryFold(
                 count: count,
@@ -351,6 +355,7 @@ struct NotificationHistoryView: View {
                 selection.select(item.id)
                 toggle(source.id)
             }
+            .notificationSourceGroup(isFirst: false, isLast: true)
         }
     }
 
