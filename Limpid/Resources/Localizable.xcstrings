@@ -1465,23 +1465,6 @@
         }
       }
     },
-    "Hide viewed turns": {
-      "comment": "Changes panel: folds the viewed turns at the top of the list again",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hide viewed turns"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "確認済みのターンを非表示にする"
-          }
-        }
-      }
-    },
     "Incomplete Record": {
       "comment": "Empty state: the review tab, a turn's record lost one of its snapshots",
       "localizations": {
@@ -2926,8 +2909,8 @@
         }
       }
     },
-    "Show %lld viewed turns": {
-      "comment": "Changes panel: the viewed turns at the top of the list, folded; argument: how many",
+    "Show %lld earlier viewed turns": {
+      "comment": "Changes panel: the viewed turns at the top of the list, folded above this line; argument: how many",
       "localizations": {
         "en": {
           "variations": {
@@ -2935,13 +2918,13 @@
               "one": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "Show %lld viewed turn"
+                  "value": "Show %lld earlier viewed turn"
                 }
               },
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "Show %lld viewed turns"
+                  "value": "Show %lld earlier viewed turns"
                 }
               }
             }
@@ -2950,7 +2933,7 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "確認済み %lld ターンを表示"
+            "value": "前の確認済み %lld ターンを表示"
           }
         }
       }

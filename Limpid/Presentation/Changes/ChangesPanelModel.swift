@@ -260,7 +260,7 @@ enum ChangesPanelModel {
     }
 
     /// The viewed rows at the top of the list, folded into one line ("Show
-    /// 12 viewed turns"): a long timeline is mostly history.
+    /// 12 earlier viewed turns"): a long timeline is mostly history.
     struct Fold: Equatable, Sendable {
         /// How many rows, from the first, the fold holds.
         let count: Int
@@ -530,6 +530,18 @@ enum ChangesPanelModel {
     static func fold(_ rows: [Row]) -> Fold? {
         let count = rows.dropLast().prefix { $0.isViewed }.count
         return count >= 2 ? Fold(count: count) : nil
+    }
+
+    /// The fold as its line offers it: only while it hides its rows. Once
+    /// opened the line leaves the list, and while the review reads a row it
+    /// holds the rows stay shown, where a line offering to show them would
+    /// be wrong. `hidden` is what the list hides
+    /// (`hiddenRows(fold:isUnfolded:shownInReview:rows:)`); a closed
+    /// section hides its rows too, and draws no line, so its caller asks
+    /// only for an open one.
+    static func foldLine(_ fold: Fold?, rows: [Row], hidden: Set<TurnID>) -> Fold? {
+        guard let fold, let first = rows.first, hidden.contains(first.id) else { return nil }
+        return fold
     }
 
     /// The rows the fold hides: those it holds, until the person opens

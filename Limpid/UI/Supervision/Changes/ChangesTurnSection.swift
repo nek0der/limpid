@@ -12,7 +12,6 @@ struct ChangesTurnSection: View {
     let section: ChangesPanelModel.Section
     let isFirst: Bool
     let isCollapsed: Bool
-    let isUnfolded: Bool
     /// The rows the list hides (`ChangesPanelModel.hiddenRows(sections:collapsed:unfolded:shownInReview:)`).
     let hidden: Set<TurnID>
     let shownInReview: Set<TurnID>
@@ -22,8 +21,12 @@ struct ChangesTurnSection: View {
     /// The worktree's conversations, for a move's toast.
     let conversations: [ConversationChoice]
     let state: AppState
+    /// The card that takes the keyboard and VoiceOver as it appears
+    /// (`ChangesTurnRow.takesFocus`), and what clears it once taken.
+    let focusOnAppear: TurnID?
+    let tookFocus: () -> Void
     let toggleCollapse: () -> Void
-    let toggleFold: () -> Void
+    let openFold: (_ hadFocus: Bool) -> Void
     @Environment(\.locale) private var locale
 
     private typealias Layout = LimpidLayout.Supervision
@@ -38,8 +41,8 @@ struct ChangesTurnSection: View {
         )
         .padding(.top, isFirst ? 0 : Layout.changesSectionGap)
         if !isCollapsed {
-            if let fold = section.fold {
-                ChangesFoldLine(title: ChangesPanelText.fold(fold, isUnfolded: isUnfolded, locale: locale), toggle: toggleFold)
+            if let fold = ChangesPanelModel.foldLine(section.fold, rows: section.rows, hidden: hidden) {
+                ChangesFoldLine(title: ChangesPanelText.fold(fold, locale: locale), open: openFold)
                     .conversationHoverDimming(section.id)
             }
             ForEach(section.rows) { row in
@@ -50,7 +53,9 @@ struct ChangesTurnSection: View {
                         isShownInReview: shownInReview.contains(row.id),
                         offersShowTab: offersShowTab,
                         showsConversation: false,
-                        state: state
+                        state: state,
+                        takesFocus: focusOnAppear == row.id,
+                        tookFocus: tookFocus
                     )
                     .id(row.id)
                 }

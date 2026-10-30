@@ -138,6 +138,25 @@ struct ChangesPanelMarkTests {
             "every row, hidden ones too, would take a place no view can scroll to"
         )
     }
+
+    /// The fold's line shows only while the fold hides its rows: once
+    /// opened it leaves the list, and while the review reads a row it holds
+    /// it is gone too, since the rows are already shown.
+    @Test func theFoldsLine_showsOnlyWhileItHidesItsRows() throws {
+        let turns = try (1...4).map { try TurnSummaryFixture.timed($0, start: $0 * 100, end: $0 * 100 + 10) }
+        let viewed = Panel.line(through: turns[2], at: Date(), markID: nil, sequence: nil).line
+        let list = try Self.list(turns, lines: [viewed])
+        let fold = try #require(list.fold)
+        func line(isUnfolded: Bool, shownInReview: Set<TurnID>) -> ChangesPanelModel.Fold? {
+            let hidden = ChangesPanelModel.hiddenRows(fold: fold, isUnfolded: isUnfolded, shownInReview: shownInReview, rows: list.rows)
+            return ChangesPanelModel.foldLine(fold, rows: list.rows, hidden: hidden)
+        }
+
+        #expect(line(isUnfolded: false, shownInReview: []) == fold)
+        #expect(line(isUnfolded: true, shownInReview: []) == nil, "opened: the line has left the list")
+        #expect(line(isUnfolded: false, shownInReview: [turns[1].turnID]) == nil, "the review reads T2, so its rows are shown")
+        #expect(ChangesPanelModel.foldLine(nil, rows: list.rows, hidden: []) == nil)
+    }
 }
 
 extension ChangesPanelMarkTests {

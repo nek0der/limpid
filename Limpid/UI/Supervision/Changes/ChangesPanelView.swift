@@ -392,7 +392,8 @@ private struct ChangesTurnList: View {
     @Environment(ProjectWindowState.self) private var window
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// This is true once the person opened the fold. The list folds again
+    /// This is true once the person opened the fold, which then leaves
+    /// the list: there is no line to fold it again. The list folds again
     /// as it is drawn anew (another worktree, which the panel gives a list
     /// of its own, the other grouping chosen, or the panel opened again).
     @State private var isUnfolded = false
@@ -401,6 +402,10 @@ private struct ChangesTurnList: View {
     /// are reset as the list is drawn anew.
     @State private var collapsedSections: Set<ConversationKey> = []
     @State private var unfoldedSections: Set<ConversationKey> = []
+    /// The card that takes the keyboard and VoiceOver as it appears: the
+    /// first a fold opened from the keyboard or VoiceOver showed, since the
+    /// fold's line, which had them, leaves the list. Cleared once taken.
+    @State private var focusOnAppear: TurnID?
 
     private typealias Layout = LimpidLayout.Supervision
 
@@ -445,18 +450,12 @@ private struct ChangesTurnList: View {
                     LazyVStack(alignment: .leading, spacing: Layout.turnCardSpacing) {
                         if let sections = list.sections {
                             ForEach(sections) { section in
-                                ChangesTurnSection(
-                                    section: section,
+                                sectionRows(
+                                    section,
                                     isFirst: section.id == sections.first?.id,
-                                    isCollapsed: collapsedSections.contains(section.id),
-                                    isUnfolded: unfoldedSections.contains(section.id),
                                     hidden: hidden,
                                     shownInReview: shownInReview,
-                                    offersShowTab: withTab.contains(section.id),
-                                    conversations: list.conversations,
-                                    state: state,
-                                    toggleCollapse: { toggle(section.id, in: $collapsedSections) },
-                                    toggleFold: { toggle(section.id, in: $unfoldedSections) }
+                                    withTab: withTab
                                 )
                             }
                         } else {
@@ -507,13 +506,41 @@ private struct ChangesTurnList: View {
         let restore: UUID?
     }
 
+    /// One conversation's section of the list grouped by conversation.
+    private func sectionRows(
+        _ section: ChangesPanelModel.Section,
+        isFirst: Bool,
+        hidden: Set<TurnID>,
+        shownInReview: Set<TurnID>,
+        withTab: Set<ConversationKey>
+    ) -> some View {
+        ChangesTurnSection(
+            section: section,
+            isFirst: isFirst,
+            isCollapsed: collapsedSections.contains(section.id),
+            hidden: hidden,
+            shownInReview: shownInReview,
+            offersShowTab: withTab.contains(section.id),
+            conversations: list.conversations,
+            state: state,
+            focusOnAppear: focusOnAppear,
+            tookFocus: { focusOnAppear = nil },
+            toggleCollapse: { toggle(section.id, in: $collapsedSections) },
+            openFold: { hadFocus in
+                open(revealing: section.rows.first?.id, hadFocus: hadFocus) {
+                    _ = unfoldedSections.insert(section.id)
+                }
+            }
+        )
+    }
+
     /// The timeline's fold, its cards, and its line.
     @ViewBuilder
     private func timelineRows(hidden: Set<TurnID>, shownInReview: Set<TurnID>, withTab: Set<ConversationKey>) -> some View {
-        if let fold = list.fold {
-            ChangesFoldLine(title: ChangesPanelText.fold(fold, isUnfolded: isUnfolded, locale: locale)) {
-                withAnimation(reduceMotion ? nil : LimpidMotion.changesFold) {
-                    isUnfolded.toggle()
+        if let fold = ChangesPanelModel.foldLine(list.fold, rows: list.rows, hidden: hidden) {
+            ChangesFoldLine(title: ChangesPanelText.fold(fold, locale: locale)) { hadFocus in
+                open(revealing: list.rows.first?.id, hadFocus: hadFocus) {
+                    isUnfolded = true
                 }
             }
         }
@@ -525,7 +552,9 @@ private struct ChangesTurnList: View {
                     isShownInReview: shownInReview.contains(row.id),
                     offersShowTab: withTab.contains(row.turn.conversation),
                     showsConversation: true,
-                    state: state
+                    state: state,
+                    takesFocus: focusOnAppear == row.id,
+                    tookFocus: { focusOnAppear = nil }
                 )
                 .id(row.id)
             }
@@ -533,8 +562,18 @@ private struct ChangesTurnList: View {
         ViewedLineRow(line: list.line, state: state)
     }
 
-    /// Opens or closes a section, or its fold, as the timeline's fold
-    /// opens and closes.
+    /// Opens a fold (`unfold`), and where its line had the keyboard or
+    /// VoiceOver, hands them to the first card it shows (`revealing`).
+    private func open(revealing first: TurnID?, hadFocus: Bool, unfold: () -> Void) {
+        if hadFocus {
+            focusOnAppear = first
+        }
+        withAnimation(reduceMotion ? nil : LimpidMotion.changesFold) {
+            unfold()
+        }
+    }
+
+    /// Opens or closes a section, animated as a fold opening is.
     private func toggle(_ conversation: ConversationKey, in set: Binding<Set<ConversationKey>>) {
         withAnimation(reduceMotion ? nil : LimpidMotion.changesFold) {
             if set.wrappedValue.contains(conversation) {
@@ -626,30 +665,49 @@ struct ViewedLineRow: View {
 }
 
 /// The fold's line over the viewed rows at the top of the list: "Show 12
-/// viewed turns", between two rules, as the viewed line reads, and "Hide
-/// viewed turns" once they are shown. The words are a compact secondary
-/// button, as the viewed line's "Unmark as Viewed" is, so the two lines
-/// read as one kind.
+/// earlier viewed turns", the cards it holds coming in its place, in words
+/// alone, left-aligned and without an edge, starting where the cards' turn
+/// numbers do. No chevron: under a section's heading one pointed against
+/// the heading's own and read as a pair. The viewed line keeps the list's
+/// one edged button, at its right end; a centered button here read as the
+/// same kind of row with its button in another place. Pressing it opens the fold and the line
+/// leaves the list; nothing folds the cards again until the list is drawn
+/// anew, as a chat's earlier messages stay once loaded.
 struct ChangesFoldLine: View {
     let title: String
-    let toggle: () -> Void
+    /// Opens the fold, told whether the line had the keyboard or VoiceOver,
+    /// which the first card shown then takes.
+    let open: (_ hadFocus: Bool) -> Void
+    @State private var isHovering = false
+    @FocusState private var isFocused: Bool
+    @AccessibilityFocusState private var isSpokenFocused: Bool
+
+    private typealias Layout = LimpidLayout.Supervision
 
     var body: some View {
-        HStack(spacing: LimpidLayout.Supervision.viewedLineWordSpacing) {
-            rule
-            Button(title, action: toggle)
-                .buttonStyle(.supervisionSecondary(size: .compact))
-                .accessibilityLabel(Text(verbatim: title))
-            rule
+        Button {
+            open(isFocused || isSpokenFocused)
+        } label: {
+            HStack(spacing: 0) {
+                Text(verbatim: title)
+                    .font(.supervision(.caption, weight: .semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle((isHovering ? SupervisionTokens.text : SupervisionTokens.muted).color)
+            .padding(.horizontal, Layout.turnCardInsets.leading)
+            .padding(.vertical, Layout.spaceXS)
+            .background(
+                RoundedRectangle(cornerRadius: Layout.smallControlCornerRadius)
+                    .fill(isHovering ? SupervisionTokens.hover.color : .clear)
+            )
+            .contentShape(Rectangle())
         }
-        .padding(LimpidLayout.Supervision.viewedLineInset)
-    }
-
-    private var rule: some View {
-        SupervisionTokens.line.color
-            .frame(height: 1)
-            .frame(minWidth: LimpidLayout.Supervision.viewedLineRuleMinWidth, maxWidth: .infinity)
-            .accessibilityHidden(true)
+        .buttonStyle(.plain)
+        .focused($isFocused)
+        .accessibilityFocused($isSpokenFocused)
+        .onHover { isHovering = $0 }
+        .accessibilityLabel(Text(verbatim: title))
     }
 }
 

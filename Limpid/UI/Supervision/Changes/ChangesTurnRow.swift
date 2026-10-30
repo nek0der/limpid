@@ -30,6 +30,13 @@ struct ChangesTurnRow: View {
     /// them. The card still marks its tab under the pointer.
     let showsConversation: Bool
     let state: AppState
+    /// Whether the card takes the keyboard and VoiceOver as it appears: the
+    /// first card a fold opened from the keyboard or VoiceOver showed, whose
+    /// line had them and has left the list. `tookFocus` tells the list it
+    /// was taken, so the card does not take it again as it scrolls back
+    /// into view.
+    let takesFocus: Bool
+    let tookFocus: () -> Void
     @Environment(ProjectWindowState.self) private var window
     @Environment(\.locale) private var locale
     @Environment(\.supervisionSurfaceOpacity) private var surfaceOpacity
@@ -40,6 +47,7 @@ struct ChangesTurnRow: View {
     /// modifier's (`conversationHover`).
     @State private var isHovering = false
     @FocusState private var focus: TurnCardFocus?
+    @AccessibilityFocusState private var isSpokenFocused: Bool
 
     private typealias Layout = LimpidLayout.Supervision
 
@@ -120,6 +128,16 @@ struct ChangesTurnRow: View {
         }
         .modifier(TurnCardMenu(isShown: offersShowTab || !moves.isEmpty) { menu })
         .accessibilityElement(children: .contain)
+        .onAppear {
+            guard takesFocus else { return }
+            tookFocus()
+            // Once the fold's line, which held the keys, has left the
+            // list: asked at once, the request is lost.
+            KeyboardHandoff.afterResponderSettles {
+                focus = .card
+                isSpokenFocused = true
+            }
+        }
     }
 
     /// A turn that opens in the review is a button; one that cannot (an
@@ -142,6 +160,7 @@ struct ChangesTurnRow: View {
             }
             .buttonStyle(.plain)
             .focused($focus, equals: .card)
+            .accessibilityFocused($isSpokenFocused)
             .help(help)
             .accessibilityLabel(spoken)
             .accessibilityHint(hint)
@@ -155,6 +174,7 @@ struct ChangesTurnRow: View {
                 .focused($focus, equals: .card)
                 .help(help)
                 .accessibilityElement(children: .ignore)
+                .accessibilityFocused($isSpokenFocused)
                 .accessibilityLabel(spoken)
                 .accessibilityHint(hint)
                 .accessibilityActions { moveActions }
