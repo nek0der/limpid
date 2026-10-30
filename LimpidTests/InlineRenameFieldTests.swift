@@ -134,11 +134,16 @@ struct InlineRenameFieldTests {
         #expect(inMiddle == .both)
     }
 
-    /// The field editor is given at least its line fragment padding across,
-    /// and keeps an inset it already had that is wider, and its height.
-    @Test func editorInset_isAtLeastThePadding() {
-        #expect(InlineRenameEditorAlignment.inset(.zero, padding: 2) == NSSize(width: 2, height: 0))
-        #expect(InlineRenameEditorAlignment.inset(NSSize(width: 5, height: 1), padding: 2) == NSSize(width: 5, height: 1))
+    /// The field editor's inset takes its text container's origin to 0, from
+    /// either side, as the OS moves it either way. An origin already at 0 is
+    /// left alone, the inset never goes below the one the editor had, and
+    /// its height is kept.
+    @Test func editorInset_takesTheContainerOriginToZero() {
+        let inset = InlineRenameEditorAlignment.inset
+        #expect(inset(.zero, -2, .zero) == NSSize(width: 2, height: 0))
+        #expect(inset(NSSize(width: 2, height: 1), 2, .zero) == NSSize(width: 0, height: 1))
+        #expect(inset(NSSize(width: 2, height: 0), 0, .zero) == NSSize(width: 2, height: 0))
+        #expect(inset(NSSize(width: 5, height: 1), 5, NSSize(width: 1, height: 1)) == NSSize(width: 1, height: 1))
     }
 
     /// Only a stop at the start is taken back to where the edit began; the

@@ -46,9 +46,14 @@
 // text back by its line fragment padding besides, so the first glyph
 // stood up to 5pt before the label's and the caret before it was cut
 // in half. `InlineRenameEditorAlignment` moves that start to where a
-// name that fits stands and gives the editor an inset of the padding,
-// so the glyphs stand on the label's however the field came to its
-// start, with room before them for the whole caret.
+// name that fits stands and insets the editor by whatever keeps its text
+// container's origin at 0, so the glyphs stand on the label's however
+// the field came to its start, with room before them for the whole
+// caret. That inset is read from the origin rather than fixed, as the OS
+// moves the origin differently: macOS 26 takes a name longer than the
+// field to minus the padding and holds a name that fits at 0 under an
+// inset of the padding, and macOS 27.2 holds both at 0 and adds the inset
+// to the origin, so a fixed inset stood the glyphs 2pt after the label's.
 //
 // The label is also never narrower while it is renamed than it was at
 // rest: until the field has seeded its draft it still draws the name,
@@ -510,22 +515,10 @@ final class InlineRenameEditorAlignment {
         let slack = clip.contentInsets.left
         self.clip = clip
         self.slack = slack
-        // The field editor lays out with TextKit 2, which sets a name longer
-        // than the field back by its line fragment padding: its text
-        // container's origin goes to minus the padding, so the first glyph
-        // and the caret before it stand 2pt before the label's edge, and the
-        // caret, drawn about 2pt wide centered on that spot, is cut in half
-        // where the field's drawing ends. A name that fits keeps its origin at
-        // 0. An inset of the padding puts the origin at 0 for either
-        // (measured on macOS 26 at 11.5pt and 13pt), so the glyphs stand on
-        // the label's and the editor reaches a padding before the first one,
-        // room for the caret's leading half. The editor is the window's
-        // shared one, so the inset it had goes back as the edit ends.
-        if let padding = editor.textContainer?.lineFragmentPadding {
-            self.editor = editor
-            editorOriginalInset = editor.textContainerInset
-            editor.textContainerInset = Self.inset(editor.textContainerInset, padding: padding)
-        }
+        // The editor is the window's shared one, so the inset it had goes back
+        // as the edit ends.
+        self.editor = editor
+        editorOriginalInset = editor.textContainerInset
         clip.postsBoundsChangedNotifications = true
         editor.postsFrameChangedNotifications = true
         let center = NotificationCenter.default
@@ -537,13 +530,22 @@ final class InlineRenameEditorAlignment {
                     self?.readOverflow()
                     // Aligned on the next turn: a move made while AppKit is
                     // still in its scroll is undone by the rest of that scroll.
-                    DispatchQueue.main.async { self?.align() }
+                    DispatchQueue.main.async {
+                        self?.align()
+                        self?.alignTextContainer()
+                    }
                 }
             },
             center.addObserver(forName: NSView.frameDidChangeNotification, object: editor, queue: nil) { [weak self] _ in
-                MainActor.assumeIsolated { self?.readOverflow() }
+                MainActor.assumeIsolated {
+                    self?.readOverflow()
+                    // On the next turn: a change of inset lays the editor out
+                    // again, which is not ours to start while its frame changes.
+                    DispatchQueue.main.async { self?.alignTextContainer() }
+                }
             }
         ]
+        alignTextContainer()
         align()
         readOverflow()
         return true
@@ -563,11 +565,24 @@ final class InlineRenameEditorAlignment {
         overflow = .both
     }
 
-    /// The field editor's inset while a field is renamed: at least the line
-    /// fragment padding across, so its text container stands at 0 whether
-    /// the name fits or scrolls.
-    nonisolated static func inset(_ inset: NSSize, padding: CGFloat) -> NSSize {
-        NSSize(width: max(inset.width, padding), height: inset.height)
+    /// The field editor's inset that takes its text container's origin to 0,
+    /// never below the inset the editor had before the edit.
+    nonisolated static func inset(_ inset: NSSize, containerOriginX: CGFloat, original: NSSize) -> NSSize {
+        NSSize(width: max(inset.width - containerOriginX, original.width), height: inset.height)
+    }
+
+    /// Keeps the text container's origin at 0, where the glyphs stand on the
+    /// label's (see the file's header for why it is read).
+    private func alignTextContainer() {
+        guard let editor, let editorOriginalInset else { return }
+        let inset = Self.inset(
+            editor.textContainerInset,
+            containerOriginX: editor.textContainerOrigin.x,
+            original: editorOriginalInset
+        )
+        if inset != editor.textContainerInset {
+            editor.textContainerInset = inset
+        }
     }
 
     private func align() {
