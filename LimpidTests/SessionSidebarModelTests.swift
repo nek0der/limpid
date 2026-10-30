@@ -61,13 +61,14 @@ struct SessionSidebarModelTests {
         )
     }
 
-    @Test func rows_areTheShownWorktreesInTheOrderTheyWereMade_thenTheFolder() {
+    @Test func rows_areTheFolder_thenTheShownWorktreesInTheOrderTheyWereMade() {
         let (session, project) = Self.project()
         let rows = Self.model(session, project).rows
 
-        // The missing worktree is listed under its own line, after the folder.
-        #expect(rows.map(\.name) == ["feat/spike", "main", "gone"])
-        #expect(rows.map(\.isMainFolder) == [false, true, false])
+        // The missing worktree is listed under its own line, after the
+        // working rows.
+        #expect(rows.map(\.name) == ["main", "feat/spike", "gone"])
+        #expect(rows.map(\.isMainFolder) == [true, false, false])
         #expect(rows.map(\.isMissing) == [false, false, true])
     }
 
@@ -133,7 +134,7 @@ struct SessionSidebarModelTests {
         let tab = session.openTab(container: spike)
         session.update(tab.id) { $0.title = "claude --continue" }
 
-        let row = Self.model(session, project).rows[0]
+        let row = Self.model(session, project).rows[1]
 
         #expect(row.name == "feat/spike")
         // A branch differs from its neighbors at its end.
@@ -153,8 +154,8 @@ struct SessionSidebarModelTests {
         // A worktree whose branch is not known yet is named by its label,
         // as a name; one with a known branch by the branch.
         let rows = Self.model(session, unbranched).rows
-        #expect(rows.map(\.name) == ["feat/spike", unbranched.rootURL.lastPathComponent, "gone"])
-        #expect(rows.map(\.nameTruncation) == [.branch, .name, .name])
+        #expect(rows.map(\.name) == [unbranched.rootURL.lastPathComponent, "feat/spike", "gone"])
+        #expect(rows.map(\.nameTruncation) == [.name, .branch, .name])
     }
 
     @Test func anEmptyNameAPersonGave_handsTheRowToItsConversation() {
@@ -180,7 +181,8 @@ struct SessionSidebarModelTests {
         let folder = try #require(rows.first { $0.isMainFolder })
 
         #expect(SessionHeaderModel(row: folder, pullRequestNumber: nil, locale: Self.english).nameTruncation == .name)
-        #expect(SessionHeaderModel(row: rows[0], pullRequestNumber: nil, locale: Self.english).nameTruncation == .branch)
+        let spikeRow = try #require(rows.first { $0.id == spike })
+        #expect(SessionHeaderModel(row: spikeRow, pullRequestNumber: nil, locale: Self.english).nameTruncation == .branch)
 
         let registry = WindowRegistry(primary: session.primarySelection)
         registry.presenter = RecordingWindowPresenter()
@@ -189,8 +191,8 @@ struct SessionSidebarModelTests {
             runtimes: [], approvals: ApprovalLedger(), pullRequest: { _ in nil }, gitFacts: { _ in nil },
             locale: Self.english
         ))
-        #expect(cards.map(\.name) == ["feat/spike", "Add tests"])
-        #expect(cards.map(\.nameTruncation) == [.branch, .name])
+        #expect(cards.map(\.name) == ["Add tests", "feat/spike"])
+        #expect(cards.map(\.nameTruncation) == [.name, .branch])
     }
 
     @Test func aRowKeepsItsConversationsName_afterTheAgentLeaves() throws {
@@ -254,8 +256,8 @@ struct SessionSidebarModelTests {
         let rows = Self.model(session, project) { $0 == .project(project.id) ? facts : nil }.rows
         let folder = try #require(rows.first { $0.isMainFolder })
 
-        #expect(folder.factText == "2 Uncommitted")
-        #expect(rows[0].factText == "Idle")
+        #expect(folder.factText == "2 files uncommitted")
+        #expect(rows.first { !$0.isMainFolder }?.factText == "Idle")
     }
 
     @Test func anApprovalsCommand_isFoundInItsLine_whateverTheLanguage() throws {
@@ -449,9 +451,9 @@ struct SessionSidebarModelTests {
 
         #expect(SessionRowFactText.spokenLabel(for: row, projectName: "limpid", now: now, locale: Self.english)
             == "Running, Release prep, limpid, Bash: swift test, Claude, 12 min since last activity")
-        // The row's column says "12m" in every language; VoiceOver and
-        // the tooltip say the minutes in words.
-        #expect(SessionRowFactText.elapsed(since: now.addingTimeInterval(-12 * 60), now: now) == "12m")
+        // The row's column says "12m"; VoiceOver and the tooltip say the
+        // minutes in words.
+        #expect(SessionRowFactText.elapsed(since: now.addingTimeInterval(-12 * 60), now: now, locale: Self.english) == "12m")
     }
 
     @Test func aPullRequestRow_readsItsState_thenTheRequestAndItsChecks_inWords() {
@@ -487,14 +489,15 @@ struct SessionSidebarModelTests {
 
         let sections = SidebarPresentedSections()
 
+        // The folder opens the working rows, so ⌃⌘1 is always it.
         SessionRowNavigation.activate(at: 0, in: window, session: session, sections: sections)
+        #expect(session.primarySelection.activeContainerID == .project(project.id))
+        SessionRowNavigation.cycle(forward: true, in: window, session: session, sections: sections)
         #expect(session.primarySelection.activeContainerID == .worktree(projectID: project.id, worktreeID: project.worktrees[0].id))
         SessionRowNavigation.cycle(forward: true, in: window, session: session, sections: sections)
-        // The hidden worktree is not a row; the missing one is.
+        // The hidden worktree is not a row; the missing one is. Scratch
+        // comes after the working rows.
         #expect(session.primarySelection.activeContainerID == .worktree(projectID: project.id, worktreeID: project.worktrees[2].id))
-        // The folder closes the working rows; scratch comes after it.
-        SessionRowNavigation.cycle(forward: true, in: window, session: session, sections: sections)
-        #expect(session.primarySelection.activeContainerID == .project(project.id))
         SessionRowNavigation.cycle(forward: true, in: window, session: session, sections: sections)
         #expect(session.primarySelection.activeContainerID == .loose)
         // ⌃⌘n counts the working rows only, not scratch.
@@ -513,15 +516,15 @@ struct SessionSidebarModelTests {
         let gone = ContainerID.worktree(projectID: project.id, worktreeID: project.worktrees[2].id)
         let folded = SidebarPresentedSections(sections: [spike: .other, gone: .working, .project(project.id): .working])
 
-        #expect(SessionRowNavigation.rows(in: window, session: session, sections: folded) == [gone, .project(project.id), .loose])
-        SessionRowNavigation.activate(at: 0, in: window, session: session, sections: folded)
+        #expect(SessionRowNavigation.rows(in: window, session: session, sections: folded) == [.project(project.id), gone, .loose])
+        SessionRowNavigation.activate(at: 1, in: window, session: session, sections: folded)
         #expect(session.primarySelection.activeContainerID == gone)
 
         // Held where it was drawn while it would now fold away.
         window.present(SidebarPresentedSections(sections: [spike: .working, gone: .working, .project(project.id): .working]))
         window.isPointerInSidebar = true
         let held = window.presentedSections(computed: folded, isDragging: false)
-        SessionRowNavigation.activate(at: 0, in: window, session: session, sections: held)
+        SessionRowNavigation.activate(at: 1, in: window, session: session, sections: held)
         #expect(session.primarySelection.activeContainerID == spike)
     }
 
@@ -722,10 +725,10 @@ extension SessionSidebarModelTests {
         let (session, project, ids) = try Self.sectionedProject()
         let model = Self.sectionedModel(session, project, merged: ids.merged, open: [])
 
-        #expect(model.rows.map(\.id) == [ids.working, ids.folder])
+        #expect(model.rows.map(\.id) == [ids.folder, ids.working])
         #expect(model.items.map(\.id) == [
-            .row(ids.working),
             .row(ids.folder),
+            .row(ids.working),
             .fold(project.id, .cleanable),
             .fold(project.id, .other)
         ])
@@ -748,8 +751,8 @@ extension SessionSidebarModelTests {
         let model = Self.sectionedModel(session, project, merged: merged, open: [.cleanable, .other])
 
         #expect(model.items.map(\.id) == [
-            .row(ids.working),
             .row(ids.folder),
+            .row(ids.working),
             .fold(project.id, .cleanable),
             .row(merged),
             .fold(project.id, .other),
@@ -771,7 +774,7 @@ extension SessionSidebarModelTests {
         let spike = ContainerID.worktree(projectID: project.id, worktreeID: spikeID)
         let gone = ContainerID.worktree(projectID: project.id, worktreeID: goneID)
         let folded = Self.sectionedModel(session, project, merged: .loose, open: [])
-        let expected: [SidebarItemID] = [.row(spike), .row(.project(project.id)), .fold(project.id, .missing)]
+        let expected: [SidebarItemID] = [.row(.project(project.id)), .row(spike), .fold(project.id, .missing)]
         #expect(folded.items.map(\.id) == expected)
 
         let opened = Self.sectionedModel(session, project, merged: .loose, open: [.missing])
@@ -888,19 +891,22 @@ extension SessionSidebarModelTests {
         #expect(!SessionSidebarModel.offersRemoveFromWorking(selectedRow, worktree: madeWorktree, hasTabs: false))
     }
 
-    /// The folder's row is named as any row is, so it says what it is: in
-    /// its tooltip, to VoiceOver, and on its second line at rest.
-    @Test func theFoldersRow_saysItIsTheFolder() throws {
+    /// The folder's row is named as any row is, so its tag says it is the
+    /// repository, whatever its second line says; its tooltip and VoiceOver
+    /// say so in words. Its line at rest states its Git facts, as any
+    /// row's does.
+    @Test func theFoldersRow_saysItIsTheRepository() throws {
         let (session, project) = Self.project()
         let folder = try #require(Self.model(session, project).rows.first { $0.isMainFolder })
-        let ja = try #require(Self.model(session, project, locale: Self.japanese).rows.first { $0.isMainFolder })
 
-        #expect(folder.factText == "Folder")
-        #expect(ja.factText == "フォルダ")
-        #expect(SessionRowFactText.tooltip(for: folder, now: .now, locale: Self.english) == "main · Folder")
-        // Said once: the second line says it already.
+        #expect(folder.factText == "Idle")
+        #expect(SessionRowFactText.repositoryTag.resolved(in: Self.japanese) == "リポジトリ")
+        #expect(SessionRowFactText.tooltip(for: folder, now: .now, locale: Self.english) == "main · Repository folder")
         let spoken = SessionRowFactText.spokenLabel(for: folder, projectName: "limpid", now: .now, locale: Self.english)
-        #expect(spoken == "Shell, main, limpid, Folder", "\(spoken); a shell says Shell once")
+        #expect(spoken == "Shell, main, limpid, Repository folder, Idle", "\(spoken); a shell says Shell once")
+        let clean = GitFactsFixture.make(branch: "main", commits: nil, unpushed: nil, uncommitted: 0, base: nil)
+        let read = try #require(Self.model(session, project) { _ in clean }.rows.first { $0.isMainFolder })
+        #expect(read.factText == "No changes")
         // A worktree's row at rest is idle.
         #expect(Self.model(session, project).rows.first { !$0.isMainFolder }?.factText == "Idle")
     }

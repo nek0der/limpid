@@ -83,6 +83,10 @@ struct SessionRowView: View {
                         font: .supervision(.label, weight: .medium),
                         foregroundColor: SupervisionTokens.text.color,
                         onRename: onRename,
+                        // The repository's tag follows the name rather
+                        // than the column, so the name keeps only its own
+                        // width.
+                        fillsWidth: !row.isMainFolder,
                         // A branch keeps both ends; a conversation's name
                         // and one the person gave keep their start.
                         truncationMode: Text.TruncationMode(row.nameTruncation),
@@ -97,6 +101,11 @@ struct SessionRowView: View {
                         prompt: row.label == nil ? row.name : nil
                     )
                     .lineLimit(1)
+                    if row.isMainFolder {
+                        RepositoryTag()
+                            .help(Text(verbatim: tooltip))
+                        Spacer(minLength: 0)
+                    }
                     // At least the shared column; Answer… may widen it and
                     // cut the name a little shorter while it shows.
                     trailingLineOne
@@ -303,7 +312,7 @@ struct SessionRowView: View {
                 .padding(.horizontal, LimpidLayout.Supervision.spaceS)
                 .hidden()
         } else if let lastActivity = row.lastActivity {
-            Text(verbatim: SessionRowFactText.elapsed(since: lastActivity, now: now))
+            Text(verbatim: SessionRowFactText.elapsed(since: lastActivity, now: now, locale: locale))
                 .font(.supervision(.meta))
                 .monospacedDigit()
                 .foregroundStyle(SupervisionTokens.muted.color)
@@ -330,6 +339,23 @@ struct SessionRowView: View {
         case .stopped: SupervisionTokens.stoppedText.color
         case .muted: SupervisionTokens.muted.color
         }
+    }
+}
+
+/// The tag beside the name of the project's own folder's row: what the
+/// row is, not a state, so it stays whatever the row's lines say. Outlined
+/// rather than filled, as the usage limit's chip is, so it reads on the
+/// open row's fill too. VoiceOver reads it in the row's label.
+private struct RepositoryTag: View {
+    var body: some View {
+        Text(SessionRowFactText.repositoryTag)
+            .font(.supervision(.micro, weight: .medium))
+            .foregroundStyle(SupervisionTokens.muted.color)
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, LimpidLayout.Supervision.spaceSnug)
+            .padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(SupervisionTokens.muted.color.opacity(0.5), lineWidth: 1))
     }
 }
 

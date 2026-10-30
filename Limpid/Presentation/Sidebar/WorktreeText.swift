@@ -5,8 +5,8 @@ import Foundation
 
 /// A sidebar row is a worktree: a Git worktree of the project, or the
 /// project's own folder, with its agent and shell tabs. The folder's row is
-/// a worktree too (Git's main one), and says "Folder" where it is told
-/// apart. We never call a row a workspace, a session, or a task. Limpid
+/// a worktree too (Git's main one), and its tag says "Repository" where it
+/// is told apart. We never call a row a workspace, a session, or a task. Limpid
 /// keeps "session" for window restore and tmux, other agent tools use it
 /// for one conversation, and an agent's conversation inside a row is a
 /// conversation. The views and the tests read the same resources here, so

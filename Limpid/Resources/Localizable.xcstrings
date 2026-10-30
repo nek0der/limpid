@@ -2,7 +2,7 @@
   "sourceLanguage": "en",
   "strings": {
     "duration.compact.hours": {
-      "comment": "A turn card's duration, of a hundred minutes or more; argument: the whole hours",
+      "comment": "A time in one short unit, in hours (a turn card's duration, a sidebar row's time since); argument: the hours",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -14,6 +14,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld時間"
+          }
+        }
+      }
+    },
+    "duration.compact.days": {
+      "comment": "A time in one short unit, in days (the sidebar's time since a row last moved); argument: the whole days",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lldd"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld日"
+          }
+        }
+      }
+    },
+    "duration.compact.now": {
+      "comment": "Sidebar row: its agent moved less than a minute ago, in the column that says the time since",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "now"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今"
           }
         }
       }
@@ -346,7 +380,7 @@
       }
     },
     "duration.compact.minutes": {
-      "comment": "A turn card's duration, over a minute; argument: the whole minutes",
+      "comment": "A time in one short unit, in minutes (a turn card's duration, a sidebar row's time since); argument: the minutes",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -363,7 +397,7 @@
       }
     },
     "duration.compact.seconds": {
-      "comment": "A turn card's duration, under a minute; argument: the seconds",
+      "comment": "A time in one short unit, under a minute (a turn card's duration); argument: the whole seconds",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -895,7 +929,7 @@
         }
       }
     },
-    "%lld Commits": {
+    "+%lld commits": {
       "comment": "Worktree header chip and sidebar row: commits on the branch that the default branch does not have",
       "localizations": {
         "en": {
@@ -904,13 +938,13 @@
               "one": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "%lld Commit"
+                  "value": "+%lld commit"
                 }
               },
               "other": {
                 "stringUnit": {
                   "state": "translated",
-                  "value": "%lld Commits"
+                  "value": "+%lld commits"
                 }
               }
             }
@@ -919,7 +953,36 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "コミット %lld"
+            "value": "+%lld コミット"
+          }
+        }
+      }
+    },
+    "%lld commits not on the default branch": {
+      "comment": "Sidebar row tooltip and VoiceOver: commits on the row's branch that the default branch does not have",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld commit not on the default branch"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld commits not on the default branch"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトのブランチにない %lld コミット"
           }
         }
       }
@@ -970,19 +1033,48 @@
         }
       }
     },
-    "%lld Uncommitted": {
+    "%lld files uncommitted": {
       "comment": "Worktree header chip and sidebar row: files changed and not committed",
       "localizations": {
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld Uncommitted"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld file uncommitted"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld files uncommitted"
+                }
+              }
+            }
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "未コミット %lld"
+            "value": "未コミット %lld ファイル"
+          }
+        }
+      }
+    },
+    "gitFacts.noChanges": {
+      "comment": "Sidebar row at rest: its folder has nothing uncommitted, no commits ahead of the default branch, and no pull request",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No changes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更なし"
           }
         }
       }
@@ -8355,6 +8447,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "フォルダ"
+          }
+        }
+      }
+    },
+    "Repository": {
+      "comment": "Sidebar: the tag beside the name of the project's own folder's row, which the worktrees are made from",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repository"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リポジトリ"
+          }
+        }
+      }
+    },
+    "Repository folder": {
+      "comment": "Sidebar row tooltip and VoiceOver: the row is the project's own folder, the repository the worktrees are made from",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repository folder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リポジトリのフォルダ"
           }
         }
       }

@@ -73,7 +73,7 @@ struct NewSessionCarryTests {
             #expect(model.plan?.carry == nil, "off until asked for")
             model.carriesChanges = true
             #expect(model.plan?.carry == source)
-            #expect(model.carryLine(locale: Locale(identifier: "en")) == "3 Uncommitted · If anything fails, main is left unchanged.")
+            #expect(model.carryLine(locale: Locale(identifier: "en")) == "3 files uncommitted · If anything fails, main is left unchanged.")
             #expect(model.choices == NewSessionModel.initialChoices(
                 fixture.settings.settings.newSession,
                 forProjectAt: fixture.project.rootURL,

@@ -114,47 +114,47 @@ struct DemoSceneTests {
     /// duesmith's sidebar: each working row's name, state, and second line.
     @Test func duesmithsRows_readAsTheSceneSays() throws {
         let rows = try Self.scene().rows(DemoFixture.duesmithProjectID).filter { $0.section == .working }
-        // The working worktrees, then the folder, which the review is in.
+        // The folder, which the review is in, then the working worktrees.
         #expect(rows.map(\.name) == [
+            "main",
             "feat/overdue-reminders",
             "fix/tax-rounding",
             "feat/proration",
             "fix/webhook-timeout",
-            "docs/invoices-api",
-            "main"
+            "docs/invoices-api"
         ])
         // Each is named by its branch, not by a label the person gave, so
         // no second line starts with the row's branch.
         #expect(rows.allSatisfy { $0.checkout == nil })
         #expect(rows.map(\.factText) == [
+            "Unread · No file changes",
             "Unread · 4 files changed",
             "Waiting for approval: tsc",
             "Bash: pnpm test src/billing",
             "Stopped: API Error: Request timed out.",
-            "PR #324 · Open",
-            "Unread · No file changes"
+            "PR #324 · Open"
         ])
-        #expect(rows.map(\.fact.glyph) == [.unread, .needsApproval, .running, .stopped, .idle, .unread])
-        let agents: [AgentKind] = [.claude, .codex, .claude, .claude, .codex, .codex]
+        #expect(rows.map(\.fact.glyph) == [.unread, .unread, .needsApproval, .running, .stopped, .idle])
+        let agents: [AgentKind] = [.codex, .claude, .codex, .claude, .claude, .codex]
         #expect(rows.map(\.fact.badge) == agents.map(SessionRowFact.Badge.agent))
         #expect(rows.map(\.fact.fact) == [
+            .unread(.unchanged),
             .unread(.changed(files: 4, added: 136, removed: 13)),
             .prompt(PromptWait(detail: "Bash: tsc")),
             .running("Bash: pnpm test src/billing"),
             .stopped(.error("API Error: Request timed out.")),
-            .pullRequest(number: 324, state: .open, isDraft: false),
-            .unread(.unchanged)
+            .pullRequest(number: 324, state: .open, isDraft: false)
         ])
-        #expect(rows.map(\.isActive) == [true, false, false, false, false, false])
+        #expect(rows.map(\.isActive) == [false, true, false, false, false, false])
         // The marks on the right: the running agent's draft beside its
         // action, and the open request that is the docs row's second line.
         #expect(rows.map(\.fact.pullRequest) == [
             nil,
             nil,
+            nil,
             SessionRowFact.PullRequest(number: 326, state: .open, isDraft: true),
             nil,
-            SessionRowFact.PullRequest(number: 324, state: .open, isDraft: false),
-            nil
+            SessionRowFact.PullRequest(number: 324, state: .open, isDraft: false)
         ])
     }
 
@@ -192,9 +192,9 @@ struct DemoSceneTests {
     @Test func theOtherProjectsRows_readAsTheSceneSays() throws {
         let scene = Self.scene()
         let pdf = try scene.rows(DemoFixture.pdfWorkerProjectID)
-        #expect(pdf.map(\.name) == ["fix/page-breaks", "feat/batch-render", "main"])
-        #expect(pdf.map(\.fact.glyph) == [.needsApproval, .idle, .shell])
-        #expect(pdf.map(\.factText) == ["Waiting for approval: cargo test -p layout", "PR #57 · Merged", "Folder"])
+        #expect(pdf.map(\.name) == ["main", "fix/page-breaks", "feat/batch-render"])
+        #expect(pdf.map(\.fact.glyph) == [.shell, .needsApproval, .idle])
+        #expect(pdf.map(\.factText) == ["Idle", "Waiting for approval: cargo test -p layout", "PR #57 · Merged"])
         #expect(pdf.allSatisfy { $0.checkout == nil })
         let dotfiles = try scene.rows(DemoFixture.dotfilesProjectID)
         #expect(dotfiles.map(\.name) == ["main"])

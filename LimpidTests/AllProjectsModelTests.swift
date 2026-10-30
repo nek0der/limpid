@@ -125,7 +125,7 @@ struct AllProjectsModelTests {
     /// The sheet's one order of its own is its sections. Within one,
     /// the cards come in the window's sidebar order of projects, the ones
     /// it has not met last, and each project's as its sidebar lists the
-    /// rows: the worktrees, then the folder.
+    /// rows: the folder, then the worktrees.
     @Test func theCards_comeInTheWindowsProjectOrder_andTheSidebarsRowOrder() throws {
         let fixture = ProjectWindowsFixture()
         fixture.primary.selection.sidebarArrangement = SidebarArrangement(projectOrder: [fixture.c.id, fixture.a.id])
@@ -138,7 +138,7 @@ struct AllProjectsModelTests {
         let cards = Self.cards(fixture.session, registry: fixture.registry)
 
         #expect(cards.map(\.projectID) == [fixture.c.id, fixture.a.id, fixture.b.id, fixture.b.id])
-        #expect(cards.suffix(2).map(\.id) == [worktreeRow, .project(fixture.b.id)])
+        #expect(cards.suffix(2).map(\.id) == [.project(fixture.b.id), worktreeRow])
     }
 
     /// A card the person labeled is placed by its branch, as its sidebar

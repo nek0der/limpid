@@ -61,6 +61,12 @@ struct SessionRowFact: Equatable, Sendable {
         /// Git fact to state: the line says what still runs rather than
         /// "Idle" beside the mark of work.
         case workingAfterTurn(BackgroundWork)
+        /// At rest with the folder's Git facts read and nothing to state:
+        /// nothing uncommitted, no commits ahead, no pull request.
+        case noChanges
+        /// At rest with the folder's Git facts not read yet, or not a
+        /// repository: the line names the state the glyph shows, since
+        /// "No changes" would claim what is not known.
         case idle
         /// An agent not matched to its hook yet, with no Git fact to state:
         /// the line names the state the glyph shows, never "Idle" beside
@@ -72,9 +78,7 @@ struct SessionRowFact: Equatable, Sendable {
     /// fact falls back to when it knows nothing more: "Idle", "Running"
     /// with no tool, a request or a stop with no words, an unread turn
     /// whose changes are not known. A row that shows its folder on its
-    /// second line drops such a fact for the folder, which says more. The
-    /// project's folder row's "Folder" at rest is `.idle`'s, so it goes
-    /// too: the folder's name says it better.
+    /// second line drops such a fact for the folder, which says more.
     static func repeatsGlyph(_ fact: Fact) -> Bool {
         switch fact {
         case .idle, .unknown, .running(nil), .question(nil), .approval(nil):
@@ -91,7 +95,7 @@ struct SessionRowFact: Equatable, Sendable {
         case .unread(.unknown), .unread(.pending), .unread(.unavailable):
             true
         case .running(.some), .question(.some), .approval(.some), .stopped, .unread, .compacting,
-             .pullRequest, .uncommitted, .commits, .workingAfterTurn:
+             .pullRequest, .uncommitted, .commits, .workingAfterTurn, .noChanges:
             false
         }
     }
@@ -176,6 +180,9 @@ struct SessionRowFact: Equatable, Sendable {
         /// pull request from it would carry (`GitFacts`); 0 when not known.
         var uncommittedFiles = 0
         var proposedCommits = 0
+        /// The folder's Git facts have been read, so 0 above means none
+        /// rather than not known.
+        var hasGitFacts = false
     }
 
     /// The agent a row with no attention item speaks for: the first one
@@ -231,20 +238,25 @@ struct SessionRowFact: Equatable, Sendable {
             return Self(glyph: .unreadWorkingAfterTurn, fact: row.fact, badge: row.badge)
         }
         // At rest, the second line states a Git fact when there is one,
-        // whatever runs in the row: the pull request, else what is
-        // not committed, else what is committed and not on the default
-        // branch.
-        let repositoryFact: Fact? = if let request = input.pullRequest {
-            .pullRequest(number: request.number, state: request.state, isDraft: request.isDraft)
-        } else if input.uncommittedFiles > 0 {
+        // whatever runs in the row: what is not committed, else the pull
+        // request, else what is committed and not on the default branch.
+        // What is not committed goes first because it is the one the
+        // person still has to act on, and a pull request's mark stays on
+        // the row while the line states the files.
+        let repositoryFact: Fact? = if input.uncommittedFiles > 0 {
             .uncommitted(files: input.uncommittedFiles)
+        } else if let request = input.pullRequest {
+            .pullRequest(number: request.number, state: request.state, isDraft: request.isDraft)
         } else if input.proposedCommits > 0 {
             .commits(input.proposedCommits)
         } else {
             nil
         }
+        // With nothing to state, a folder whose facts were read says it
+        // has no changes; the glyph already says the row is at rest.
+        let restFact = repositoryFact ?? (input.hasGitFacts ? .noChanges : .idle)
         guard let first = input.agents.first else {
-            return Self(glyph: .shell, fact: repositoryFact ?? .idle, badge: .shell)
+            return Self(glyph: .shell, fact: restFact, badge: .shell)
         }
         // Not matched to its hook yet (an agent just started, or a run just
         // after a relaunch): the row says so rather than claiming to be at
@@ -257,7 +269,7 @@ struct SessionRowFact: Equatable, Sendable {
         if let agent = workingAfterTurn, let work = agent.backgroundWork {
             return Self(glyph: .workingAfterTurn, fact: repositoryFact ?? .workingAfterTurn(work), badge: .agent(agent.provider))
         }
-        return Self(glyph: .idle, fact: repositoryFact ?? .idle, badge: .agent(first.provider))
+        return Self(glyph: .idle, fact: restFact, badge: .agent(first.provider))
     }
 
     private static func nonEmpty(_ text: String?) -> String? {

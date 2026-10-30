@@ -244,14 +244,14 @@ struct SidebarRowCheckoutTests {
         let row = Self.row(checkout: "feat/login", fact: .init(agents: Self.idleAgent.agents, uncommittedFiles: 3))
         #expect(row.showsFact)
         #expect(SessionRowFactText.lineLead(row, fact: row.factText, locale: Self.english) == "feat/login · ")
-        #expect(Self.lineTwo(row) == "feat/login · 3 Uncommitted")
+        #expect(Self.lineTwo(row) == "feat/login · 3 files uncommitted")
 
         let japanese = Self.row(
             checkout: "feat/login",
             fact: .init(agents: Self.idleAgent.agents, uncommittedFiles: 3),
             locale: Self.japanese
         )
-        #expect(Self.lineTwo(japanese, locale: Self.japanese) == "feat/login · 未コミット 3")
+        #expect(Self.lineTwo(japanese, locale: Self.japanese) == "feat/login · 未コミット 3 ファイル")
 
         let pullRequest = Self.row(checkout: "feat/login", fact: .init(pullRequest: .init(number: 12, state: .open, isDraft: false)))
         #expect(Self.lineTwo(pullRequest) == "feat/login · PR #12 · Open")
@@ -310,13 +310,13 @@ struct SidebarRowCheckoutTests {
     }
 
     /// The project's folder row, labeled, shows the project's folder when
-    /// no branch is known, which says better than "Folder" what it is.
-    @Test func theLabeledFolderRowWithNoBranch_showsTheProjectsFolder_inPlaceOfFolder() throws {
+    /// no branch is known, in place of a fact that only names its state.
+    @Test func theLabeledFolderRowWithNoBranch_showsTheProjectsFolder_inPlaceOfTheState() throws {
         let fixture = Self.project()
         let (session, project) = (fixture.session, fixture.project)
         let root = ContainerID.project(project.id)
         let unnamed = try #require(Self.model(session, project).rows.first { $0.id == root })
-        #expect(Self.lineTwo(unnamed) == "Folder")
+        #expect(Self.lineTwo(unnamed) == "Idle")
 
         session.renameRow(root, to: "Main checkout", runtimes: [])
         let named = try #require(Self.model(session, project).rows.first { $0.id == root })
@@ -324,12 +324,12 @@ struct SidebarRowCheckoutTests {
         #expect(named.name == "Main checkout")
         #expect(Self.lineTwo(named) == folder)
         #expect(SessionRowFactText.spokenLabel(for: named, projectName: "limpid", now: .now, locale: Self.english)
-            == "Shell, Main checkout, Folder \(folder), limpid")
+            == "Shell, Main checkout, Folder \(folder), limpid, Repository folder")
     }
 
-    /// The project's folder row, labeled, shows its branch and keeps
-    /// "Folder", which the branch does not say; VoiceOver says it once.
-    @Test func theLabeledFolderRowWithABranch_keepsFolder_afterItsBranch() throws {
+    /// The project's folder row, labeled, shows its branch as any labeled
+    /// row does; its tag, not its line, says it is the repository.
+    @Test func theLabeledFolderRowWithABranch_showsItsBranch_asAWorktreeDoes() throws {
         let fixture = Self.project()
         let (session, project) = (fixture.session, fixture.project)
         let index = try #require(session.projects.firstIndex { $0.id == project.id })
@@ -337,9 +337,9 @@ struct SidebarRowCheckoutTests {
         let root = ContainerID.project(project.id)
         session.renameRow(root, to: "Main checkout", runtimes: [])
         let named = try #require(Self.model(session, session.projects[index]).rows.first { $0.id == root })
-        #expect(Self.lineTwo(named) == "main · Folder")
+        #expect(Self.lineTwo(named) == "main")
         #expect(SessionRowFactText.spokenLabel(for: named, projectName: "limpid", now: .now, locale: Self.english)
-            == "Shell, Main checkout, Branch main, limpid, Folder")
+            == "Shell, Main checkout, Branch main, limpid, Repository folder")
     }
 
     /// The checkout and the fact are set apart, the lead keeping the
@@ -363,11 +363,11 @@ struct SidebarRowCheckoutTests {
             isBranch: false,
             fact: .init(uncommittedFiles: 2)
         )
-        #expect(Self.lineTwo(row) == "fix-tax-rounding · 2 Uncommitted")
+        #expect(Self.lineTwo(row) == "fix-tax-rounding · 2 files uncommitted")
         #expect(SessionRowFactText.tooltip(for: row, now: .now, locale: Self.english)
             == "Login work · duesmith-fix-tax-rounding")
         #expect(SessionRowFactText.spokenLabel(for: row, projectName: "duesmith", now: .now, locale: Self.english)
-            == "Shell, Login work, Worktree duesmith-fix-tax-rounding, duesmith, 2 Uncommitted")
+            == "Shell, Login work, Worktree duesmith-fix-tax-rounding, duesmith, 2 files uncommitted")
     }
 
     /// The branch beside a label is said once.
@@ -379,7 +379,7 @@ struct SidebarRowCheckoutTests {
     @Test func voiceOver_readsTheLabel_theBranch_thenTheFactOrTheState() {
         let fact = Self.row(checkout: "feat/login", fact: .init(agents: Self.idleAgent.agents, uncommittedFiles: 3))
         #expect(SessionRowFactText.spokenLabel(for: fact, projectName: "limpid", now: .now, locale: Self.english)
-            == "Idle, Login work, Branch feat/login, limpid, 3 Uncommitted, Claude")
+            == "Idle, Login work, Branch feat/login, limpid, 3 files uncommitted, Claude")
 
         // The fact dropped is the state, which VoiceOver reads first.
         let idle = Self.row(checkout: "feat/login", fact: Self.idleAgent)

@@ -232,16 +232,30 @@ struct SessionRowFactTests {
         #expect(StateGlyph.Kind(row.glyph) == test.kind)
     }
 
-    @Test func atRest_theSecondLineStatesThePullRequest_elseUncommittedFiles_elseCommits() {
+    @Test func atRest_theSecondLineStatesUncommittedFiles_elseThePullRequest_elseCommits_elseNoChanges() {
         let agent = SessionRowFact.Agent(provider: .claude, state: .idle, detail: nil)
         let pullRequest = SessionRowFact.PullRequest(number: 7, state: .open, isDraft: false)
-        func fact(_ request: SessionRowFact.PullRequest?, uncommitted: Int, commits: Int) -> SessionRowFact {
-            SessionRowFact.make(.init(agents: [agent], pullRequest: request, uncommittedFiles: uncommitted, proposedCommits: commits))
+        func fact(_ request: SessionRowFact.PullRequest?, uncommitted: Int, commits: Int, isKnown: Bool = true) -> SessionRowFact {
+            SessionRowFact.make(.init(
+                agents: [agent],
+                pullRequest: request,
+                uncommittedFiles: uncommitted,
+                proposedCommits: commits,
+                hasGitFacts: isKnown
+            ))
         }
-        #expect(fact(pullRequest, uncommitted: 2, commits: 3).fact == .pullRequest(number: 7, state: .open, isDraft: false))
+        // What is not committed goes before the request, whose mark stays.
+        let both = fact(pullRequest, uncommitted: 2, commits: 3)
+        #expect(both.fact == .uncommitted(files: 2))
+        #expect(both.pullRequest == pullRequest)
+        #expect(fact(pullRequest, uncommitted: 0, commits: 3).fact == .pullRequest(number: 7, state: .open, isDraft: false))
         #expect(fact(nil, uncommitted: 2, commits: 3) == SessionRowFact(glyph: .idle, fact: .uncommitted(files: 2), badge: .agent(.claude)))
         #expect(fact(nil, uncommitted: 0, commits: 3).fact == .commits(3))
-        #expect(fact(nil, uncommitted: 0, commits: 0).fact == .idle)
+        #expect(fact(nil, uncommitted: 0, commits: 0).fact == .noChanges)
+        // Facts not read yet claim nothing: the line names the rest.
+        #expect(fact(nil, uncommitted: 0, commits: 0, isKnown: false).fact == .idle)
+        let shell = SessionRowFact.make(.init(hasGitFacts: true))
+        #expect(shell == SessionRowFact(glyph: .shell, fact: .noChanges, badge: .shell))
         // Not while something needs the person or the agent runs.
         let running = SessionRowFact.make(.init(
             agents: [.init(provider: .claude, state: .running, detail: "Bash: swift test")],
@@ -249,9 +263,14 @@ struct SessionRowFactTests {
         ))
         #expect(running.fact == .running("Bash: swift test"))
         let english = Locale(identifier: "en")
-        #expect(SessionRowFactText.make(.uncommitted(files: 2), locale: english) == "2 Uncommitted")
-        #expect(SessionRowFactText.make(.commits(1), locale: english) == "1 Commit")
-        #expect(SessionRowFactText.make(.commits(3), locale: Locale(identifier: "ja")) == "コミット 3")
+        let japanese = Locale(identifier: "ja")
+        #expect(SessionRowFactText.make(.uncommitted(files: 2), locale: english) == "2 files uncommitted")
+        #expect(SessionRowFactText.make(.uncommitted(files: 1), locale: english) == "1 file uncommitted")
+        #expect(SessionRowFactText.make(.uncommitted(files: 6), locale: japanese) == "未コミット 6 ファイル")
+        #expect(SessionRowFactText.make(.commits(1), locale: english) == "+1 commit")
+        #expect(SessionRowFactText.make(.commits(3), locale: japanese) == "+3 コミット")
+        #expect(SessionRowFactText.make(.noChanges, locale: english) == "No changes")
+        #expect(SessionRowFactText.make(.noChanges, locale: japanese) == "変更なし")
     }
 
     // MARK: - The second line's words
@@ -268,18 +287,27 @@ struct SessionRowFactTests {
         #expect(SessionRowFactText.badge(.agent(.codex), locale: Self.english) == "Cx")
     }
 
-    @Test func theTime_isTheLargestWholeUnit_andTheTooltipSaysItInFull() {
+    @Test func theTime_isTheLargestWholeUnit_inTheUnitsATurnsDurationHas() {
         let now = Date(timeIntervalSince1970: 1_000_000)
-        #expect(SessionRowFactText.elapsed(since: now.addingTimeInterval(-12 * 60), now: now) == "12m")
-        #expect(SessionRowFactText.elapsed(since: now.addingTimeInterval(-3 * 3600 - 60), now: now) == "3h")
-        #expect(SessionRowFactText.elapsed(since: now.addingTimeInterval(-2 * 86400 - 3600), now: now) == "2d")
-        #expect(SessionRowFactText.elapsed(since: now, now: now) == "0m")
+        func elapsed(_ seconds: TimeInterval, _ locale: Locale = Self.english) -> String {
+            SessionRowFactText.elapsed(since: now.addingTimeInterval(-seconds), now: now, locale: locale)
+        }
+        #expect(elapsed(12 * 60) == "12m")
+        #expect(elapsed(3 * 3600 + 60) == "3h")
+        #expect(elapsed(2 * 86400 + 3600) == "2d")
+        #expect(elapsed(0) == "now")
         // A clock that went back reads as no time, not a negative one.
-        #expect(SessionRowFactText.elapsed(since: now.addingTimeInterval(60), now: now) == "0m")
+        #expect(elapsed(-60) == "now")
         // Rounded down, as the tooltip's minutes are.
-        #expect(SessionRowFactText.elapsed(since: now.addingTimeInterval(-(12 * 60 + 40)), now: now) == "12m")
-        #expect(SessionRowFactText.elapsed(since: now.addingTimeInterval(-(59 * 60 + 30)), now: now) == "59m")
-        #expect(SessionRowFactText.elapsed(since: now.addingTimeInterval(-(3 * 3600 + 59 * 60)), now: now) == "3h")
+        #expect(elapsed(12 * 60 + 40) == "12m")
+        #expect(elapsed(59 * 60 + 30) == "59m")
+        #expect(elapsed(3 * 3600 + 59 * 60) == "3h")
+        // Japanese says its units, as a turn card's duration does.
+        #expect(elapsed(12 * 60, Self.japanese) == "12分")
+        #expect(elapsed(3 * 3600, Self.japanese) == "3時間")
+        #expect(elapsed(2 * 86400, Self.japanese) == "2日")
+        #expect(elapsed(30, Self.japanese) == "今")
+        #expect(ChangesPanelText.compactDuration(12 * 60, locale: Self.japanese) == elapsed(12 * 60, Self.japanese))
     }
 
     @Test func aShell_hasNoBadgeWord_itsGlyphSaysIt() {
