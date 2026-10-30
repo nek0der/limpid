@@ -271,6 +271,12 @@ struct ChangesTurnRow: View {
                     timeSlot
                 }
                 TurnFactsLine(facts: ChangesPanelText.facts(row, locale: locale))
+                // What the agent tried and was refused, seen in passing: a
+                // card with none stays as it was. The tooltip has them all,
+                // with their reasons.
+                if let denied = ChangesPanelText.deniedLine(row.turn, locale: locale) {
+                    TurnDeniedLine(action: denied.action, more: denied.more)
+                }
                 // What the agent said as the turn ended, under what the turn
                 // did, so the prompt above and the reply here read as the
                 // turn's two ends. Two lines at most; the tooltip has more.

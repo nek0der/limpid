@@ -55,6 +55,9 @@
     ],
     "CwdChanged": [
       { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
+    ],
+    "PermissionDenied": [
+      { "hooks": [{ "type": "command", "command": "@@HOOK@@" }] }
     ]
   }
 }

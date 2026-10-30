@@ -13,9 +13,9 @@
 //! `awaited`).
 
 use limpid_agent_model::{
-    AgentEvent, BackgroundWork, CommandRun, EventId, HookContext, MAX_HOOK_INPUT_BYTES,
-    NormalizeError, ProviderId, RawHookInput, SessionSource, Titles, UsageLimit, parse_object,
-    transcript_path_for_events,
+    AgentEvent, BackgroundWork, CommandRun, DeniedAction, EventId, HookContext,
+    MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderId, RawHookInput, SessionSource, Titles,
+    UsageLimit, parse_object, transcript_path_for_events,
 };
 use serde_json::{Map, Value};
 
@@ -220,20 +220,47 @@ fn pre_tool_use(object: &Map<String, Value>) -> AgentEvent {
             detail: question.map(str::to_owned),
         };
     }
-    // Prefer the concrete argument over the bare tool name so a permission
-    // prompt that follows can show what needs approval.
-    let argument = tool_input
-        .and_then(|input| input.get("command").or_else(|| input.get("file_path")))
-        .and_then(Value::as_str);
-    let detail = match argument {
-        Some(argument) if !argument.is_empty() => format!("{tool}: {argument}"),
-        _ => tool.to_owned(),
-    };
     AgentEvent::ToolStarted {
         tool: tool.to_owned(),
-        detail: Some(detail),
+        detail: Some(tool_detail(tool, tool_input)),
         by_subagent: is_by_subagent(object),
     }
+}
+
+/// The tool and its concrete argument, preferred over the bare name so a
+/// permission prompt that follows can show what needs approval.
+fn tool_detail(tool: &str, tool_input: Option<&Value>) -> String {
+    match tool_argument(tool_input) {
+        Some(argument) => format!("{tool}: {argument}"),
+        None => tool.to_owned(),
+    }
+}
+
+/// The command a tool runs or the file it touches; `None` when the input
+/// names neither, or the one it names is empty.
+fn tool_argument(tool_input: Option<&Value>) -> Option<&str> {
+    tool_input
+        .and_then(|input| input.get("command").or_else(|| input.get("file_path")))
+        .and_then(Value::as_str)
+        .filter(|argument| !argument.is_empty())
+}
+
+/// The action Claude's auto mode refused: `PermissionDenied`, which names the
+/// tool, its input, and the classifier's reason. A subagent's refusal counts
+/// too, since it is work of the turn.
+pub(crate) fn denied_action(input: RawHookInput<'_>) -> Option<DeniedAction> {
+    let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES).ok()?;
+    if string(&object, "hook_event_name") != Some("PermissionDenied") {
+        return None;
+    }
+    let tool = string(&object, "tool_name")?;
+    // The argument alone when there is one: the person reads the command or
+    // the file, and the tool's name adds nothing to it.
+    let action = tool_argument(object.get("tool_input")).unwrap_or(tool);
+    Some(DeniedAction {
+        action: action.to_owned(),
+        reason: string(&object, "reason").unwrap_or_default().to_owned(),
+    })
 }
 
 /// Whether a tool hook is a subagent's. Recorded in 2.1.312: a subagent's
@@ -307,7 +334,10 @@ pub(crate) fn event_id(
 ) -> Result<Option<EventId>, NormalizeError> {
     let object = parse_object(input.bytes, MAX_HOOK_INPUT_BYTES)?;
     let hook = string(&object, "hook_event_name");
-    if let (Some(hook @ ("PreToolUse" | "PostToolUse" | "PostToolUseFailure")), Some(tool_use_id)) = (
+    if let (
+        Some(hook @ ("PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "PermissionDenied")),
+        Some(tool_use_id),
+    ) = (
         hook,
         string(&object, "tool_use_id").filter(|id| !id.is_empty()),
     ) {
@@ -741,6 +771,40 @@ mod tests {
                 [AgentEvent::Extension { .. }]
             ));
         }
+    }
+
+    #[test]
+    fn a_refusal_names_the_command_or_file_else_the_tool_and_only_its_own_event_does() {
+        let denied = |payload: &str| {
+            denied_action(RawHookInput {
+                bytes: payload.as_bytes(),
+                transcript: None,
+            })
+        };
+        assert_eq!(
+            denied(
+                r#"{"hook_event_name":"PermissionDenied","tool_name":"Bash","tool_input":{"command":"rm -rf x"},"reason":"Deletes files"}"#
+            ),
+            Some(DeniedAction {
+                action: "rm -rf x".to_owned(),
+                reason: "Deletes files".to_owned(),
+            })
+        );
+        assert_eq!(
+            denied(
+                r#"{"hook_event_name":"PermissionDenied","tool_name":"WebFetch","tool_input":{"url":"https://example.com"}}"#
+            ),
+            Some(DeniedAction {
+                action: "WebFetch".to_owned(),
+                reason: String::new(),
+            })
+        );
+        assert_eq!(
+            denied(
+                r#"{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"ls"}}"#
+            ),
+            None
+        );
     }
 
     #[test]

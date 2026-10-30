@@ -379,6 +379,8 @@ pub fn begin_record(start: TurnStart<'_>) -> TurnRecord {
         check_count: 0,
         failure_count: 0,
         are_checks_partial: false,
+        denied_actions: Vec::new(),
+        denied_count: 0,
         provider_turn_id: start.provider_turn_id,
         usage: None,
         extra: BTreeMap::new(),

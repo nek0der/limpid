@@ -22804,6 +22804,57 @@
           }
         }
       }
+    },
+    "Blocked: %@": {
+      "comment": "Changes panel, a turn's card: an action the agent's own check refused; argument: the command or file",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blocked: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "止められた操作：%@"
+          }
+        }
+      }
+    },
+    "%lld more blocked": {
+      "comment": "Changes panel, a turn's tooltip: refused actions the record no longer lists; argument: how many",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld more blocked"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほか %lld 件を止めました"
+          }
+        }
+      }
+    },
+    "and %lld more": {
+      "comment": "Changes panel, a turn's card: after the first action the agent's own check refused; argument: how many others",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "and %lld more"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほか %lld 件"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

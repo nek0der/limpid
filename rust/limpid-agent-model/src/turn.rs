@@ -219,6 +219,24 @@ impl CheckResult {
 /// How many check runs a turn keeps one by one; the count goes on past it.
 pub const MAX_CHECK_MARKS: usize = 16;
 
+/// How many refused actions a turn keeps one by one, the first ones; the
+/// count goes on past it.
+pub const MAX_DENIED_ACTIONS: usize = 8;
+
+/// An action the agent tried in a turn that the provider itself refused
+/// before running it and without asking the person: Claude's auto mode
+/// classifier, through its `PermissionDenied` hook. A refusal the person gave
+/// at a prompt is not one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeniedAction {
+    /// What the agent tried, as the adapter names it for a person to read:
+    /// the command or the file, else the tool.
+    pub action: String,
+    /// Why it was refused, in the provider's words.
+    pub reason: String,
+}
+
 /// One check run of a turn, kept in order so the person sees how the turn
 /// got to its last result: failed twice, then passed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -455,6 +473,13 @@ pub struct TurnSummary {
     /// (`TurnRecord::are_checks_partial`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub are_checks_partial: bool,
+    /// The actions the provider refused in the turn
+    /// (`TurnRecord::denied_actions`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub denied_actions: Vec<DeniedAction>,
+    /// How many it refused, those `denied_actions` does not hold included.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub denied_count: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<TurnUsage>,
     /// False for an end-only record nobody prompted: the hook saw no prompt
@@ -517,6 +542,8 @@ impl TurnSummary {
             check_count: record.check_count,
             failure_count: record.failure_count,
             are_checks_partial: record.are_checks_partial,
+            denied_actions: record.denied_actions.clone(),
+            denied_count: record.denied_count,
             usage: record.usage,
             has_prompt: record.has_prompt(),
             is_deletable: record.is_writable(),
@@ -645,6 +672,13 @@ pub struct TurnRecord {
     /// What the turn's requests used, read when it ended.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<TurnUsage>,
+    /// The first `MAX_DENIED_ACTIONS` actions the provider refused in the
+    /// turn, in order. Absent in a record from before they were kept.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub denied_actions: Vec<DeniedAction>,
+    /// How many actions it refused in all.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub denied_count: u32,
     /// The events already applied, so a retried hook is applied once.
     #[serde(default)]
     pub applied_events: Vec<String>,
@@ -773,6 +807,16 @@ impl TurnRecord {
         self.last_check = Some(check);
     }
 
+    /// Adds `denied` as an action the provider refused in the turn, keeping
+    /// the first `MAX_DENIED_ACTIONS`: the first says what the agent set out
+    /// to do, and what it retried after is much the same.
+    pub fn push_denied_action(&mut self, denied: DeniedAction) {
+        if self.denied_actions.len() < MAX_DENIED_ACTIONS {
+            self.denied_actions.push(denied);
+        }
+        self.denied_count = self.denied_count.saturating_add(1);
+    }
+
     /// Puts `checks`, every run of the turn in order, in place of what the
     /// record held: for a provider that reports them all at the turn's end.
     pub fn set_checks(&mut self, checks: Vec<CheckResult>) {
@@ -855,6 +899,8 @@ mod tests {
             check_count: 0,
             failure_count: 0,
             are_checks_partial: false,
+            denied_actions: Vec::new(),
+            denied_count: 0,
             provider_turn_id: None,
             usage: None,
             extra: BTreeMap::new(),
@@ -875,6 +921,20 @@ mod tests {
             size_bytes: size,
             mtime: "2026-10-12T00:00:00Z".into(),
         }
+    }
+
+    #[test]
+    fn a_turn_keeps_its_first_refused_actions_and_counts_them_all() {
+        let mut record = record();
+        for index in 0..MAX_DENIED_ACTIONS + 2 {
+            record.push_denied_action(DeniedAction {
+                action: format!("action {index}"),
+                reason: String::new(),
+            });
+        }
+        assert_eq!(record.denied_actions.len(), MAX_DENIED_ACTIONS);
+        assert_eq!(record.denied_actions[0].action, "action 0");
+        assert_eq!(record.denied_count as usize, MAX_DENIED_ACTIONS + 2);
     }
 
     #[test]

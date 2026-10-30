@@ -127,6 +127,9 @@ as they are fixed or confirmed.
   are not counted. Nor are those of a subagent that only the start of a
   very long turn named, when Limpid reads only the end of that turn's
   rollout.
+- **A turn's card lists only what Claude Code's auto mode refused.** Claude
+  Code reports no refusal from `dontAsk` mode, and Codex has no such hook, so
+  those leave no line on the card.
 - **A Claude subagent named again in a later turn is counted again**:
   Limpid reads the subagent's whole transcript at each turn that names it.
 - **A turn record written by an older Limpid and a newer one in turn** can

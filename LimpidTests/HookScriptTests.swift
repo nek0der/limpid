@@ -624,7 +624,8 @@ private extension HookAgent {
     /// The events the agent is told to call the hook on that end in a
     /// lifecycle state. Claude's come from `settings.template.json`, which the
     /// shim hands to `claude --settings`; `CwdChanged` writes a cwd event
-    /// instead, and the approval and subagent hooks go elsewhere.
+    /// instead, `PermissionDenied` only the turn's record, and the approval
+    /// and subagent hooks go elsewhere.
     func lifecycleSubscriptions() throws -> [String] {
         switch self {
         case .claude:
@@ -636,7 +637,9 @@ private extension HookAgent {
                 .replacingOccurrences(of: "@@APPROVAL_HELPER@@", with: "/approval-helper")
             let json = try JSONSerialization.jsonObject(with: Data(filled.utf8))
             let hooks = try #require((json as? [String: Any])?["hooks"] as? [String: Any])
-            return hooks.keys.sorted().filter { !["CwdChanged", "PermissionRequest", "SubagentStop"].contains($0) }
+            return hooks.keys.sorted().filter {
+                !["CwdChanged", "PermissionDenied", "PermissionRequest", "SubagentStop"].contains($0)
+            }
         case .codex:
             return CodexHookInjection.subscribedEvents.map(\.jsonKey)
         }

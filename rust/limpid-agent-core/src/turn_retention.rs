@@ -313,6 +313,8 @@ mod tests {
             check_count: 0,
             failure_count: 0,
             are_checks_partial: false,
+            denied_actions: Vec::new(),
+            denied_count: 0,
             usage: None,
             has_prompt: true,
             is_deletable: true,

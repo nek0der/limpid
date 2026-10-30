@@ -44,10 +44,10 @@ use limpid_agent_core::{
     TurnStep, apply, classify_check, event_id_for, idle_outcome, sanitize_text, turn_step,
 };
 use limpid_agent_model::{
-    AgentEvent, Capability, CheckResult, EventId, HookContext, InstallRecipe, ProviderAdapter,
-    ProviderDescriptor, ProviderId, RawHookInput, RunRecord, SnapshotStatus, Titles, TmuxEndpoint,
-    TurnReading, TurnUsage, cwd_event_file_name, parse_utc_seconds, run_record_file_name,
-    session_hint_file_name,
+    AgentEvent, Capability, CheckResult, DeniedAction, EventId, HookContext, InstallRecipe,
+    ProviderAdapter, ProviderDescriptor, ProviderId, RawHookInput, RunRecord, SnapshotStatus,
+    Titles, TmuxEndpoint, TurnReading, TurnUsage, cwd_event_file_name, parse_utc_seconds,
+    run_record_file_name, session_hint_file_name,
 };
 use limpid_provider_claude::ClaudeAdapter;
 use limpid_provider_codex::CodexAdapter;
@@ -260,7 +260,57 @@ pub fn run_hook(provider: &str, stdin: &[u8], runtime: &HookRuntime<'_>) -> Hook
             &log,
         );
     }
+    if let Some(denied) = adapter.denied_action(input) {
+        write_denial(
+            &denied,
+            call_id.as_ref(),
+            &directories,
+            &apply_context,
+            adapter.descriptor(),
+            runtime,
+            &log,
+        );
+    }
     HookOutcome::Applied
+}
+
+/// Records an action the provider refused on the run's current turn.
+fn write_denial(
+    denied: &DeniedAction,
+    call_id: Option<&EventId>,
+    directories: &ResolvedDirectories,
+    apply_context: &ApplyContext,
+    descriptor: &ProviderDescriptor,
+    runtime: &HookRuntime<'_>,
+    log: &HookLog,
+) {
+    if !descriptor.has(Capability::TurnSnapshot) {
+        return;
+    }
+    let record_path = directories
+        .state
+        .join(run_record_file_name(&apply_context.run_id));
+    let turns = turn::Turns {
+        directory: directories.state.join(TURNS_DIRECTORY),
+        descriptor,
+        run_id: &apply_context.run_id,
+        pane_id: &apply_context.pane_id,
+        now: &runtime.now,
+        log,
+        transcript: None,
+    };
+    // Kept to the record's text contract: a heredoc can make a command
+    // kilobytes long, and the record is shown as text.
+    let denied = DeniedAction {
+        action: sanitize_text(&denied.action),
+        reason: sanitize_text(&denied.reason),
+    };
+    let written = with_record_lock(&record_path, || {
+        turns.record_denial(records::read_record(&record_path).as_ref(), call_id, denied);
+    });
+    if written.is_none() {
+        log.line(&format!("record lock busy for {}", record_path.display()));
+    }
 }
 
 /// Records a shell command the agent ran as its turn's last check, when the

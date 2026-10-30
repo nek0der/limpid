@@ -418,6 +418,9 @@ The files live in the provider's state directory, under `turns/`:
   an `exitCode` and `isFiltered`), how many it ran in all (`checkCount`)
   and how many of those failed (`failureCount`),
   `areChecksPartial` when the turn may have run checks those leave out,
+  `deniedActions` (the first eight actions the provider refused in the turn
+  without asking the person, each an `action` and a `reason`) and
+  `deniedCount` (how many it refused in all),
   `providerTurnId`, `usage` (`inputTokens`,
   `cacheWriteTokens`, `cacheReadTokens`, `outputTokens`, and `isPartial`
   when part of the turn could not be read), and `appliedEvents`. Fields a version does not model are kept

@@ -198,6 +198,15 @@ Cases that could not be recorded as planned:
   The `SessionEnd` of an earlier attempt, recorded as `0000`, was dropped,
   and `.claude-work` in the transcript paths, the developer's own
   configuration directory, became `.claude`.
+- `claude/2026-10/permission-denied` is written by hand around a real session
+  of Claude Code 2.1.314. Its auto mode let through each risky command it was
+  asked for by name, so no refusal could be recorded without tricking the
+  agent into one it was not asked for, and `dontAsk` mode refuses with no
+  such hook. `0002-PermissionDenied.json` is the
+  session's `PreToolUse` with the event's name, a command, and a placeholder
+  `reason`: the fields Claude Code's own schema names for the hook
+  (`tool_name`, `tool_input`, `tool_use_id`, `reason`). The file numbers are
+  the case's own.
 - `transcripts/claude-2.1.309-question-declined.jsonl` is the tail of a real
   Claude Code 2.1.309 transcript: an `AskUserQuestion` call, then the Esc
   that declined it (the rejected `tool_result`, a `prompt_snapshot`

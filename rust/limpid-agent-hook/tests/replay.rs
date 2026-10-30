@@ -5,9 +5,9 @@ use limpid_agent_hook::{
     HookEnv, HookOutcome, HookRuntime, NoSnapshots, TURNS_DIRECTORY, run_hook,
 };
 use limpid_agent_model::{
-    ChangeSummary, LOCK_FILE_SUFFIX, PromptKind, RecordedPromptKind, RunRecord, RunState,
-    SnapshotStatus, TurnPhase, TurnRecord, TurnUsage, cwd_event_file_name, run_record_file_name,
-    session_hint_file_name,
+    ChangeSummary, DeniedAction, LOCK_FILE_SUFFIX, PromptKind, RecordedPromptKind, RunRecord,
+    RunState, SnapshotStatus, TurnPhase, TurnRecord, TurnUsage, cwd_event_file_name,
+    run_record_file_name, session_hint_file_name,
 };
 use serde_json::Value;
 use std::fs;
@@ -202,6 +202,56 @@ fn replay(scratch: &Scratch, provider: &str, payloads: &[Vec<u8>]) -> Vec<HookOu
             run_hook(provider, payload, &HookRuntime::new(&env, &NoSnapshots))
         })
         .collect()
+}
+
+/// A refusal lands on the turn under way, leaves the run working, and is
+/// applied once when its hook is retried; with no turn running it is no
+/// turn's.
+#[test]
+fn a_refused_action_lands_on_the_turn_under_way_once() {
+    let scratch = Scratch::new("claude-denied");
+    let denied = br#"{"hook_event_name":"PermissionDenied","tool_name":"Bash","tool_input":{"command":"git push --force"},"tool_use_id":"toolu_1","reason":"Rewrites history"}"#.to_vec();
+    replay(&scratch, "claude", std::slice::from_ref(&denied));
+    assert!(scratch.turns().is_empty());
+
+    replay(
+        &scratch,
+        "claude",
+        &[
+            br#"{"hook_event_name":"UserPromptSubmit","prompt":"ship it"}"#.to_vec(),
+            denied.clone(),
+            denied,
+        ],
+    );
+    assert_eq!(scratch.record().expect("record").state, RunState::Running);
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].denied_count, 1);
+    assert_eq!(
+        turns[0].denied_actions,
+        vec![DeniedAction {
+            action: "git push --force".to_owned(),
+            reason: "Rewrites history".to_owned(),
+        }]
+    );
+}
+
+/// The case's refusal, whose payload is written by hand around a real session
+/// (`rust/fixtures/README.md`), reaches the turn the session's prompt began.
+#[test]
+fn the_fixture_cases_refusal_stays_on_its_turn_through_the_stop() {
+    let scratch = Scratch::new("claude-denied-case");
+    let payloads = dated_fixture_case("claude", "2026-10", "permission-denied");
+    replay(&scratch, "claude", &payloads);
+    let turns = scratch.turns();
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].phase, TurnPhase::Finished);
+    assert_eq!(turns[0].denied_count, 1);
+    assert_eq!(
+        turns[0].denied_actions[0].action,
+        "git push --force origin main"
+    );
+    assert_eq!(scratch.record().expect("record").state, RunState::Finished);
 }
 
 #[test]

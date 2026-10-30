@@ -435,12 +435,52 @@ enum ChangesPanelText {
         if let times = times(row.turn, locale: locale, timeZone: timeZone) {
             lines.append(times)
         }
+        lines += deniedHelp(row.turn, locale: locale)
         // Last and set apart, as the card's own third line is: the rest of
         // a reply the card cut at two lines.
         if let reply = row.turn.reply {
             lines += ["", TurnReplyText.labeled(reply, locale: locale)]
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// "Blocked: git push --force origin main", then "and 1 more": the card's
+    /// line for the actions the provider refused in the turn, or nil when it
+    /// refused none. Apart, so the line can cut the action and keep the count.
+    static func deniedLine(_ turn: TurnSummary, locale: Locale) -> (action: String, more: String?)? {
+        guard let first = turn.deniedActions.first else { return nil }
+        let action = LocalizedStringResource(
+            "Blocked: \(first.action)",
+            comment: "Changes panel, a turn's card: an action the agent's own check refused; argument: the command or file"
+        ).resolved(in: locale)
+        let others = turn.deniedCount - 1
+        guard others > 0 else { return (action, nil) }
+        let more = LocalizedStringResource(
+            "and \(others) more",
+            comment: "Changes panel, a turn's card: after the first action the agent's own check refused; argument: how many others"
+        ).resolved(in: locale)
+        return (action, more)
+    }
+
+    /// The tooltip's lines for the refused actions, each with its reason,
+    /// set apart from what comes before. Empty when there were none.
+    static func deniedHelp(_ turn: TurnSummary, locale: Locale) -> [String] {
+        guard !turn.deniedActions.isEmpty else { return [] }
+        let lines = turn.deniedActions.map { denied in
+            let text = denied.reason.isEmpty ? denied.action : "\(denied.action) — \(denied.reason)"
+            return LocalizedStringResource(
+                "Blocked: \(text)",
+                comment: "Changes panel, a turn's card: an action the agent's own check refused; argument: the command or file"
+            ).resolved(in: locale)
+        }
+        let unlisted = turn.deniedCount - turn.deniedActions.count
+        let more = unlisted > 0
+            ? [LocalizedStringResource(
+                "\(unlisted) more blocked",
+                comment: "Changes panel, a turn's tooltip: refused actions the record no longer lists; argument: how many"
+            ).resolved(in: locale)]
+            : []
+        return [""] + lines + more
     }
 
     /// "Turn of Claude #4": whose turn a row is. "Of", never "by":
@@ -483,6 +523,7 @@ enum ChangesPanelText {
                 row.turn.usage.map { tokenTotal($0, isExact: false, locale: locale) } ?? "",
                 row.turn.durationSeconds.map { took($0, locale: locale) } ?? "",
                 time(row.turn, locale: locale, timeZone: timeZone) ?? "",
+                deniedLine(row.turn, locale: locale).map { [$0.action, $0.more].compactMap(\.self).joined(separator: " ") } ?? "",
                 row.turn.reply.map { TurnReplyText.labeled($0, locale: locale) } ?? ""
             ],
             locale: locale

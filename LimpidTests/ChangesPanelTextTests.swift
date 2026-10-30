@@ -274,6 +274,41 @@ struct ChangesPanelTextTests {
             .hasSuffix("12:00 AM, Reply: Added two tests.") == true)
     }
 
+    /// The card names the first refused action and counts the rest, and the
+    /// tooltip lists each with its reason. A turn with none adds nothing.
+    @Test func aRowsDeniedActions_showOnTheCardAndInTheTooltip() throws {
+        var extras = TurnSummaryFixture.Extras()
+        extras.deniedActions = """
+        [{"action":"git push --force origin main","reason":"Rewrites shared history"},{"action":"rm -rf dist","reason":""}]
+        """
+        extras.deniedCount = 3
+        let turn = try TurnSummaryFixture.turn("T4", number: 4, extras: extras)
+        let row = ChangesPanelModel.Row(turn: turn, status: .viewed, isViewed: true, isSelectable: true, action: .markUnviewedFrom)
+
+        let english = try #require(ChangesPanelText.deniedLine(turn, locale: Self.english))
+        #expect(english.action == "Blocked: git push --force origin main")
+        #expect(english.more == "and 2 more")
+        let japanese = try #require(ChangesPanelText.deniedLine(turn, locale: Self.japanese))
+        #expect(japanese.action == "止められた操作：git push --force origin main")
+        #expect(japanese.more == "ほか 2 件")
+        #expect(ChangesPanelFixture.plainSpaces(ChangesPanelText.rowSpoken(row, locale: Self.english))?
+            .contains("Blocked: git push --force origin main and 2 more") == true)
+        #expect(ChangesPanelText.help(row, locale: Self.english).hasSuffix(
+            "\n\nBlocked: git push --force origin main — Rewrites shared history\nBlocked: rm -rf dist\n1 more blocked"
+        ))
+
+        extras.deniedActions = #"[{"action":"rm -rf dist","reason":""}]"#
+        extras.deniedCount = 1
+        let single = try TurnSummaryFixture.turn("T5", extras: extras)
+        let lone = try #require(ChangesPanelText.deniedLine(single, locale: Self.english))
+        #expect(lone.action == "Blocked: rm -rf dist")
+        #expect(lone.more == nil)
+
+        let none = try TurnSummaryFixture.turn("T6")
+        #expect(ChangesPanelText.deniedLine(none, locale: Self.english) == nil)
+        #expect(ChangesPanelText.deniedHelp(none, locale: Self.english).isEmpty)
+    }
+
     @Test func theFoldAndTheMoves_sayWhatTheyDo() {
         let fold = ChangesPanelModel.Fold(count: 12)
 
