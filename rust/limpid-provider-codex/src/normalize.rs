@@ -50,6 +50,13 @@ const QUESTION_TOOL: &str = "request_user_input";
 /// (`Interrupt`'s recorded in `fixtures/codex/2026-10/interrupted-turn`).
 pub(crate) const TURN_END_EVENTS: [&str; 2] = ["Stop", "Interrupt"];
 
+/// The hooks whose `cwd` is the folder a tool runs in, which the model may
+/// set with `workdir`, rather than the session's (Codex 0.166, recorded in
+/// `fixtures/codex/2026-10/tool-workdir`, where the tool's folder is named
+/// `/tmp/example-workdir` because the scrub writes every temporary path as
+/// `/tmp/example`).
+pub(crate) const TOOL_FOLDER_EVENTS: [&str; 3] = ["PreToolUse", "PostToolUse", "PermissionRequest"];
+
 /// The hooks that run inside a turn and name it with their `turn_id`: its
 /// prompt, when the person gave one, and its tools, permission requests,
 /// and end. A turn Codex began itself (`unprompted`) is known by the first
@@ -248,7 +255,7 @@ pub(crate) fn transcript_path(input: RawHookInput<'_>) -> Result<Option<String>,
 }
 
 /// Whether the payload comes from Codex's own memory agent rather than the
-/// person's thread: its `cwd` is one of the descriptor's
+/// person's thread: the thread runs in one of the descriptor's
 /// `internal_agent_directories` under the provider's home
 /// (`ProviderDescriptor::is_internal_agent_directory`, which compares by
 /// components). A home the environment did not name, or named relative,
@@ -256,17 +263,32 @@ pub(crate) fn transcript_path(input: RawHookInput<'_>) -> Result<Option<String>,
 /// person's: the shim makes a relative `CODEX_HOME` absolute before Codex
 /// starts, so a hook Limpid installed never sees one.
 ///
+/// Where the thread runs is the directory Codex started the hook in. The
+/// payload's `cwd` says it only for the events that are not a tool's: since
+/// Codex 0.166 a tool's events name the folder the tool runs in, so a tool
+/// the person points into the memories directory would read as the memory
+/// agent's, and one the memory agent points elsewhere as the person's. The
+/// payload's `cwd` is the fallback where the runtime could not read the
+/// directory (and in the fixtures).
+///
 /// Codex canonicalizes a `CODEX_HOME` the environment sets and leaves the
-/// default `~/.codex` as written, so the `cwd` it reports may be the real
-/// path of a home the environment names through a symlink (or `/tmp` for
+/// default `~/.codex` as written, so the directory may be the real path of
+/// a home the environment names through a symlink (or `/tmp` for
 /// `/private/tmp`). Both sides are resolved the same way when they exist on
 /// disk, and compared as written when they do not (the fixtures' paths).
 fn is_internal_agent(object: &Map<String, Value>, context: &HookContext) -> bool {
-    let (Some(home), Some(cwd)) = (context.provider_home.as_deref(), string(object, "cwd")) else {
+    let Some(home) = context.provider_home.as_deref() else {
+        return false;
+    };
+    let Some(thread_directory) = context
+        .hook_directory
+        .as_deref()
+        .or_else(|| string(object, "cwd").map(Path::new))
+    else {
         return false;
     };
     crate::descriptor::descriptor()
-        .is_internal_agent_directory(&resolved(home), &resolved(Path::new(cwd)))
+        .is_internal_agent_directory(&resolved(home), &resolved(thread_directory))
 }
 
 /// Whether the payload comes from a subagent (Codex names it with
@@ -456,6 +478,49 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A tool's events name the folder the tool runs in (Codex 0.166, the
+    /// `tool-workdir` fixture), so the thread is told by the directory Codex
+    /// started the hook in: the person's tool pointed into the memories
+    /// directory stays the person's, and the memory agent's tool pointed
+    /// elsewhere stays the memory agent's.
+    #[test]
+    fn a_tools_own_folder_does_not_decide_whose_thread_it_is() {
+        let tool_in = |cwd: &str| {
+            format!(
+                r#"{{"hook_event_name":"PreToolUse","session_id":"s","turn_id":"t","transcript_path":null,"cwd":"{cwd}","tool_name":"Bash","tool_input":{{"command":"pwd"}},"tool_use_id":"exec-1"}}"#
+            )
+        };
+        let under = |hook_directory: &str, payload: &str| {
+            normalize(
+                RawHookInput {
+                    bytes: payload.as_bytes(),
+                    transcript: None,
+                },
+                &HookContext {
+                    provider_home: Some("/Users/example/.codex".into()),
+                    hook_directory: Some(hook_directory.into()),
+                    ..HookContext::fixture()
+                },
+            )
+            .expect("normalizes")
+        };
+        assert_eq!(
+            under(
+                "/Users/example/work",
+                &tool_in("/Users/example/.codex/memories")
+            )
+            .len(),
+            1
+        );
+        assert_eq!(
+            under(
+                "/Users/example/.codex/memories",
+                &tool_in("/Users/example/work")
+            ),
+            Vec::new()
+        );
     }
 
     /// Codex canonicalizes a set `CODEX_HOME`, so the `cwd` it reports is

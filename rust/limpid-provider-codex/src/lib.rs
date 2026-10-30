@@ -117,9 +117,19 @@ impl ProviderAdapter for CodexAdapter {
             .transcript
             .map(|rollout| unprompted::unprompted_prompt(rollout, marker))
             .unwrap_or_default();
+        // The turn runs in the session's folder. A tool's event names the
+        // tool's own folder instead (`normalize::TOOL_FOLDER_EVENTS`), so we
+        // take no folder from it, and the runtime begins the turn in the
+        // directory Codex runs the hook in, which is the session's.
         UnpromptedPrompt {
             cwd: parse_object(input.bytes, MAX_HOOK_INPUT_BYTES)
                 .ok()
+                .filter(|object| {
+                    !object
+                        .get("hook_event_name")
+                        .and_then(Value::as_str)
+                        .is_some_and(|event| normalize::TOOL_FOLDER_EVENTS.contains(&event))
+                })
                 .and_then(|object| object.get("cwd").and_then(Value::as_str).map(str::to_owned)),
             ..begun
         }
@@ -184,6 +194,30 @@ mod tests {
         RawHookInput {
             bytes: payload.as_bytes(),
             transcript: None,
+        }
+    }
+
+    /// A turn Codex began itself is snapshotted in the session's folder: a
+    /// tool's event that comes first names the tool's folder (the
+    /// `tool-workdir` fixture), so we take no folder from it, and the
+    /// runtime uses the hook's own directory instead.
+    #[test]
+    fn an_unprompted_turn_runs_where_its_session_does_not_where_its_first_tool_does() {
+        let cwd = |event: &str| {
+            CodexAdapter
+                .unprompted_prompt(
+                    input(&format!(
+                        r#"{{"hook_event_name":"{event}","turn_id":"t1","cwd":"/work/other"}}"#
+                    )),
+                    "t1",
+                )
+                .cwd
+        };
+        for event in normalize::TOOL_FOLDER_EVENTS {
+            assert_eq!(cwd(event), None, "{event}");
+        }
+        for event in ["UserPromptSubmit", "Stop", "Interrupt"] {
+            assert_eq!(cwd(event).as_deref(), Some("/work/other"), "{event}");
         }
     }
 

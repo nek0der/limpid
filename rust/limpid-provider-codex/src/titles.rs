@@ -126,6 +126,7 @@ mod tests {
             pid: None,
             invocation_id: None,
             provider_home: Some(Path::new("/Users/example/.codex").to_path_buf()),
+            hook_directory: None,
         };
         let path = |event: &str| {
             title_index_path(

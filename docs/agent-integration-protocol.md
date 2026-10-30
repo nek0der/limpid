@@ -355,14 +355,17 @@ is in no turn and names a turn other than the run's last one (`turn_marker`).
 It applies a `PromptSubmitted` before the call's own events, under an id of
 its own (`<call>#turn`), so the begin snapshot is taken before the call's
 tool runs; a turn first seen at its `Stop` or `Interrupt` takes none and
-shows its begin missing. Of two hooks of one turn that run at once, the first
-to take the record lock begins the turn. The rollout says what began the turn
-(`unprompted_prompt`): its `task_started` names the trigger, and for a goal,
-the `thread_goal_updated` before it holds the objective, which becomes the
-turn's prompt with `promptKind` `goal`. A call of the run's last turn after
-that turn's `Stop` is that turn's late work and begins nothing, and a
-subagent's tool, which names the subagent's turn (`agent_id`), begins nothing
-either.
+shows its begin missing. The snapshot is taken in the session's folder: a
+tool's call names the folder the tool runs in as its `cwd` (Codex 0.166), so
+the turn takes no folder from it, and the runtime begins the turn in the
+directory the hook runs in, which is the session's. Of two hooks of one turn
+that run at once, the first to take the record lock begins the turn. The
+rollout says what began the turn (`unprompted_prompt`): its `task_started`
+names the trigger, and for a goal, the `thread_goal_updated` before it holds
+the objective, which becomes the turn's prompt with `promptKind` `goal`. A
+call of the run's last turn after that turn's `Stop` is that turn's late work
+and begins nothing, and a subagent's tool, which names the subagent's turn
+(`agent_id`), begins nothing either.
 
 Not every hook call comes from the pane's agent. Codex's memory feature runs a
 "Memory Writing Agent" thread in the same process after a session starts.
@@ -373,11 +376,18 @@ reaches no user hook. The Codex adapter recognizes the thread as follows:
 - Codex's descriptor names the directories under its home where such an
   agent of its own works (`internalAgentDirectories`: `memories` and
   `memories_v2`, one per memory format). The adapter recognizes the thread by
-  its `cwd` lying there, under the home the agent's environment names
-  (`CODEX_HOME`, or `~/.codex`). It yields no event for the thread, so the
-  thread neither begins a turn, names the tab, nor replaces the resume hint
-  (`rust/fixtures/codex/2026-10/memory-agent`).
-- The home and the `cwd` are both compared with their symlinks resolved,
+  the directory Codex runs the hook in lying there, under the home the agent's
+  environment names (`CODEX_HOME`, or `~/.codex`). Codex starts each hook it
+  runs on this Mac in the thread's own folder, and the Hook Helper's call into
+  the bridge reads it from its process (`HookContext::hook_directory`). The
+  payload's `cwd` does not always say it: since Codex 0.166 a tool's
+  `PreToolUse`, `PostToolUse`, and `PermissionRequest` name the folder the
+  tool runs in, which the model may set with `workdir`
+  (`rust/fixtures/codex/2026-10/tool-workdir`). The payload's `cwd` is read
+  only where the directory is missing. The adapter yields no event for the
+  thread, so the thread neither begins a turn, names the tab, nor replaces the
+  resume hint (`rust/fixtures/codex/2026-10/memory-agent`).
+- The home and the directory are both compared with their symlinks resolved,
   because Codex canonicalizes a `CODEX_HOME` the environment sets.
 - Codex resolves a relative `CODEX_HOME` against the directory it starts in,
   which a hook running in the session's `cwd` cannot know. The `codex` shim

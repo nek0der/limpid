@@ -171,6 +171,11 @@ Cases that could not be recorded as planned:
   - Of the memory agent's ten tool calls, only the first pair (0007, 0008)
     is kept. The other nine pairs (0009 to 0026) were dropped, and the
     remaining files keep the recorder's sequence numbers.
+- `codex/2026-10/tool-workdir` records a Codex CLI 0.166.0 turn whose `pwd`
+  ran with `workdir` set to a folder other than the session's. The scrubber
+  reduced both folders to `/tmp/example`, so the tool's folder in the
+  `PreToolUse` and `PostToolUse` payloads (their `cwd`, and the
+  `tool_response` that prints it) was renamed `/tmp/example-workdir` by hand.
 - `codex/2026-10/request-user-input-*` record Codex CLI 0.164.0's two
   question tools. `answered` and `interrupted` ran in Plan mode, where Codex
   asks with `request_user_input` and waits; `async` ran in the default mode,

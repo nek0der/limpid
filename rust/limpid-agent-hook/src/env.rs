@@ -15,6 +15,11 @@ pub const PANE_ID_VARIABLE: &str = "LIMPID_PANE_ID";
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HookEnv {
     variables: BTreeMap<String, String>,
+    /// The directory the provider started the hook in
+    /// (`HookContext::hook_directory`). `None` for an environment built from
+    /// pairs until `in_directory` names one, and where the process could not
+    /// read its own.
+    directory: Option<PathBuf>,
 }
 
 /// Where this provider's records go, resolved from the environment.
@@ -41,6 +46,7 @@ impl HookEnv {
     pub fn from_process() -> Self {
         Self {
             variables: std::env::vars().collect(),
+            directory: std::env::current_dir().ok(),
         }
     }
 
@@ -57,7 +63,23 @@ impl HookEnv {
                 .into_iter()
                 .map(|(key, value)| (key.into(), value.into()))
                 .collect(),
+            directory: None,
         }
+    }
+
+    /// The same environment, started in `directory`.
+    #[must_use]
+    pub fn in_directory(self, directory: impl Into<PathBuf>) -> Self {
+        Self {
+            directory: Some(directory.into()),
+            ..self
+        }
+    }
+
+    /// The directory the provider started the hook in.
+    #[must_use]
+    pub fn directory(&self) -> Option<&Path> {
+        self.directory.as_deref()
     }
 
     /// One variable, when set and non-empty.

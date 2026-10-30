@@ -1,0 +1,9 @@
+{
+  "cwd": "/tmp/example",
+  "hook_event_name": "SessionStart",
+  "model": "gpt-6.1-terra",
+  "permission_mode": "bypassPermissions",
+  "session_id": "00000000-0000-4000-8000-000000000001",
+  "source": "startup",
+  "transcript_path": "/Users/example/.codex/sessions/2026/10/30/rollout-2026-10-30T15-17-48-00000000-0000-4000-8000-0000000000ff.jsonl"
+}
