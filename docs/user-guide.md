@@ -163,6 +163,10 @@ timeline, with the unviewed count and range and a **Conversation** filter.
   number ("#2") when the conversation's name carries one.
 - An unviewed turn's number ("T7") stands in a blue pill; a viewed turn's
   number is gray. The card open in the review is ringed in blue.
+- The viewed turns at the top of the list fold into one line, **Show 12
+  earlier viewed turns** (in each section, by conversation). Click it and
+  the cards come back in its place; they fold again when you switch
+  worktrees, change the grouping, or reopen the panel.
 - A card's moves stand where its time is: **Mark as Viewed up to Here**
   (**Mark as Unviewed from Here** on a viewed turn) and **Restore Code to
   Before This Turn…**. They show on the last card that has them (in each

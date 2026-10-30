@@ -502,19 +502,13 @@ enum ChangesPanelText {
         )
     }
 
-    /// "Show 12 viewed turns": the fold's line over the viewed rows at the
-    /// top of the list, and "Hide viewed turns" once they are shown.
-    static func fold(_ fold: ChangesPanelModel.Fold, isUnfolded: Bool, locale: Locale) -> String {
-        if isUnfolded {
-            return LocalizedStringResource(
-                "Hide viewed turns",
-                comment: "Changes panel: folds the viewed turns at the top of the list again"
-            )
-            .resolved(in: locale)
-        }
-        return LocalizedStringResource(
-            "Show \(fold.count) viewed turns",
-            comment: "Changes panel: the viewed turns at the top of the list, folded; argument: how many"
+    /// "Show 12 earlier viewed turns": the fold's line over the viewed rows
+    /// at the top of the list. Once they are shown the line is gone, so it
+    /// has no other words.
+    static func fold(_ fold: ChangesPanelModel.Fold, locale: Locale) -> String {
+        LocalizedStringResource(
+            "Show \(fold.count) earlier viewed turns",
+            comment: "Changes panel: the viewed turns at the top of the list, folded above this line; argument: how many"
         ).resolved(in: locale)
     }
 

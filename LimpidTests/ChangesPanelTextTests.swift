@@ -277,11 +277,9 @@ struct ChangesPanelTextTests {
     @Test func theFoldAndTheMoves_sayWhatTheyDo() {
         let fold = ChangesPanelModel.Fold(count: 12)
 
-        #expect(ChangesPanelText.fold(fold, isUnfolded: false, locale: Self.english) == "Show 12 viewed turns")
-        #expect(ChangesPanelText.fold(ChangesPanelModel.Fold(count: 1), isUnfolded: false, locale: Self.english) == "Show 1 viewed turn")
-        #expect(ChangesPanelText.fold(fold, isUnfolded: false, locale: Self.japanese) == "確認済み 12 ターンを表示")
-        #expect(ChangesPanelText.fold(fold, isUnfolded: true, locale: Self.english) == "Hide viewed turns")
-        #expect(ChangesPanelText.fold(fold, isUnfolded: true, locale: Self.japanese) == "確認済みのターンを非表示にする")
+        #expect(ChangesPanelText.fold(fold, locale: Self.english) == "Show 12 earlier viewed turns")
+        #expect(ChangesPanelText.fold(ChangesPanelModel.Fold(count: 1), locale: Self.english) == "Show 1 earlier viewed turn")
+        #expect(ChangesPanelText.fold(fold, locale: Self.japanese) == "前の確認済み 12 ターンを表示")
         #expect(ChangesPanelText.moveAcrossHelp(.markViewedThrough, locale: Self.japanese) == "ほかの会話の、このターンまでに終了したターンも確認済みにします")
         #expect(ChangesPanelText.moveAcrossHelp(.markViewedThrough, locale: Self.english)
             == "Also marks the other conversations’ turns that ended by the time this one did as viewed")
