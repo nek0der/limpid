@@ -35,11 +35,11 @@ struct PaneRunLedger: Equatable, Sendable {
         /// until the conversation is back in a new run. So a stopped
         /// run going away says nothing, while its next turn still does.
         ///
-        /// The limit of this: when the stopped agent did exit and no new
-        /// run comes, a line set before the stop is already gone (the stop
-        /// ended it), but one set while stopped (a restore's, say) stays
-        /// until the person moves on. We cannot tell that exit from the
-        /// record of a stop cleaned up after its resume.
+        /// What we cannot tell here, the stop ledger tells: a new run of
+        /// another conversation in the pane ends the stop as the person
+        /// moving on (`StopLedger.hasMovedOn`), and `note` takes those
+        /// panes as moved on too. A line set while stopped (a restore's,
+        /// say) ends then, not at the new conversation's first turn.
         var isStopped: Bool
     }
 
@@ -54,10 +54,13 @@ struct PaneRunLedger: Equatable, Sendable {
     /// stopped, is no longer listed, or now shows in other panes only). A
     /// run arriving in a pane is not listed: nothing said there was about
     /// it. Nor is a stopped run going away: the stop's conversation may be
-    /// back in a new run, under a line that says so.
-    mutating func note(_ runs: [Run]) -> Set<UUID> {
+    /// back in a new run, under a line that says so. `movedOnFromStops`
+    /// are the panes whose stop ended as the person moved on to another
+    /// conversation there (`StopLedger.Ended.movedOn`), which a run
+    /// arriving alone does not say.
+    mutating func note(_ runs: [Run], movedOnFromStops: Set<UUID> = []) -> Set<UUID> {
         var next: [String: Place] = [:]
-        var movedOn = Set<UUID>()
+        var movedOn = movedOnFromStops
         // An unknown state is a session that ended (`SessionEnd`), as the
         // pane header reads it: the run is gone.
         for run in runs where run.state != .unknown {

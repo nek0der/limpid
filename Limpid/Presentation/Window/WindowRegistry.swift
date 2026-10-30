@@ -963,8 +963,9 @@ final class WindowRegistry {
     }
 
     /// Notes this pass's runs, ends the "Done" lines of the panes the runs
-    /// moved on in (`PaneRunLedger.note`), then gives each stop that came
-    /// back in this pass its "Resumed" line. The lines end first because the
+    /// moved on in (`PaneRunLedger.note`, with the panes whose stop ended
+    /// as the person moved on there), then gives each stop that came back
+    /// in this pass its "Resumed" line. The lines end first because the
     /// resumed conversation's new run is itself a change in its pane, and
     /// would otherwise end the line that announces it. Kept once for every
     /// window, as the runs are the app's, so a window opened later is
@@ -975,9 +976,9 @@ final class WindowRegistry {
     /// the bar takes it (`DecisionBarContent.takes`). It is not set for a
     /// run that already began a turn, which the line's "Type your next
     /// instruction" would be late for.
-    func noteRuns(_ runs: [PaneRunLedger.Run], resumed: [StopLedger.Resumed] = []) {
-        runsChanged(inPanes: paneRuns.note(runs))
-        for back in resumed where !back.hasBegunATurn {
+    func noteRuns(_ runs: [PaneRunLedger.Run], endedStops: StopLedger.Ended = StopLedger.Ended()) {
+        runsChanged(inPanes: paneRuns.note(runs, movedOnFromStops: endedStops.movedOn))
+        for back in endedStops.resumed where !back.hasBegunATurn {
             guard let shown = back.window.flatMap({ self.window($0) }) else { continue }
             shown.pendingDecisionBarDone[back.paneID] = .resumed
         }

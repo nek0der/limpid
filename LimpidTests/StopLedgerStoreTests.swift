@@ -316,7 +316,7 @@ struct StopLedgerStoreTests: StopLedgerFixture {
         let id = StopLedger.itemID(of: Self.run("a", .error))
         let window = WindowID()
         store.markResuming(id, window: window, now: Self.start.addingTimeInterval(10))
-        let resumed = store.update(runtimes: [Self.run("d", .idle, at: 30)], paneExists: Self.always)
+        let resumed = store.update(runtimes: [Self.run("d", .idle, at: 30)], paneExists: Self.always).resumed
         #expect(resumed == [.init(paneID: Self.pane, window: window)])
         #expect(store.ledger.records.isEmpty)
         #expect(!store.hasResumeClock)

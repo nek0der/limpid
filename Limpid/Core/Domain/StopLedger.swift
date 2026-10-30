@@ -8,7 +8,8 @@ import Foundation
 /// would hide the one item the person has to deal with. A stop stays until
 /// a run of the same conversation is active again (the person typed on in
 /// the TUI, or resumed it), the person starts a new conversation in its
-/// pane instead (`dismiss`), or its pane is closed. Not the passing of time.
+/// pane instead (pressed: `dismiss`; typed: `hasMovedOn`), or its pane is
+/// closed. Not the passing of time.
 ///
 /// Kept across launches by `StopLedgerStore`: a stop that exists at quit
 /// exists after the relaunch, since the run that died was retired with its
@@ -59,6 +60,18 @@ struct StopLedger: Equatable, Sendable {
         var hasBegunATurn = false
     }
 
+    /// What the stops that ended in one `update` say of their panes.
+    struct Ended: Equatable, Sendable {
+        /// The stops a resume brought back.
+        var resumed: [Resumed] = []
+        /// The panes whose stop ended as the person moved on to another
+        /// conversation there (`hasMovedOn`): what was said in them while
+        /// stopped is past. Only the stop can tell this from its
+        /// conversation coming back in a new run, which `PaneRunLedger`
+        /// sees as the same arrival.
+        var movedOn: Set<UUID> = []
+    }
+
     /// The resume Limpid typed into a restored pane at launch: its
     /// session, and when it was typed. Not a stop while it is on its way,
     /// since every relaunch would otherwise list one per pane; it becomes
@@ -100,14 +113,15 @@ struct StopLedger: Equatable, Sendable {
     }
 
     /// Takes in what the runtimes say now: a run in error is a stop; a
-    /// stop whose conversation is active again, or whose pane is gone, ends.
+    /// stop whose conversation is active again, whose pane moved on to
+    /// another conversation (`hasMovedOn`), or whose pane is gone, ends.
     /// `cwd` is the folder a run's conversation was in, when known. Returns
-    /// the stops a resume brought back.
+    /// what the stops that ended say of their panes.
     mutating func update(
         runtimes: [RuntimeFact],
         paneExists: (UUID) -> Bool,
         cwd: (RuntimeFact) -> String? = { _ in nil }
-    ) -> [Resumed] {
+    ) -> Ended {
         let inError = Set(runtimes.filter { $0.state == .error }.map(Self.itemID(of:)))
         dismissed.formIntersection(inError)
         for runtime in runtimes where runtime.state == .error {
@@ -155,7 +169,17 @@ struct StopLedger: Equatable, Sendable {
                 launchResumes[paneID] = nil
             }
         }
-        var resumed: [Resumed] = []
+        return endStops(runtimes: runtimes, inError: inError, paneExists: paneExists)
+    }
+
+    /// Ends the stops whose pane is gone, whose conversation is back, or
+    /// whose pane moved on (`update`).
+    private mutating func endStops(
+        runtimes: [RuntimeFact],
+        inError: Set<AttentionItemID>,
+        paneExists: (UUID) -> Bool
+    ) -> Ended {
+        var ended = Ended()
         for (itemID, record) in records {
             if !paneExists(record.paneID) {
                 records[itemID] = nil
@@ -167,7 +191,7 @@ struct StopLedger: Equatable, Sendable {
                     let hasBegunATurn = back.runtimeID == record.runtimeID
                         ? back.currentTurnID != record.turnID
                         : back.currentTurnID != nil
-                    resumed.append(Resumed(paneID: record.paneID, window: window, hasBegunATurn: hasBegunATurn))
+                    ended.resumed.append(Resumed(paneID: record.paneID, window: window, hasBegunATurn: hasBegunATurn))
                 }
                 records[itemID] = nil
                 // The old run may stay in its error; the list would make
@@ -175,9 +199,30 @@ struct StopLedger: Equatable, Sendable {
                 if inError.contains(itemID) {
                     dismissed.insert(itemID)
                 }
+            } else if !inError.contains(itemID), runtimes.contains(where: { Self.hasMovedOn(record, to: $0) }) {
+                records[itemID] = nil
+                ended.movedOn.insert(record.paneID)
             }
         }
-        return resumed
+        return ended
+    }
+
+    /// Whether `runtime` is the person moving on in the stop's pane: a run
+    /// of another conversation, active there after the stop, while nothing
+    /// in that pane is left of the stopped run (it exited, or a resume
+    /// typed at launch never brought it back). Starting the agent again by
+    /// hand is "Start New Conversation" typed rather than pressed, and the
+    /// bar would otherwise call the pane stopped over a working agent.
+    ///
+    /// A stopped run still in its error keeps its stop beside the new one:
+    /// two runs in one pane are two tmux sessions, and the stopped one is
+    /// still there to type on (`StopLedgerTests`).
+    static func hasMovedOn(_ record: Record, to runtime: RuntimeFact) -> Bool {
+        guard runtime.paneIDs.contains(record.paneID), runtime.updatedAt > record.stoppedAt else { return false }
+        switch runtime.state {
+        case .error, .unknown: return false
+        case .idle, .running, .compacting, .needsInput, .finished: return true
+        }
     }
 
     /// The stops whose run no longer says so (it exited, or its record was

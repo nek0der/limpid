@@ -73,7 +73,7 @@ struct StopLedgerTests: StopLedgerFixture {
         var ledger = StopLedger()
         _ = ledger.update(runtimes: [Self.run("a", .error)], paneExists: Self.always)
         // Typed on in the TUI, in the same second.
-        let resumed = ledger.update(runtimes: [Self.run("a", .running, episode: "2")], paneExists: Self.always)
+        let resumed = ledger.update(runtimes: [Self.run("a", .running, episode: "2")], paneExists: Self.always).resumed
         #expect(ledger.records.isEmpty)
         #expect(resumed.isEmpty)
     }
@@ -85,13 +85,17 @@ struct StopLedgerTests: StopLedgerFixture {
         let id = StopLedger.itemID(of: Self.run("a", .error))
         ledger.markResuming(id, at: Self.start.addingTimeInterval(10), window: window)
 
-        // A run of another conversation, or one from before the stop, is not it.
+        // A run of another conversation (in another pane: in this one it
+        // is the person moving on), or one from before the stop, is not it.
         let other = ConversationKey(provider: .claude, conversationID: "c2", isFallback: false)
-        _ = ledger.update(runtimes: [Self.run("b", .idle, at: 20, conversation: other, sessionID: "x")], paneExists: Self.always)
+        _ = ledger.update(
+            runtimes: [Self.run("b", .idle, at: 20, pane: UUID(), conversation: other, sessionID: "x")],
+            paneExists: Self.always
+        )
         _ = ledger.update(runtimes: [Self.run("c", .idle, at: -5)], paneExists: Self.always)
         #expect(ledger.record(id) != nil)
 
-        let resumed = ledger.update(runtimes: [Self.run("d", .idle, at: 30)], paneExists: Self.always)
+        let resumed = ledger.update(runtimes: [Self.run("d", .idle, at: 30)], paneExists: Self.always).resumed
         #expect(ledger.record(id) == nil)
         #expect(resumed == [.init(paneID: Self.pane, window: window)])
     }
@@ -102,15 +106,68 @@ struct StopLedgerTests: StopLedgerFixture {
         _ = ledger.update(runtimes: [Self.run("a", .error, turn: "t1")], paneExists: Self.always)
         ledger.markResuming(StopLedger.itemID(of: Self.run("a", .error)), at: Self.start.addingTimeInterval(10), window: window)
         // The new run was seen only once the person had typed on.
-        let resumed = ledger.update(runtimes: [Self.run("d", .running, at: 30, turn: "n1")], paneExists: Self.always)
+        let resumed = ledger.update(runtimes: [Self.run("d", .running, at: 30, turn: "n1")], paneExists: Self.always).resumed
         #expect(resumed == [.init(paneID: Self.pane, window: window, hasBegunATurn: true)])
 
         // The stopped run itself back, still on the turn it stopped in, has not.
         var same = StopLedger()
         _ = same.update(runtimes: [Self.run("a", .error, turn: "t1")], paneExists: Self.always)
         same.markResuming(StopLedger.itemID(of: Self.run("a", .error)), at: Self.start.addingTimeInterval(10), window: window)
-        let back = same.update(runtimes: [Self.run("a", .idle, at: 30, episode: "2", turn: "t1")], paneExists: Self.always)
+        let back = same.update(runtimes: [Self.run("a", .idle, at: 30, episode: "2", turn: "t1")], paneExists: Self.always).resumed
         #expect(back == [.init(paneID: Self.pane, window: window)])
+    }
+
+    /// The agent started again by hand in the stop's pane, on a new
+    /// conversation, is the person moving on: the bar must not call the
+    /// pane stopped over a working agent. Only a run active after the
+    /// stop, in that pane, does so; the stop says nothing came back.
+    @Test func aNewConversationStartedByHandInThePane_endsTheStop() {
+        let other = ConversationKey(provider: .claude, conversationID: "c2", isFallback: false)
+        let window = WindowID()
+        var ledger = StopLedger()
+        _ = ledger.update(runtimes: [Self.run("a", .error)], paneExists: Self.always)
+        let id = StopLedger.itemID(of: Self.run("a", .error))
+        ledger.markResuming(id, at: Self.start.addingTimeInterval(10), window: window)
+        // The agent exited; a run from before the stop, one that ended, one
+        // in error, or one in another pane is not the person moving on.
+        for run in [
+            Self.run("b", .idle, at: -5, conversation: other, sessionID: "x"),
+            Self.run("b", .unknown, at: 20, conversation: other, sessionID: "x"),
+            Self.run("b", .error, at: 20, conversation: other, sessionID: "x"),
+            Self.run("b", .idle, at: 20, pane: UUID(), conversation: other, sessionID: "x")
+        ] {
+            var kept = ledger
+            _ = kept.update(runtimes: [run], paneExists: Self.always)
+            #expect(kept.record(id) != nil)
+        }
+
+        // Another provider's agent moves on as well.
+        var codex = ledger
+        _ = codex.update(
+            runtimes: [RuntimeFact.test("c", .idle, provider: .codex, pane: Self.pane, updatedAt: Self.start.addingTimeInterval(20))],
+            paneExists: Self.always
+        )
+        #expect(codex.record(id) == nil)
+
+        let ended = ledger.update(runtimes: [Self.run("b", .idle, at: 20, conversation: other, sessionID: "x")], paneExists: Self.always)
+        #expect(ledger.record(id) == nil)
+        #expect(ledger.retained(besides: []).isEmpty)
+        // The pane moved on, which its "Done" lines end with; nothing came back.
+        #expect(ended == StopLedger.Ended(movedOn: [Self.pane]))
+    }
+
+    /// The stopped run still in its error beside a new one (two tmux
+    /// sessions in the pane) is still there to type on: its stop stays.
+    @Test func aNewConversationBesideTheStoppedRunStillInError_keepsTheStop() {
+        let other = ConversationKey(provider: .claude, conversationID: "c2", isFallback: false)
+        var ledger = StopLedger()
+        let stopped = Self.run("a", .error)
+        _ = ledger.update(runtimes: [stopped], paneExists: Self.always)
+        _ = ledger.update(
+            runtimes: [stopped, Self.run("b", .running, at: 20, conversation: other, sessionID: "x")],
+            paneExists: Self.always
+        )
+        #expect(ledger.record(StopLedger.itemID(of: stopped)) != nil)
     }
 
     @Test func closingThePane_endsTheStop() {
@@ -251,7 +308,7 @@ struct StopLedgerTests: StopLedgerFixture {
         _ = ledger.update(runtimes: [Self.run("a", .error)], paneExists: Self.always)
         let id = StopLedger.itemID(of: Self.run("a", .error))
         ledger.markResuming(id, at: Self.start, window: WindowID())
-        let resumed = ledger.update(runtimes: [Self.run("b", .running, at: 30, pane: UUID())], paneExists: Self.always)
+        let resumed = ledger.update(runtimes: [Self.run("b", .running, at: 30, pane: UUID())], paneExists: Self.always).resumed
         #expect(ledger.records.isEmpty)
         #expect(resumed.isEmpty)
     }
@@ -332,7 +389,8 @@ struct StopLedgerTests: StopLedgerFixture {
     /// A fallback conversation key names the pane rather than the
     /// conversation, so on its own it matches nothing: a run is the stopped
     /// conversation back only when the stopped run had a session id and the
-    /// new run reports the same one.
+    /// new run reports the same one. The new run is in another pane: in the
+    /// stop's own, any other conversation is the person moving on.
     @Test(arguments: [
         (nil, "y"),
         (StopLedgerTests.sessionID, StopLedgerTests.sessionID)
@@ -346,7 +404,7 @@ struct StopLedgerTests: StopLedgerFixture {
             paneExists: Self.always
         )
         _ = ledger.update(
-            runtimes: [Self.run("b", .idle, at: 5, conversation: fallback, sessionID: returning)],
+            runtimes: [Self.run("b", .idle, at: 5, pane: UUID(), conversation: fallback, sessionID: returning)],
             paneExists: Self.always
         )
         #expect(ledger.records.isEmpty == isBack)

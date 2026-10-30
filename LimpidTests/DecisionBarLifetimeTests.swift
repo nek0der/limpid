@@ -205,7 +205,7 @@ extension DecisionBarLifetimeTests {
 
         registry.noteRuns(
             [Self.run("old", in: pane, turn: "t1", state: .error), Self.run("new", in: pane, turn: nil, state: .idle)],
-            resumed: [StopLedger.Resumed(paneID: pane, window: window.id)]
+            endedStops: StopLedger.Ended(resumed: [StopLedger.Resumed(paneID: pane, window: window.id)])
         )
         #expect(window.pendingDecisionBarDone[pane] == .resumed)
 
@@ -221,10 +221,10 @@ extension DecisionBarLifetimeTests {
         let unasked = UUID()
         registry.noteRuns(
             [Self.run("a", in: typedOn, turn: "t1", state: .running), Self.run("b", in: unasked, turn: nil, state: .idle)],
-            resumed: [
+            endedStops: StopLedger.Ended(resumed: [
                 StopLedger.Resumed(paneID: typedOn, window: window.id, hasBegunATurn: true),
                 StopLedger.Resumed(paneID: unasked, window: nil)
-            ]
+            ])
         )
         #expect(window.pendingDecisionBarDone.isEmpty)
     }
@@ -238,6 +238,31 @@ extension DecisionBarLifetimeTests {
         // Its session's end, after the conversation came back elsewhere.
         registry.noteRuns([Self.run("a", in: pane, turn: "t1", state: .unknown)])
         #expect(registry.primary.decisionBarDone[pane] == .resumed)
+    }
+
+    /// A line set while the run was stopped stays as the stopped agent
+    /// exits (its conversation may come back under a line that says so),
+    /// and ends once its stop ends as the person moving on to another
+    /// conversation in the pane (`StopLedger.Ended.movedOn`).
+    @Test func aLineSetWhileStopped_endsWhenThePaneMovesOnToAnotherConversation() {
+        let registry = WindowRegistry(primary: WindowSelection())
+        let pane = UUID()
+        registry.noteRuns([Self.run("a", in: pane, turn: "t1", state: .error)])
+        registry.primary.decisionBarDone[pane] = .answeredInTerminal
+
+        registry.noteRuns([])
+        #expect(registry.primary.decisionBarDone[pane] == .answeredInTerminal)
+        // A run arriving alone says nothing: it may be the conversation back.
+        registry.noteRuns([Self.run("b", in: pane, turn: nil, state: .idle)])
+        #expect(registry.primary.decisionBarDone[pane] == .answeredInTerminal)
+        let epoch = registry.epoch(inPane: pane)
+
+        registry.noteRuns(
+            [Self.run("b", in: pane, turn: nil, state: .idle)],
+            endedStops: StopLedger.Ended(movedOn: [pane])
+        )
+        #expect(registry.primary.decisionBarDone[pane] == nil)
+        #expect(registry.epoch(inPane: pane) != epoch)
     }
 
     @Test func everyWindow_endsTheLinesOfThePanesThatMovedOn() {

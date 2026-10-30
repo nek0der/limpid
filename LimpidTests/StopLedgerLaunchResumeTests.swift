@@ -35,6 +35,23 @@ struct StopLedgerLaunchResumeTests: StopLedgerFixture {
         #expect(ledger.record(failed) == nil)
     }
 
+    /// The resume typed at launch failed, and the person started the agent
+    /// again by hand on a new conversation: the pane moved on, and its bar
+    /// no longer says the resume failed over the working agent.
+    @Test func aFailedResumeAtLaunch_endsWhenANewConversationStartsInThePane() throws {
+        var ledger = StopLedger()
+        let since = Self.start.addingTimeInterval(10)
+        ledger.markResumingAtLaunch(paneID: Self.pane, provider: .claude, sessionID: Self.sessionID, cwd: "/tmp/repo", at: since)
+        let failed = try #require(ledger.resumeCommandFinished(inPane: Self.pane, startedAt: since.addingTimeInterval(1), runTime: 1)?
+            .itemID)
+        #expect(ledger.record(failed) != nil)
+
+        let other = ConversationKey(provider: .claude, conversationID: "c2", isFallback: false)
+        _ = ledger.update(runtimes: [Self.run("new", .idle, at: 30, conversation: other, sessionID: "s2")], paneExists: Self.always)
+        #expect(ledger.record(failed) == nil)
+        #expect(ledger.retained(besides: []).isEmpty)
+    }
+
     /// A run of the session reported after the resume was typed is the
     /// conversation back (or stopped in its own right): the launch resume
     /// is forgotten, and no stop is made of it. The old run's record, read
@@ -85,7 +102,7 @@ struct StopLedgerLaunchResumeTests: StopLedgerFixture {
         #expect(ledger.record(id) == nil)
         #expect(ledger.retained(besides: []).isEmpty)
         // The person typed on later: nothing is left to end or to fail.
-        let resumed = ledger.update(runtimes: [Self.run("d", .idle, at: 90)], paneExists: Self.always)
+        let resumed = ledger.update(runtimes: [Self.run("d", .idle, at: 90)], paneExists: Self.always).resumed
         #expect(resumed.isEmpty)
         #expect(ledger.resumeCommandFinished(inPane: Self.pane, startedAt: Self.start.addingTimeInterval(1), runTime: 1) == nil)
 
