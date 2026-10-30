@@ -113,15 +113,6 @@ struct PromptCacheRulesTests {
         #expect(block(lastKey: turnEnded.addingTimeInterval(1)) == .unsubmittedInput, "a key after the turn ended")
     }
 
-    @Test func autoOpenPlace_isTheHeaderClockWhileHeadersShow() {
-        let paneID = UUID()
-        let tabID = UUID()
-        #expect(PromptCacheRules.autoOpenPlace(paneID: paneID, tabID: tabID, showsPaneHeader: true)
-            == .paneHeader(paneID: paneID))
-        #expect(PromptCacheRules.autoOpenPlace(paneID: paneID, tabID: tabID, showsPaneHeader: false)
-            == .tabRow(tabID: tabID))
-    }
-
     @Test func shouldAutoOpen_onlyWhenEveryConditionHolds() {
         func decide(
             actionable: Bool = true,

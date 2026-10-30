@@ -44,9 +44,9 @@ struct PaneMinimumSize: Equatable {
         }
     }
 
-    /// The floor for a split pane under the user's settings. Every split
-    /// pane carries a header (`PaneHeaderRules.showsHeader`), so the
-    /// terminal keeps the user's minimum and the header's height is added
+    /// The floor for a split pane under the user's settings. Every pane
+    /// carries a header (`PaneContainerView`), so the terminal keeps the
+    /// user's minimum and the header's height is added
     /// on top, so a header never eats into the rows the user asked for. The
     /// width needs no adjustment: `TerminalSettings.minPaneSizeRange`
     /// starts at the header's narrowest form, so any minimum the user can

@@ -40,46 +40,7 @@ struct PaneHeaderTests {
         )
     }
 
-    // MARK: - Visibility
-
-    /// Every pane of a split tab carries a header, and an agent's pane
-    /// carries one alone; a shell alone in its tab is named by its tab row.
-    @Test(arguments: [
-        (1, false, false),
-        (1, true, true),
-        (2, false, true),
-        (4, true, true)
-    ])
-    func showsHeader_onASplitOrForAnAgent(leafCount: Int, isAgent: Bool, shows: Bool) {
-        #expect(PaneHeaderRules.showsHeader(leafCount: leafCount, isAgent: isAgent) == shows)
-    }
-
-    @Test func showsHeaderInTab_aLoneAgentPaneKeepsItsHeaderUntilItsRunIsGone() throws {
-        let (session, single, _) = WorkspaceSessionFixture.withLooseTab()
-        let lone = try #require(single.splitTree.allLeafIDs().first)
-        #expect(!PaneHeaderRules.showsHeader(paneID: lone, in: single))
-        #expect(!PaneHeaderRules.showsHeader(paneID: lone, in: nil))
-
-        // An agent in front before its record already counts.
-        session.update(single.id) { $0.agentsInFront[lone] = PaneAgentInFront(kind: .codex, isStaged: false) }
-        #expect(try PaneHeaderRules.showsHeader(paneID: lone, in: #require(session.tab(single.id))))
-        session.update(single.id) { $0.agentsInFront[lone] = nil }
-
-        // The tab wears the agent from its first record, and the pane shows
-        // the header from then on; once the run is retired it goes again.
-        session.update(single.id) { $0.agentBadges[.claude] = [lone: Self.badge()] }
-        #expect(try PaneHeaderRules.showsHeader(paneID: lone, in: #require(session.tab(single.id))))
-        session.update(single.id) { $0.agentBadges[.claude] = [:] }
-        #expect(try !PaneHeaderRules.showsHeader(paneID: lone, in: #require(session.tab(single.id))))
-
-        // A split's panes all carry one, zoomed or not.
-        let (splitSession, tab) = try Self.splitTab()
-        let leaves = tab.splitTree.allLeafIDs()
-        #expect(leaves.allSatisfy { PaneHeaderRules.showsHeader(paneID: $0, in: tab) })
-        let zoomed = try #require(leaves.first)
-        splitSession.update(tab.id) { $0.zoomedLeafID = zoomed }
-        #expect(try PaneHeaderRules.showsHeader(paneID: zoomed, in: #require(splitSession.tab(tab.id))))
-    }
+    // MARK: - Zoom
 
     @Test func isZoomed_onlyTheZoomedLeafStillInTheTree() throws {
         let (session, tab) = try Self.splitTab()

@@ -58,6 +58,12 @@ is used up. A click outside the panel or Escape closes it.
   the project's own folder first, tagged **Repository**, then its worktrees,
   one per row, and the folded lists below. The repository's row always stays
   first; worktrees move only among themselves.
+- Drag a tab, or a pane by its header or with ⌥⌘, onto any row of any project
+  to move it there; the window stays where it is. Dropped on a project's
+  header it lands on the repository's row. Rest it on a folded header and the
+  project opens for the drag. A missing worktree's row takes neither. The
+  tab's running panes stay in their folders; its new panes start in the row's.
+  Drop a pane on a tab in the pane strip and it joins that tab.
 - A row shows the state (running, waiting for approval, stopped, unread, or
   working in the background after a turn: the finished or unread ring with a
   dot circling it), the name, the time since an agent last moved ("now",
@@ -111,10 +117,9 @@ The **▾** at the strip's left end (⇧⌘A) opens **Open Tabs**: every tab of 
 session, with who runs in it and its state, to search, switch to, or close.
 Use it when the strip has more tabs than fit.
 
-Each agent pane, and every pane of a split tab, has a one-line header with
-the pane's name and folder. For an agent it adds the model and, unless it
-is the default, the permission mode. When the agent runs every
-action without asking (Claude Code's bypass mode, or Codex with approvals
+Every pane has a one-line header with the pane's name and folder. For an
+agent it adds the model and, unless it is the default, the permission mode.
+When the agent runs every action without asking (Claude Code's bypass mode, or Codex with approvals
 set to never), the header says **Runs without asking** beside a warning
 sign. As the pane narrows, the folder goes first, then the model and the
 mode, then the name. The warning stays as its sign.

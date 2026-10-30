@@ -337,15 +337,11 @@ extension WorkspaceSession {
         return wi < projects[pi].worktrees.count - 1
     }
 
-    /// Whether dropping a tab or a worktree with `sourceID` on worktree
-    /// `worktreeID`'s row would change nothing: the tab is already there,
-    /// or the worktree is that row, already next to it on that side, or
-    /// another project's (worktrees stay with their repository). The
+    /// Whether dropping the worktree `sourceID` on worktree `worktreeID`'s
+    /// row would change nothing: it is that row, already next to it on that
+    /// side, or another project's (worktrees stay with their repository). The
     /// sidebar asks this before it shows a drop as possible.
     func isNoOpDrop(of sourceID: UUID, onWorktree worktreeID: UUID, projectID: UUID, position: DropPosition) -> Bool {
-        if let tab = tab(sourceID) {
-            return tab.container == .worktree(projectID: projectID, worktreeID: worktreeID)
-        }
         guard let sourceProjectID = self.projectID(forWorktree: sourceID) else { return false }
         guard sourceProjectID == projectID else { return true }
         guard sourceID != worktreeID else { return true }

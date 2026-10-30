@@ -245,7 +245,7 @@ struct PaneSwapDropOverlay: View {
     /// Extracts the UUID portion of a `pane:<uuid>` pasteboard payload.
     /// Mirrors the wire format used by `SurfaceView.beginPaneDrag`.
     static func parsePanePayload(_ payload: String) -> UUID? {
-        let prefix = "pane:"
+        let prefix = DragPrefix.pane
         guard payload.hasPrefix(prefix) else { return nil }
         return UUID(uuidString: String(payload.dropFirst(prefix.count)))
     }

@@ -1,11 +1,10 @@
 // PaneHeaderView.swift
-// Limpid — the one-line header above each pane of a split tab and above an
-// agent's pane: what the pane is, what it is called, what its agent is doing,
+// Limpid — the one-line header above every pane: what the pane is, what it is called, what its agent is doing,
 // and which model it runs and how freely.
 //
 // The header sits above the terminal rather than over it, so the grid it
 // draws is never covered; the terminal gives up the header's height
-// instead. `PaneHeaderRules` decides when it shows and what it says; this
+// instead. `PaneHeaderRules` decides what it says; this
 // view only lays that out and owns the rename, in place or, when the header
 // is too narrow for a field, in a floating panel below it.
 
@@ -48,8 +47,7 @@ struct PaneHeaderView: View {
     @State private var hasStartedPaneDrag = false
 
     /// Whether the pane shares its tab: only then can it be zoomed or moved
-    /// to a tab of its own. An agent's pane alone in its tab has a header
-    /// too (`PaneHeaderRules.showsHeader`).
+    /// to a tab of its own. A pane alone in its tab has a header too.
     private var isSplit: Bool {
         PaneHeaderRules.menuZoomAction(for: paneID, in: session.tab(containing: paneID)) != nil
     }
@@ -143,8 +141,7 @@ struct PaneHeaderView: View {
         // and the field goes with it.
         .onDisappear {
             renamePresentation.headerDisappeared(paneID: paneID)
-            // A header remounted mid-edit (a sibling closed, a lone pane's
-            // agent run retired) drops its field without the edit ending, so
+            // A header remounted mid-edit (a sibling closed) drops its field without the edit ending, so
             // the keyboard would stay with a field that no longer exists.
             if isEditing {
                 KeyboardHandoff.returnToTerminal(paneID: paneID, registry: registry, keeper: .terminalOrTextField, timing: .nextTurn)
@@ -188,7 +185,7 @@ struct PaneHeaderView: View {
         .accessibilityAction(named: Text("Rename Pane…")) { beginRename(label: label) }
         // The ellipsis menu sits inside this single element, so its actions
         // are offered on the header itself as well, and only those the menu
-        // offers: a lone agent pane has no split to zoom out of or leave.
+        // offers: a lone pane has no split to zoom out of or leave.
         .accessibilityActions {
             if isSplit {
                 Button(zoomActionTitle) { performZoomAction() }
@@ -203,8 +200,7 @@ struct PaneHeaderView: View {
         }
         // The terminal's "Rename Pane…" asks through the rename presentation,
         // because the menu lives on the AppKit surface and the field lives
-        // here. Only a new ask counts, never one found pending on mount: the
-        // menu offers the item only while this header is on screen, so an ask
+        // here. Only a new ask counts, never one found pending on mount: an ask
         // still pending when a header mounts is one nobody took, and starting
         // it then would be a surprise.
         .onChange(of: renamePresentation.pendingRename) { _, pending in
@@ -471,7 +467,7 @@ struct PaneHeaderView: View {
     /// the focused pane, which these items make this one first.
     private func actionsMenuEntries(label: PaneHeaderLabel) -> [PopUpMenuEntry] {
         let keyboard = settingsStore.settings.keyboard
-        // A lone agent pane has no split to zoom out of or leave, so its
+        // A lone pane has no split to zoom out of or leave, so its
         // menu holds only what can be done to it.
         let splitEntries: [PopUpMenuEntry] = isSplit ? [
             .item(PopUpMenuItem(
@@ -515,7 +511,7 @@ struct PaneHeaderView: View {
     }
 
     /// Hands the pane to the terminal's own drag, which carries it to the
-    /// pane strip's tabs or another pane exactly as the ⌥⌘ drag does. It needs the
+    /// pane strip's tabs, the sidebar's rows, or another pane exactly as the ⌥⌘ drag does. It needs the
     /// mouse event AppKit is delivering, which is the current one while the
     /// gesture updates.
     private func startPaneDrag() {

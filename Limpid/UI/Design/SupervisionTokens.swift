@@ -525,6 +525,10 @@ enum SupervisionTokens {
     /// from the person's accent rather than fixed, as the ring is, and left
     /// translucent, so what the target holds still reads under it.
     static let dropTargetFillOpacity: Double = 0.14
+    /// The accent's faintest tone, behind every line of a project a dragged
+    /// tab is over (`SupervisionProjectDropMark`): under half the row's
+    /// tone, so the row the tab would land on stands out inside it.
+    static let dropProjectFillOpacity: Double = 0.06
     /// A button or a bordered control that is off: the whole control at
     /// half, its words and its edge alike, as the window's buttons fade.
     /// A sheet's field keeps its own, lighter fade

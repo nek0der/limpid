@@ -50,8 +50,7 @@ final class PaneRenamePresentation {
 
     // MARK: - Asking for a rename
 
-    /// Ask `paneID`'s header to start a rename. The caller only asks while
-    /// that header is on screen (`PaneHeaderRules.showsHeader`).
+    /// Ask `paneID`'s header to start a rename.
     func requestRename(paneID: UUID) {
         pendingRename = PendingRename(id: UUID(), paneID: paneID)
     }

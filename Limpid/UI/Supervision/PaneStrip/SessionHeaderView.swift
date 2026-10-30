@@ -148,8 +148,7 @@ struct SessionHeaderView: View {
         case .promptCache:
             if let cacheMark {
                 // The selected tab's clock place: in this window the header
-                // holds the clock the tab list would, so the panel that
-                // opens by itself hangs from here too.
+                // holds the clock the tab list would.
                 PromptCacheMarkView(mark: cacheMark.mark, place: .tabRow(tabID: cacheMark.tab.id), style: .chip)
             }
         case .pullRequest:

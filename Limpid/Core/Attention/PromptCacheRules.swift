@@ -5,7 +5,7 @@
 //
 // Kept in Core and free of SwiftUI so the rules can be pinned by tests. The
 // clock is drawn in two places — the session header (for the selected tab)
-// and a split pane's header — and both open the same panel, so the
+// and a pane's header — and both open the same panel, so the
 // decisions live here once rather than in each view.
 
 import Foundation
@@ -26,17 +26,13 @@ enum PromptCacheClockPlace: Hashable {
     /// whose tabs draw no clock, the session header's chip for the
     /// selected tab.
     case tabRow(tabID: UUID)
-    /// The trailing group of a split pane's header.
+    /// The trailing group of a pane's header.
     case paneHeader(paneID: UUID)
 }
 
 /// What the window looks like when focus arrives at a pane, as far as the
 /// panel that opens by itself needs to know.
 struct PromptCacheAutoOpenWindow: Equatable {
-    /// The tab the pane is in, whose row clock stands in for a header.
-    let tabID: UUID
-    /// Whether the pane's header, and so its clock, is drawn.
-    let showsPaneHeader: Bool
     /// Another floating panel, or review, is up.
     let isAnotherPanelOpen: Bool
     /// The window's content in the clocks' global coordinates; a clock
@@ -240,13 +236,6 @@ enum PromptCacheRules {
     static func paneLine(for label: PaneHeaderLabel) -> String {
         guard let detail = label.detail else { return label.name }
         return "\(label.name) · \(detail)"
-    }
-
-    /// The clock a panel that opens by itself hangs from: the pane's own
-    /// header clock while split headers show, otherwise the clock on the
-    /// selected tab's row, which is the one beside the pane in view.
-    static func autoOpenPlace(paneID: UUID, tabID: UUID, showsPaneHeader: Bool) -> PromptCacheClockPlace {
-        showsPaneHeader ? .paneHeader(paneID: paneID) : .tabRow(tabID: tabID)
     }
 
     /// Whether a clock's frame can anchor a panel: on screen, inside the

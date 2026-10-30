@@ -98,6 +98,34 @@ enum LimpidMotion {
     /// safety-net path and the real exit stay in lockstep.
     static let dropIndicator: Animation = paced(.easeInOut(duration: 0.12))
 
+    /// How long a dragged tab or pane rests on a folded project's header before the
+    /// header opens under it: long enough that a tab passing over the
+    /// headers on its way does not open each one, about Finder's own
+    /// spring-loaded wait. The header's ring fills over the same time
+    /// (`SpringOpenRing`).
+    static let springOpenDelay: TimeInterval = 0.6 * pace
+    /// The header's ring filling over that wait, at an even pace, so how
+    /// full it is says how much of the wait is left.
+    static let springOpenFill: Animation = .linear(duration: springOpenDelay)
+    /// How long a project stays marked after a dragged tab or pane left one of its
+    /// lines: the hairline between two rows is crossed in less, so the mark
+    /// holds from row to row and goes once the tab has left the project.
+    static let projectLeaveGrace: TimeInterval = 0.12 * pace
+    /// How often a drag checks that the button is still held
+    /// (`LimpidDragState.watchForRelease`).
+    static let dragReleasePoll: TimeInterval = 0.05
+    /// How long after the button comes up a drag ends by itself: a drop's
+    /// `performDrop` arrives well inside it, and a rejected drag's preview
+    /// has slid back by then.
+    static let dragReleaseGrace: TimeInterval = 0.5
+    /// How long the row a tab was dropped on stays lit before it fades.
+    static let landingHold: TimeInterval = 0.8 * pace
+    /// The landed row's light fading. None under Reduce Motion: the light
+    /// simply goes.
+    @MainActor static var landingFadeUnlessReduced: Animation? {
+        NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? nil : paced(.easeOut(duration: 0.4))
+    }
+
     /// Sliding highlight that follows a pane drag between the pane strip's
     /// tabs (`PaneStripView`) — paired with `matchedGeometryEffect` so the
     /// highlight reads as one shared element.

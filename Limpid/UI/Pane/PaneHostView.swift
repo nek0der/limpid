@@ -385,9 +385,16 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
         let window = window
         view.paneID = paneID
         view.dragState = dragState
-        view.ownerTabIDForLogging = { [weak session] in
-            session?.tab(containing: paneID)?.id.uuidString ?? "?"
-        }
+        view.paneDragContext = PaneDragContext(
+            ownerTabID: { [weak session] in
+                session?.tab(containing: paneID)?.id.uuidString ?? "?"
+            },
+            title: { [weak session, attention, settings] in
+                guard let session else { return "" }
+                return attention.paneHeaderLabel(paneID: paneID, in: session, locale: settings.appLocale).name
+            },
+            accent: { [settings] in LimpidColor.accent(for: settings.settings.appearance.accentColor) }
+        )
         view.onRequestFocus = { [weak session] in
             guard let session else { return }
             guard let tab = session.tab(containing: paneID) else { return }
@@ -430,8 +437,7 @@ struct PaneHostRepresentable: NSViewRepresentable, Equatable {
             return tab.splitTree.allLeafIDs().count > 1
         }
         view.canRenamePane = { [weak session] in
-            guard let session else { return false }
-            return PaneHeaderRules.showsHeader(paneID: paneID, in: session.tab(containing: paneID))
+            session?.tab(containing: paneID) != nil
         }
         view.onRequestRenamePane = { [weak renamePresentation] in
             renamePresentation?.requestRename(paneID: paneID)

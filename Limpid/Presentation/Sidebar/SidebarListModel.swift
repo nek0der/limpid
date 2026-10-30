@@ -128,8 +128,28 @@ struct SidebarListModel: Equatable {
         groups.isEmpty ? .noProjects : nil
     }
 
+    /// Whether `item` is the header of a project after another, which a
+    /// gap sets apart from the project before it.
+    func isProjectStart(_ item: Item) -> Bool {
+        guard case .header = item else { return false }
+        return item.id != items.first?.id
+    }
+
     /// The headers, in the window's order.
     var headers: [SidebarProjectHeader] {
         groups.map(\.header)
+    }
+}
+
+/// The project a dragged tab or pane is over in this window's sidebar, and its last
+/// line, where the project's mark ends.
+struct CarriedOverProject {
+    let projectID: UUID
+    let lastLine: SidebarItemID?
+
+    init?(projectID: UUID?, in model: SidebarListModel) {
+        guard let projectID else { return nil }
+        self.projectID = projectID
+        lastLine = model.items.last { $0.id.projectID == projectID }?.id
     }
 }

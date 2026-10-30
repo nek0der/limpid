@@ -396,10 +396,9 @@ private struct PaneStripTabCell: View {
                 editingTabID = isEditing ? item.id : (editingTabID == item.id ? nil : editingTabID)
             }
         )
-        .tabReorderTarget(beforeTabID: item.id, container: container, session: session)
-        .paneMergeDropTarget(
+        .paneStripTabDropTarget(PaneStripTabDrop(tabID: item.id, container: container, session: session, window: window.id))
+        .paneMergeMark(
             targetTabID: item.id,
-            session: session,
             dragState: dragState,
             highlightNamespace: highlightNamespace,
             sourceTabID: sourceTabID

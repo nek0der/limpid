@@ -117,16 +117,12 @@ struct PromptCachePanelHost: View {
         autoOpenTask = Task { @MainActor in
             try? await Task.sleep(for: PromptCacheRules.autoOpenSettle)
             // A pane behind the review tab is not one the person is at.
-            guard !Task.isCancelled, window.review?.isShown != true, let pane = focusedPane,
-                  let tab = session.tab(containing: pane.paneID)
-            else {
+            guard !Task.isCancelled, window.review?.isShown != true, let pane = focusedPane else {
                 return
             }
             attention.autoOpenPromptCachePanel(
                 paneID: pane.paneID,
                 in: PromptCacheAutoOpenWindow(
-                    tabID: pane.tabID,
-                    showsPaneHeader: PaneHeaderRules.showsHeader(paneID: pane.paneID, in: tab),
                     // Read now, when the panel would open: a surface that
                     // came up during the wait counts.
                     isAnotherPanelOpen: presentation.isAnotherSurfaceOpen,
