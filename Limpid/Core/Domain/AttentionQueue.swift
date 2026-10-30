@@ -12,6 +12,12 @@ import Foundation
 /// in the same pass cannot hand out the same position.
 struct AttentionQueue: Equatable, Sendable {
     private(set) var items: [AttentionItem] = []
+    /// The usage limit stops another run of their provider has since worked
+    /// past (`UsageLimits.isLifted`): the limit no longer holds the account,
+    /// though the stop stays until its own conversation moves on. Kept for
+    /// the stop's life rather than read from the runtimes each pass, since
+    /// the run that proved it starts its next turn and stops showing it.
+    private(set) var liftedUsageLimits: Set<AttentionItemID> = []
     private var nextSequence: UInt64 = 1
 
     /// Appends a new item. Returns `false`, leaving the queue unchanged,
@@ -53,6 +59,16 @@ struct AttentionQueue: Equatable, Sendable {
 
     mutating func remove(_ id: AttentionItemID) {
         items.removeAll { $0.id == id }
+        liftedUsageLimits.remove(id)
+    }
+
+    /// Notes the usage limit stops `runtimes` show lifted.
+    mutating func noteUsageLimitsLifted(by runtimes: [RuntimeFact]) {
+        for item in items where !liftedUsageLimits.contains(item.id) {
+            if runtimes.contains(where: { UsageLimits.isLifted(item, by: $0) }) {
+                liftedUsageLimits.insert(item.id)
+            }
+        }
     }
 
     /// The item `id` while the queue holds it.

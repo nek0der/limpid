@@ -66,11 +66,37 @@ struct UsageLimits: Equatable, Sendable {
     /// passes changes the answer.
     private(set) var limits: [AgentKind: [UsageLimit]] = [:]
 
-    init(items: [AttentionItem]) {
-        for item in items {
+    /// `lifted` are the stops whose limit no longer holds
+    /// (`AttentionQueue.liftedUsageLimits`).
+    init(items: [AttentionItem], lifted: Set<AttentionItemID> = []) {
+        for item in items where !lifted.contains(item.id) {
             guard case let .stop(.usageLimit(limit)) = item.kind, let provider = item.subject.provider else { continue }
             limits[provider, default: []].append(limit)
         }
+    }
+
+    /// The limits the attention list's stops hold, less the ones since lifted.
+    init(queue: AttentionQueue) {
+        self.init(items: queue.items, lifted: queue.liftedUsageLimits)
+    }
+
+    /// Whether `runtime` shows the account-wide limit `item` stopped at
+    /// lifted: a run of the same provider ended a turn of its own after
+    /// the stop. Only a turn the provider served through to its end proves
+    /// it. A session started asks nothing of the plan, and a turn under
+    /// way may have begun before the limit, or meet it at its next
+    /// request. A model's own weekly limit is not lifted by a turn that
+    /// may have run on another model.
+    ///
+    /// Without this, the stop of an agent the person left (they upgraded
+    /// the plan, or signed in to another account, and went on in a new
+    /// conversation) would mark every row of the provider at its limit,
+    /// with no end when the provider gave no reset time.
+    static func isLifted(_ item: AttentionItem, by runtime: RuntimeFact) -> Bool {
+        guard case let .stop(.usageLimit(limit)) = item.kind, limit.isAccountWide,
+              runtime.provider == item.subject.provider, runtime.state == .finished
+        else { return false }
+        return runtime.updatedAt > item.arrivedAt
     }
 
     /// `provider`'s limits that hold every agent of the account, for the
