@@ -101,7 +101,7 @@ extension AttentionState {
         return visibleMark(for: runtime, paneID: paneID, at: promptCache.now)
     }
 
-    /// The clock a split pane's header shows: the most urgent of the runs
+    /// The clock a pane's header shows: the most urgent of the runs
     /// in that pane.
     func promptCacheMark(paneID: UUID) -> PromptCacheMark? {
         let now = promptCache.now
@@ -172,8 +172,8 @@ extension AttentionState {
     }
 
     /// Opens the panel by itself for the pane focus just arrived at, when
-    /// `PromptCacheRules.shouldAutoOpen` says so, below the clock
-    /// `PromptCacheRules.autoOpenPlace` picks. True when it opened.
+    /// `PromptCacheRules.shouldAutoOpen` says so, below the clock in
+    /// its header. True when it opened.
     @discardableResult
     func autoOpenPromptCachePanel(
         paneID: UUID,
@@ -181,11 +181,7 @@ extension AttentionState {
         presentation: PromptCachePanelPresentation
     ) -> Bool {
         let expired = expiredPromptCache(paneID: paneID)
-        let place = PromptCacheRules.autoOpenPlace(
-            paneID: paneID,
-            tabID: window.tabID,
-            showsPaneHeader: window.showsPaneHeader
-        )
+        let place = PromptCacheClockPlace.paneHeader(paneID: paneID)
         guard PromptCacheRules.shouldAutoOpen(
             hasActionableExpiry: expired != nil,
             hasPresented: expired.map { promptCache.hasPresented(runtimeID: $0.runtimeID, window: $0.window) } ?? false,

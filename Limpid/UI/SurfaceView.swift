@@ -349,11 +349,10 @@ final class SurfaceView: NSView {
     /// to clear state via `end()` if AppKit's drag session ends without the SwiftUI drop delegate firing.
     var dragState: LimpidDragState?
 
-    /// Closure returning the owning tab's id as a string (or "?" when
-    /// the lookup fails). Threaded through `PaneHostView` so the
-    /// pane-drag log line can name both pane and tab; `SurfaceView`
-    /// itself has no `WorkspaceSession` reference.
-    var ownerTabIDForLogging: (() -> String)?
+    /// What a pane's drag reads from around it. Threaded through
+    /// `PaneHostView`, since `SurfaceView` itself has no `WorkspaceSession`
+    /// reference.
+    var paneDragContext: PaneDragContext?
 
     /// Anchor for an in-progress ⌥⌘+drag. Captured on `mouseDown`; the
     /// drag session only opens once the cursor moves past

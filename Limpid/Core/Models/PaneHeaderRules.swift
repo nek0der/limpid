@@ -1,5 +1,5 @@
 // PaneHeaderRules.swift
-// Limpid — which panes carry a header, and what each header calls its pane.
+// Limpid — what each pane's header says, and what it offers.
 //
 // Kept in Core and free of SwiftUI so the rules can be pinned by tests:
 // the header is drawn from several sources (a name the user typed, the
@@ -144,32 +144,6 @@ enum PaneNameChange: Equatable {
 }
 
 enum PaneHeaderRules {
-    /// Whether a pane shows a header. Every pane of a split tab carries
-    /// one, zoomed or not: the tab row names only the tab, and a zoomed
-    /// pane's unzoom button is the way back to the split. An agent's pane
-    /// carries one even alone, because the header is where its model and
-    /// permission mode show, and where a session that runs without asking
-    /// is warned of. There is no setting to hide it, so that warning cannot
-    /// be hidden. A shell alone in its tab is named by the tab row, and a
-    /// header would only repeat it.
-    static func showsHeader(leafCount: Int, isAgent: Bool) -> Bool {
-        leafCount > 1 || isAgent
-    }
-
-    /// Whether `paneID`'s header is on screen: the one predicate the header
-    /// itself, the terminal's "Rename Pane…" item, and the prompt cache
-    /// panel read, so the item never offers a rename with no header to take
-    /// it. An agent counts from the moment the tab wears it for the pane
-    /// (`Tab.agentKind(inPane:)`), before its record, until its run is
-    /// retired.
-    static func showsHeader(paneID: UUID, in tab: Tab?) -> Bool {
-        guard let tab else { return false }
-        return showsHeader(
-            leafCount: tab.splitTree.allLeafIDs().count,
-            isAgent: tab.agentKind(inPane: paneID) != nil
-        )
-    }
-
     /// The forms a header tries, widest first, the first that fits winning.
     /// While renaming in place only the form with the name will do, since
     /// the field is what the user is working in. The clock's own form is

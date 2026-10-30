@@ -1,16 +1,26 @@
 // SurfaceView+Drag.swift
 // Limpid — ⌥⌘+drag from a pane initiates an AppKit dragging session that
-// the pane strip's tabs and the other panes catch: drop onto a tab merges
-// the pane into that tab, onto a pane swaps or splits it there. The modifier
+// the pane strip's tabs, the sidebar's rows, and the other panes catch: drop
+// onto a tab merges the pane into that tab, onto a row moves it there, onto a
+// pane swaps or splits it there. The modifier
 // gate keeps ordinary text-selection drags untouched, and matches
 // macOS's "explicit pickup" convention (⌘+drag in Finder, ⌥+drag for
 // copies elsewhere).
 
 import AppKit
 import OSLog
+import SwiftUI
 import UniformTypeIdentifiers
 
 private let paneDragLog = Logger.limpid("pane.drag")
+
+/// What a pane's drag reads from around its surface as it starts: its tab
+/// for the log, and the name and the person's accent on its chip.
+struct PaneDragContext {
+    let ownerTabID: () -> String
+    let title: () -> String
+    let accent: () -> Color
+}
 
 extension SurfaceView: NSDraggingSource {
     func draggingSession(
@@ -21,7 +31,17 @@ extension SurfaceView: NSDraggingSource {
         // lands. SwiftUI's drop targets read `DropProposal(.move)` to
         // suppress the green "+" badge, so matching here keeps the cursor
         // badge consistent end-to-end.
-        .move
+        // `.copy` too: a pane's swap and split zones are each a
+        // `.dropDestination` (`PaneSwapDropOverlay`), which proposes it.
+        [.move, .copy]
+    }
+
+    /// ⌥⌘ is what picks a pane up and stays held through the drag. AppKit
+    /// would otherwise narrow the operations above by those keys (⌥ to copy,
+    /// ⌘ to generic), leaving nothing a drop target proposing `.move` can
+    /// use, so the sidebar's rows would refuse the pane on release.
+    func ignoreModifierKeys(for session: NSDraggingSession) -> Bool {
+        true
     }
 
     func draggingSession(
@@ -52,9 +72,9 @@ extension SurfaceView: NSDraggingSource {
     }
 
     /// Open an AppKit drag session that carries this pane's id to the
-    /// pane strip's drop targets. Called from `mouseDragged` once the cursor has
-    /// moved far enough from the ⌥⌘-mouseDown anchor, and from a split pane's
-    /// header, where a plain drag picks the pane up (`PaneHeaderView`).
+    /// pane strip's and the sidebar's drop targets. Called from `mouseDragged`
+    /// once the cursor has moved far enough from the ⌥⌘-mouseDown anchor, and
+    /// from a pane's header, where a plain drag picks the pane up (`PaneHeaderView`).
     func beginPaneDrag(with event: NSEvent) {
         guard let paneID, let dragState else { return }
 
@@ -68,96 +88,58 @@ extension SurfaceView: NSDraggingSource {
         // sometimes fails to match the parent type SwiftUI registered
         // for. This was the intermittent "drag does nothing" we saw on
         // drops over tab rows.
-        let payload = SidebarDragPayload(prefix: "pane:", id: paneID.uuidString)
+        let payload = SidebarDragPayload(prefix: DragPrefix.pane, id: paneID.uuidString)
         let pasteboardItem = NSPasteboardItem()
         pasteboardItem.setString(payload.wire, forType: .string)
         pasteboardItem.setString(payload.wire, forType: NSPasteboard.PasteboardType(UTType.text.identifier))
 
         let item = NSDraggingItem(pasteboardWriter: pasteboardItem)
-        // A visible drag image is required — macOS 26 silently refuses
-        // to begin a session when the snapshot is effectively invisible
-        // (the same regression `limpidDraggable` works around for
-        // sidebar rows). The chip is intentionally generic (the
-        // system terminal glyph) rather than carrying the tab title,
-        // since the pane the user picked up is one of several inside
-        // that tab — labeling the chip with the tab name would
-        // falsely suggest the whole tab is being moved.
+        // A visible drag image is required: macOS 26 silently refuses to
+        // begin a session when the snapshot is effectively invisible (the
+        // same regression `limpidDraggable` works around for sidebar rows).
         let chip = paneDragChip()
         let cursorPointInView = convert(event.locationInWindow, from: nil)
+        // Below and to the right of the pointer, as a tab's chip is, so the
+        // row it would land on stays readable.
+        let gap = LimpidLayout.Supervision.spaceXS
         let dragFrame = NSRect(
-            x: cursorPointInView.x - chip.size.width / 2,
-            y: cursorPointInView.y - chip.size.height / 2,
+            x: cursorPointInView.x + gap,
+            y: cursorPointInView.y - chip.size.height - gap,
             width: chip.size.width,
             height: chip.size.height
         )
         item.setDraggingFrame(dragFrame, contents: chip)
 
         dragState.begin(.pane, sourceID: paneID.uuidString)
-        // Origin tab id (when wired) gives log readers a way to
-        // correlate this drag-start with the matching `paneDropLog`
-        // event from `PaneTabDropTargets.performDrop`. Surface
-        // dimensions help spot "drag that started at frame zero"
+        // Origin tab id (when wired) tells log readers which tab the
+        // drag left. Surface dimensions help spot "drag that started at frame zero"
         // bugs without needing a screen recording.
-        let originTab = ownerTabIDForLogging?() ?? "?"
+        let originTab = paneDragContext?.ownerTabID() ?? "?"
         let viewSize = "\(Int(bounds.width))x\(Int(bounds.height))"
         let context = "pane=\(paneID.uuidString) tab=\(originTab) view=\(viewSize)"
         paneDragLog.debug("begin pane drag \(context, privacy: .public)")
         beginDraggingSession(with: [item], event: event, source: self)
     }
 
-    /// Compact rounded-square chip with the system terminal glyph.
-    /// Reads as "you're carrying a terminal pane" without overclaiming
-    /// about which tab or what's inside — snapshotting the live
-    /// terminal would render blank on the Metal-backed surface anyway,
-    /// and the chip is meant as a cursor companion, not a full preview.
-    ///
-    /// Renders under the source window's effective appearance so the
-    /// pill background, stroke, and glyph all pick up the right
-    /// light / dark variant of their `SupervisionTokens`. Without the explicit
-    /// `performAsCurrentDrawingAppearance` call, `NSImage.lockFocus`
-    /// may resolve semantic colors against the app's default appearance
-    /// rather than the window the user actually sees.
+    /// The pane's name in the chip a dragged tab carries (`DragChipFace`),
+    /// the name its header shows, so the person sees that this pane moves
+    /// and not its whole tab. Renders under the source window's effective
+    /// appearance, so the tokens resolve to the variant the person sees
+    /// rather than the app's default.
     private func paneDragChip() -> NSImage {
-        let size = NSSize(width: 40, height: 40)
-        let image = NSImage(size: size)
         let appearance = window?.effectiveAppearance ?? NSApp.effectiveAppearance
-        image.lockFocus()
-        defer { image.unlockFocus() }
-        // The chip is drawn in the window's own tokens, as a tab's drag
-        // preview is (`limpidDragPreview`).
+        var chip: NSImage?
         appearance.performAsCurrentDrawingAppearance {
-            let lineWidth: CGFloat = 1
-            let rect = NSRect(origin: .zero, size: size).insetBy(dx: lineWidth / 2, dy: lineWidth / 2)
-            let path = NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10)
-            SupervisionTokens.popover.nsColor.setFill()
-            path.fill()
-            SupervisionTokens.line.nsColor.setStroke()
-            path.lineWidth = lineWidth
-            path.stroke()
-
-            // `paletteColors` applies the text color directly to the
-            // symbol's strokes — cleaner than `setFill` + template
-            // tricks, and the color resolves under
-            // `performAsCurrentDrawingAppearance` above.
-            let config = NSImage.SymbolConfiguration(pointSize: 18, weight: .medium)
-                .applying(NSImage.SymbolConfiguration(paletteColors: [SupervisionTokens.text.nsColor]))
-            if let symbol = NSImage(
-                systemSymbolName: "apple.terminal",
-                accessibilityDescription: nil
-            )?.withSymbolConfiguration(config)
-                ?? NSImage(systemSymbolName: "terminal", accessibilityDescription: nil)?
-                .withSymbolConfiguration(config)
-            {
-                let glyphRect = NSRect(
-                    x: (size.width - symbol.size.width) / 2,
-                    y: (size.height - symbol.size.height) / 2,
-                    width: symbol.size.width,
-                    height: symbol.size.height
-                )
-                symbol.draw(in: glyphRect, from: .zero, operation: .sourceOver, fraction: 1.0)
-            }
+            let renderer = ImageRenderer(content: DragChipFace(title: paneDragContext?.title() ?? "")
+                .environment(\.limpidAccent, paneDragContext?.accent() ?? LimpidColor.defaultAccent)
+                // A renderer resolves colors from its own environment, not
+                // from the appearance drawn under.
+                .environment(\.colorScheme, appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light))
+            renderer.scale = window?.backingScaleFactor ?? 2
+            chip = renderer.nsImage
         }
-        return image
+        // Never empty: macOS refuses to begin a drag from an invisible image.
+        return chip ?? NSImage(size: LimpidLayout.Supervision.dragPreviewMinSize)
     }
 
     // MARK: - Modifier-gated mouse interception

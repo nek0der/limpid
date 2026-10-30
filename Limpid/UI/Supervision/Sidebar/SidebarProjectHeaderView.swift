@@ -15,7 +15,10 @@ import SwiftUI
 ///
 /// Pressing anywhere on it opens or folds it, ⌥ held for every header; it
 /// never switches the window's project, which a row does. It is dragged
-/// to reorder the projects, and a dragged header drops at a line.
+/// to reorder the projects, and a dragged header drops at a line. A dragged
+/// tab dropped on it goes to the project's repository row; one that rests
+/// on it while it is folded opens it for the drag
+/// (`LimpidMotion.springOpenDelay`), as its ring fills.
 struct SidebarProjectHeaderView: View {
     let header: SidebarProjectHeader
     /// The arrow keys are on this header while the sidebar has the keyboard.
@@ -27,11 +30,14 @@ struct SidebarProjectHeaderView: View {
     let drag: Drag
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.limpidAccent) private var accent
     @State private var isHovering = false
 
     /// The drag of the header, and the drop of another on it.
     struct Drag {
         let dragState: LimpidDragState
+        /// What a tab or pane dropped on the header does.
+        let rowDrop: SidebarRowDrop
         /// Whether dropping `source` at `position` of this header would
         /// leave the order as it is.
         let isNoOp: (_ source: UUID, _ position: DropPosition) -> Bool
@@ -44,14 +50,63 @@ struct SidebarProjectHeaderView: View {
     var body: some View {
         content
             .opacity(drag.dragState.currentSourceID == header.id.uuidString ? Layout.draggedItemOpacity : 1)
-            .limpidDraggable(kind: .project, prefix: "project:", id: header.id.uuidString, dragState: drag.dragState)
+            .limpidDraggable(kind: .project, prefix: DragPrefix.project, id: header.id.uuidString, dragState: drag.dragState)
             .reorderableDropTarget(
-                targetID: "header-\(header.id)",
-                acceptedPrefixes: ["project:"],
+                targetID: targetID,
+                acceptedPrefixes: [DragPrefix.project, DragPrefix.tab, DragPrefix.pane],
+                // A tab dropped here lands on the repository row, which is
+                // marked in its place.
+                assignsOnDrop: true,
+                rowMark: .none,
+                project: project,
                 dropsAtLine: true,
-                isNoOp: drag.isNoOp,
-                onDrop: { _, source, position in drag.onDrop(source, position) }
+                isNoOp: { source, position in
+                    drag.dragState.isCarryingToRow
+                        ? drag.rowDrop.refuses(source, on: repositoryRow)
+                        : drag.isNoOp(source, position)
+                },
+                onDrop: { prefix, source, position in
+                    if prefix == DragPrefix.project {
+                        drag.onDrop(source, position)
+                    } else {
+                        drag.rowDrop.drop(prefix: prefix, source, on: repositoryRow)
+                    }
+                }
             )
+            // The wait before a folded header opens under a resting tab;
+            // the tab moving off it, or the drag ending, cancels it.
+            .onChange(of: isCarriedResting) { _, isResting in
+                if isResting {
+                    drag.dragState.beginRest(on: project)
+                } else {
+                    drag.dragState.endRest(on: project)
+                }
+            }
+    }
+
+    private var targetID: String {
+        SidebarDropTarget.header(header.id, in: drag.rowDrop.window)
+    }
+
+    private var project: SidebarDropProject {
+        SidebarDropProject(window: drag.rowDrop.window, projectID: header.id)
+    }
+
+    /// Where a tab or pane dropped on the header goes.
+    private var repositoryRow: ContainerID {
+        .project(header.id)
+    }
+
+    /// A dragged tab or pane is on this folded header, which opens once it has
+    /// rested there.
+    private var isCarriedResting: Bool {
+        header.isCollapsed && drag.dragState.isCarryingToRow && drag.dragState.hoverTargetID == targetID
+    }
+
+    /// A dragged tab or pane is over this project, at its header or at one of its
+    /// rows: the name and the rule take the accent, over the project's mark.
+    private var isCarriedOverProject: Bool {
+        drag.dragState.isCarryingToRow && drag.dragState.carriedOverProject == project
     }
 
     private var content: some View {
@@ -65,12 +120,12 @@ struct SidebarProjectHeaderView: View {
             // then the marks; the ＋ and the fold stay.
             Text(verbatim: header.name)
                 .font(.supervision(.label, weight: header.isCollapsed ? .medium : .bold))
-                .foregroundStyle(header.isCollapsed ? SupervisionTokens.muted.color : SupervisionTokens.text.color)
+                .foregroundStyle(nameColor)
                 .lineLimit(1)
                 .supervisionTruncation(.name)
                 .layoutPriority(1)
             Rectangle()
-                .fill(SupervisionTokens.line.color)
+                .fill(isCarriedOverProject ? accent : SupervisionTokens.line.color)
                 .frame(height: 1)
                 .frame(minWidth: Layout.spaceM)
                 .accessibilityHidden(true)
@@ -103,14 +158,20 @@ struct SidebarProjectHeaderView: View {
             .help(Text(SidebarHeaderText.newWorktree(in: header.name)))
             .accessibilityHidden(true)
             .layoutPriority(4)
-            Image(systemName: "arrowtriangle.right.fill")
-                .font(.supervision(.disclosure, weight: .semibold))
-                .foregroundStyle(SupervisionTokens.muted.color)
-                .rotationEffect(.degrees(header.isCollapsed ? 0 : 90))
-                .animation(reduceMotion ? nil : LimpidMotion.reorder, value: header.isCollapsed)
-                .frame(width: Layout.stateGlyphSize)
-                .accessibilityHidden(true)
-                .layoutPriority(4)
+            Group {
+                if isCarriedResting {
+                    SpringOpenRing()
+                } else {
+                    Image(systemName: "arrowtriangle.right.fill")
+                        .font(.supervision(.disclosure, weight: .semibold))
+                        .foregroundStyle(SupervisionTokens.muted.color)
+                        .rotationEffect(.degrees(header.isCollapsed ? 0 : 90))
+                        .animation(reduceMotion ? nil : LimpidMotion.reorder, value: header.isCollapsed)
+                }
+            }
+            .frame(width: Layout.stateGlyphSize)
+            .accessibilityHidden(true)
+            .layoutPriority(4)
         }
         .modifier(SessionRowFace(
             height: Layout.sidebarProjectHeaderHeight,
@@ -154,6 +215,15 @@ struct SidebarProjectHeaderView: View {
         }
     }
 
+    /// The name's color: the accent while a dragged tab or pane is over the
+    /// project, else muted while it is folded.
+    private var nameColor: Color {
+        if isCarriedOverProject {
+            return accent
+        }
+        return header.isCollapsed ? SupervisionTokens.muted.color : SupervisionTokens.text.color
+    }
+
     /// The count, or "Other Window" for a project another window shows,
     /// which brings that window forward.
     @ViewBuilder private var trailingMark: some View {
@@ -193,5 +263,37 @@ struct SidebarProjectHeaderView: View {
     private static var isOptionClick: Bool {
         guard let event = NSApp.currentEvent, event.type == .leftMouseDown || event.type == .leftMouseUp else { return false }
         return event.modifierFlags.chord == .option
+    }
+}
+
+/// A folded header's fold while a dragged tab or pane rests on it: a ring that
+/// fills over the wait (`LimpidMotion.springOpenDelay`), and the header
+/// opens as it closes. Under Reduce Motion it stands full from the start,
+/// and the header still opens after the same wait.
+private struct SpringOpenRing: View {
+    @Environment(\.limpidAccent) private var accent
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var progress: CGFloat = 0
+
+    private typealias Layout = LimpidLayout.Supervision
+
+    var body: some View {
+        let width = Layout.dropTargetRingWidth
+        ZStack {
+            Circle()
+                .stroke(SupervisionTokens.line.color, lineWidth: width)
+            Circle()
+                .trim(from: 0, to: reduceMotion ? 1 : progress)
+                .stroke(accent, style: StrokeStyle(lineWidth: width, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .padding(width / 2)
+        .frame(width: Layout.sidebarHeaderMarkSize, height: Layout.sidebarHeaderMarkSize)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(LimpidMotion.springOpenFill) {
+                progress = 1
+            }
+        }
     }
 }

@@ -91,7 +91,7 @@ struct PaneStripTab: View {
         // tab's line sits evenly between the strip's top and the rule.
         .padding(.bottom, layout.paneStripRuleWidth)
         .frame(height: layout.paneStripHeight)
-        .folderTabFace(isSelected: item.isActive, isHovering: isHovering, scrolls: true)
+        .folderTabFace(isSelected: item.isActive, isHovering: isHovering, scrolls: true, meetsPaneHeader: true)
         .contentShape(Rectangle())
         // The tab marks the cards of the conversation its title stands for
         // while the pointer rests on it, and is outlined while a card of any
@@ -112,13 +112,16 @@ struct PaneStripTab: View {
                 onActivate()
             }
         })
-        .trackedHelp(item.tooltip(locale: locale))
+        // None while it is dragged: the tooltip's delay started as the
+        // pointer came onto the tab, and it would open over the rows the tab
+        // is carried across, and stay there.
+        .trackedHelp(isBeingDragged ? "" : item.tooltip(locale: locale))
         .contextMenu { menu }
         // The tab being dragged stands faint in the place it would land,
         // as a sidebar row being dragged does: the tabs move aside for it
         // as the pointer crosses them, so its place is the drop's mark.
         .opacity(isBeingDragged ? LimpidLayout.Supervision.draggedItemOpacity : 1)
-        .limpidDraggable(kind: .tab, prefix: "tab:", id: item.id.uuidString, dragState: dragState)
+        .limpidDraggable(kind: .tab, prefix: DragPrefix.tab, id: item.id.uuidString, tabTitle: item.title, dragState: dragState)
         .accessibilityElement(children: isEditing ? .contain : .ignore)
         .accessibilityLabel(Text(verbatim: item.spokenLabel(locale: locale)))
         .accessibilityAddTraits(.isButton)
@@ -264,20 +267,29 @@ struct PaneStripTabMarks: View {
 
 extension View {
     /// A strip tab's face: the selected
-    /// tab is edged in `line` up its sides and over its top corners, with
-    /// nothing filled, so it is the surface the terminal stands on, and the
-    /// strip's rule stops under it (`PaneStripRule`); any other tab has
-    /// neither edge nor fill until the pointer is on it, when `hover` fills
-    /// it down to the rule. The terminal is drawn on that surface, so the
-    /// selected tab needs no fill of its own to read as the terminal's
-    /// ground. The hover fill stays opaque whatever the background opacity,
+    /// tab is edged in `line` up its sides and over its top corners, and the
+    /// strip's rule stops under it (`PaneStripRule`). Where panes stand under
+    /// it (`meetsPaneHeader`) it takes the focused header's wash, so it reads
+    /// as one piece with the pane that has the keyboard, wherever in a split
+    /// that pane is; a header under it that lacks focus stays quieter.
+    /// Otherwise nothing fills it, so it is the surface what it shows stands on. Any other tab has neither edge nor fill until
+    /// the pointer is on it, when `hover` fills it down to the rule. The
+    /// hover fill stays opaque whatever the background opacity,
     /// as the rows' hover and selection do: the tab's text is held at 4.5:1
     /// on that fill, which a fill mixed with the glass behind it could
     /// not promise.
-    func folderTabFace(isSelected: Bool, isHovering: Bool, scrolls: Bool) -> some View {
+    func folderTabFace(isSelected: Bool, isHovering: Bool, scrolls: Bool, meetsPaneHeader: Bool = false) -> some View {
         let layout = LimpidLayout.Supervision.self
         return background {
-            if !isSelected, isHovering {
+            // The focused header's wash, over the same ground as a header's. Down to the tab's bottom: no rule runs under it.
+            if isSelected, meetsPaneHeader {
+                UnevenRoundedRectangle(
+                    topLeadingRadius: layout.paneStripTabCornerRadius,
+                    topTrailingRadius: layout.paneStripTabCornerRadius,
+                    style: .circular
+                )
+                .fill(LimpidColor.paneHeaderFocusedFill)
+            } else if !isSelected, isHovering {
                 UnevenRoundedRectangle(
                     topLeadingRadius: layout.paneStripTabCornerRadius,
                     topTrailingRadius: layout.paneStripTabCornerRadius,

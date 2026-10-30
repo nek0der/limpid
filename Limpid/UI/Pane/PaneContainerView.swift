@@ -52,12 +52,6 @@ struct PaneContainerView: View {
         PaneExitText.hint(closeKey: settingsStore.settings.keyboard.shortcut(for: .closeSurface)?.displayString)
     }
 
-    /// The same predicate the terminal's "Rename Pane…" item reads, so the
-    /// item is offered exactly while this header is drawn.
-    private var showsHeader: Bool {
-        PaneHeaderRules.showsHeader(paneID: paneID, in: session.tab(containing: paneID))
-    }
-
     private var resolvedOpacity: Double {
         isFocusedPane ? 1.0 : settingsStore.settings.appearance.unfocusedPaneOpacity
     }
@@ -71,25 +65,20 @@ struct PaneContainerView: View {
         let bellRinging = session.isBellRinging(paneID: paneID)
         let opacity = resolvedOpacity
 
-        // The header stacks above the terminal instead of floating over it,
-        // so the overlays below stay positioned against the terminal alone.
-        // No transition on it: animating its height would resize the pty on
-        // every frame of the animation.
+        // Every pane carries a header, alone in its tab or not, shell or
+        // agent: it is where a pane is named and acted on, and where an
+        // agent's model and permission mode show. It stacks above the
+        // terminal instead of floating over it, so the overlays below stay
+        // positioned against the terminal alone.
         return VStack(spacing: 0) {
-            if showsHeader {
-                PaneHeaderView(paneID: paneID, isFocused: isFocusedPane)
-                    .transition(.identity)
-            }
+            PaneHeaderView(paneID: paneID, isFocused: isFocusedPane)
             terminal(exitCode: exitCode, bellRinging: bellRinging, opacity: opacity)
             // Under the terminal, inside the pane, so each leaf of a split
-            // has its own. No transition, for the same reason as the
-            // header: animating its height would resize the pty.
+            // has its own. No transition: animating its height would resize
+            // the pty on every frame of the animation.
             DecisionBarView(paneID: paneID)
                 .transition(.identity)
         }
-        // A split or zoom that runs inside `withAnimation` would otherwise
-        // carry the header in with it.
-        .animation(nil, value: showsHeader)
     }
 
     private func terminal(exitCode: UInt32?, bellRinging: Bool, opacity: Double) -> some View {

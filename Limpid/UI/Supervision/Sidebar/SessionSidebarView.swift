@@ -73,8 +73,10 @@ struct SessionSidebarView: View {
             ),
             // While a header is dragged, every project is drawn folded, so
             // the headers stand together to be dropped among.
-            isDraggingProject: dragState.current == .project
+            isDraggingProject: dragState.current == .project,
+            openedByDrag: rowDrop.openedByDrag
         )
+        let carriedOver = CarriedOverProject(projectID: rowDrop.carriedOverProjectID, in: model)
         VStack(alignment: .leading, spacing: 0) {
             SurfaceHeadingLine {
                 Text(ProjectListText.heading)
@@ -120,7 +122,7 @@ struct SessionSidebarView: View {
                 // No line is in sight while there is no list.
                 .onAppear { window.sidebarVisibleLines = [] }
             } else {
-                projectList(model, others: others)
+                projectList(model, others: others, carriedOver: carriedOver)
             }
             // The sidebar's foot bar, its rule from edge to edge of the
             // surface under the list it closes.
@@ -132,7 +134,7 @@ struct SessionSidebarView: View {
                 ) {
                     session.setActiveContainer(.loose, in: window.id, intent: .person)
                 }
-                .modifier(SessionRowDropTarget(container: .loose, project: nil, acceptsTabs: true, session: session))
+                .modifier(SessionRowDropTarget(container: .loose, project: nil, rowDrop: rowDrop))
             }
         }
         // What the sidebar drew is what a hold keeps, and what ⌃⌘1…9 counts.
@@ -226,7 +228,6 @@ struct SessionSidebarView: View {
         switch item {
         case let .header(header):
             headerView(header, in: model, others: others)
-                .padding(.top, model.groups.first?.id == header.id ? 0 : LimpidLayout.Supervision.sidebarProjectGap)
         case let .fold(fold):
             SidebarSectionFoldRow(
                 fold: fold,
@@ -253,6 +254,7 @@ struct SessionSidebarView: View {
             },
             drag: SidebarProjectHeaderView.Drag(
                 dragState: dragState,
+                rowDrop: rowDrop,
                 isNoOp: { source, position in
                     ProjectOrder.dropped(source, on: header.id, isAfter: position == .after, in: order) == order
                 },
@@ -341,14 +343,14 @@ struct SessionSidebarView: View {
             )
         )
         .modifier(ApprovalRowAnchor(requests: row.answerKey.flatMap { approvals.ledger.entries[$0]?.presentation }.map { [$0] } ?? []))
-        // A tab dropped on another project's row would switch the window's
-        // project by a drag; only the window's own rows take one.
-        .modifier(SessionRowDropTarget(
-            container: row.id,
-            project: project,
-            acceptsTabs: project?.id == window.selection.shownProjectID,
-            session: session
-        ))
+        // Every project's rows take a tab; the window stays on its own
+        // project (`SidebarRowDrop`).
+        .modifier(SessionRowDropTarget(container: row.id, project: project, rowDrop: rowDrop))
+    }
+
+    /// What a tab or pane dragged across this window's sidebar does.
+    private var rowDrop: SidebarRowDrop {
+        SidebarRowDrop(session: session, dragState: dragState, window: window.id, locale: locale)
     }
 
     /// The window that shows `projectID`, if one other than this does, by
@@ -378,7 +380,7 @@ struct SessionSidebarView: View {
 
     /// Every project's header and rows, scrolling between the heading and
     /// the foot bar.
-    private func projectList(_ model: SidebarListModel, others: [UUID: WindowID]) -> some View {
+    private func projectList(_ model: SidebarListModel, others: [UUID: WindowID], carriedOver: CarriedOverProject?) -> some View {
         ScrollViewReader { proxy in
             ScrollView {
                 // The time steps once a minute, so a finer tick would
@@ -393,6 +395,10 @@ struct SessionSidebarView: View {
                     LazyVStack(spacing: LimpidLayout.Supervision.sessionRowSpacing) {
                         ForEach(model.items) { item in
                             line(item, in: model, others: others, now: now)
+                                // Behind the line, not the gap that sets a
+                                // header apart from the project before.
+                                .background { SidebarProjectDropPiece(line: item.id, carriedOver: carriedOver) }
+                                .padding(.top, model.isProjectStart(item) ? LimpidLayout.Supervision.sidebarProjectGap : 0)
                                 .id(item.id)
                         }
                     }
@@ -422,6 +428,11 @@ struct SessionSidebarView: View {
             // At launch too, for a selected row far down the list.
             .onChange(of: window.selection.activeContainerID, initial: true) { _, row in
                 reveal(row, proxy: proxy)
+            }
+            .onChange(of: dragState.landing) { _, landing in
+                if let landing, landing.window == window.id {
+                    settle(landing, proxy: proxy)
+                }
             }
             // A moved header stays in sight (⌥⌘↑ ⌥⌘↓).
             .onChange(of: scrollRequest) { _, request in
@@ -792,50 +803,24 @@ struct SessionSidebarView: View {
     }
 }
 
-/// Drop a worktree's row on another of its project's to reorder them, and a
-/// tab on a row of the window's project to move it there. The project's own
-/// folder takes tabs, and nothing is dropped beside it.
-private struct SessionRowDropTarget: ViewModifier {
-    let container: ContainerID
-    /// `nil` for the scratch row, which belongs to no project.
-    let project: Project?
-    /// Whether a tab may be dropped on the row: only on the window's own
-    /// project's rows and the scratch row, so a drag never switches the
-    /// window's project.
-    let acceptsTabs: Bool
-    let session: WorkspaceSession
-
-    func body(content: Content) -> some View {
-        if let project, let worktreeID = container.worktreeID {
-            content.reorderableDropTarget(
-                targetID: "session-\(worktreeID)",
-                acceptedPrefixes: acceptsTabs ? ["tab:", "worktree:"] : ["worktree:"],
-                tabAsContainerAssignment: true,
-                isNoOp: { sourceID, position in
-                    session.isNoOpDrop(of: sourceID, onWorktree: worktreeID, projectID: project.id, position: position)
-                },
-                onDrop: { prefix, sourceID, position in
-                    if prefix == "tab:" {
-                        session.moveTab(sourceID, to: container)
-                        // The person put work there: one of the other
-                        // worktrees becomes theirs, and stays a working row
-                        // once the tab closes. Only once the tab is there.
-                        if session.tab(sourceID)?.container == container {
-                            session.admitWorktree(container, intent: .person)
-                        }
-                    } else if session.projectID(forWorktree: sourceID) == project.id {
-                        session.reorderWorktree(projectID: project.id, sourceID: sourceID, target: worktreeID, position: position)
-                    }
-                }
-            )
-        } else {
-            content.reorderableDropTarget(
-                targetID: "session-\(container)",
-                acceptedPrefixes: acceptsTabs ? ["tab:"] : [],
-                tabAsContainerAssignment: true,
-                isNoOp: { sourceID, _ in session.tab(sourceID)?.container == container },
-                onDrop: { _, sourceID, _ in session.moveTab(sourceID, to: container) }
-            )
+private extension SessionSidebarView {
+    /// A tab or pane landed on a row: its project stays open, now by the
+    /// window's arrangement, however quickly it was dropped on a folded
+    /// header, taking over from the drag's hold
+    /// (`LimpidDragState.keptOpenProject`). The row that lights is brought
+    /// into view, so the light is seen.
+    func settle(_ landing: SidebarLanding, proxy: ScrollViewProxy) {
+        if let projectID = landing.container.projectID {
+            setCollapsed(false, projectID)
+        }
+        dragState.releaseKeptOpen()
+        guard landing.container != .loose else { return }
+        // Once the list has laid the opened header's rows out.
+        Task { @MainActor in
+            guard !window.sidebarVisibleLines.contains(.row(landing.container)) else { return }
+            withAnimation(LimpidMotion.reorderUnlessReduced) {
+                proxy.scrollTo(SidebarItemID.row(landing.container), anchor: .center)
+            }
         }
     }
 }

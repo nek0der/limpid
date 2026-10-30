@@ -494,11 +494,6 @@ struct WorkspaceSessionWorktreeTests {
         let ids = worktreeIDs(of: project.id, in: session)
         let first = ids[0]
         let third = ids[2]
-        let tab = session.openTab(container: .project(project.id))
-
-        #expect(!session.isNoOpDrop(of: tab.id, onWorktree: first, projectID: project.id, position: .after))
-        session.moveTab(tab.id, to: .worktree(projectID: project.id, worktreeID: first))
-        #expect(session.isNoOpDrop(of: tab.id, onWorktree: first, projectID: project.id, position: .after))
 
         #expect(session.isNoOpDrop(of: first, onWorktree: first, projectID: project.id, position: .before))
         #expect(!session.isNoOpDrop(of: third, onWorktree: first, projectID: project.id, position: .before))

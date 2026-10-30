@@ -21,6 +21,15 @@ import SwiftUI
 /// so the user can confirm a drag session actually starts.
 let limpidDragLog = Logger.limpid("sidebar.drag")
 
+/// What a drag's wire format (`<prefix><uuid>`) starts with, by what it
+/// carries.
+enum DragPrefix {
+    static let tab = "tab:"
+    static let project = "project:"
+    static let worktree = "worktree:"
+    static let pane = "pane:"
+}
+
 // MARK: - SidebarDragPayload (Transferable)
 
 /// Transferable payload used by every sidebar draggable row (tab,
@@ -32,8 +41,7 @@ let limpidDragLog = Logger.limpid("sidebar.drag")
 /// `[.text]` item providers) keeps working unchanged: the
 /// `ProxyRepresentation` to `String` makes that side a no-op.
 struct SidebarDragPayload: Codable, Transferable {
-    /// Same prefix strings the drop side already greps for:
-    /// "tab:", "project:", "worktree:".
+    /// One of `DragPrefix`, which the drop side looks for.
     let prefix: String
     let id: String
 
@@ -48,12 +56,12 @@ struct SidebarDragPayload: Codable, Transferable {
     }
 }
 
+@MainActor
 extension SidebarDragPayload {
     /// Constructs the payload while announcing the drag kind to the
     /// global `LimpidDragState`. Called from the `.draggable`
     /// autoclosure — `begin()` is idempotent, so multiple invocations
     /// during a single drag session are safe.
-    @MainActor
     static func make(
         kind: LimpidDragState.Kind,
         prefix: String,
@@ -68,6 +76,7 @@ extension SidebarDragPayload {
     }
 }
 
+@MainActor
 extension View {
     /// Shared sidebar draggable wrapper. The legacy `.onDrag` path
     /// regressed on macOS 26 (drag sessions never start when the
@@ -75,11 +84,12 @@ extension View {
     /// is the supported route. We also bump the preview from the old
     /// 1×1 transparent rect to 40×24 — macOS 26 also refuses to begin
     /// a drag session when the snapshot is effectively invisible.
-    @MainActor
+    /// `tabTitle` names the tab a `.tab` drag carries, on its chip.
     func limpidDraggable(
         kind: LimpidDragState.Kind,
         prefix: String,
         id: String,
+        tabTitle: String? = nil,
         dragState: LimpidDragState
     ) -> some View {
         draggable(
@@ -90,31 +100,25 @@ extension View {
                 dragState: dragState
             )
         ) {
-            limpidDragPreview(kind: kind)
+            limpidDragPreview(tabTitle: tabTitle)
         }
     }
 }
 
-/// Drag preview for the shared `.draggable` rows. Only a tab gets a
-/// visible chip (mirroring `SurfaceView.paneDragChip`), since it can
-/// move to a different container; project / worktree only
-/// reorder in place and keep the transparent rect — non-empty only
-/// because macOS 26 won't start a drag from an invisible snapshot.
+/// Drag preview for the shared `.draggable` rows. A tab shows a chip with
+/// its name, since it can move to a different container and the person has
+/// to see what they carry; project / worktree only reorder in place and
+/// keep the transparent rect, non-empty only because macOS 26 won't start
+/// a drag from an invisible snapshot.
 @MainActor @ViewBuilder
-private func limpidDragPreview(kind: LimpidDragState.Kind) -> some View {
-    if kind == .tab {
-        // The popovers' surface in its `line` edge, at a surface's corner,
-        // the glyph in the text color. Its colors are the tokens, not the
-        // system's, so it reads as part of the window it is dragged across.
-        let shape = RoundedRectangle(cornerRadius: LimpidLayout.Supervision.surfaceCornerRadius, style: .continuous)
-        Image(systemName: "macwindow")
-            .font(.supervision(.display, weight: .medium))
-            .foregroundStyle(SupervisionTokens.text.color)
-            .frame(width: 40, height: 40)
-            .background(shape.fill(SupervisionTokens.popover.color))
-            .overlay(shape.strokeBorder(SupervisionTokens.line.color, lineWidth: 1))
+private func limpidDragPreview(tabTitle: String?) -> some View {
+    if let tabTitle {
+        TabDragChip(title: tabTitle)
     } else {
-        Color.clear.frame(width: 40, height: 24)
+        Color.clear.frame(
+            width: LimpidLayout.Supervision.dragPreviewMinSize.width,
+            height: LimpidLayout.Supervision.dragPreviewMinSize.height
+        )
     }
 }
 
@@ -122,15 +126,28 @@ private func limpidDragPreview(kind: LimpidDragState.Kind) -> some View {
 ///
 /// SwiftUI's `.onDrop` may skip `dropExited` when a drop is forbidden or
 /// rejected, leaving stale insertion-line indicators. `begin()` installs
-/// global/local `NSEvent` mouse-up monitors so we always call `end()` on
-/// mouse-up and reset `current` to nil. Views observe `current` via
-/// `onChange` to clear their indicators.
+/// global/local `NSEvent` mouse-up monitors and `watchForRelease`, which
+/// covers the release they never see, so every drag reaches `end()` and
+/// resets `current` to nil. Views observe `current` via `onChange` to clear
+/// their indicators.
 @MainActor
 @Observable
 final class LimpidDragState {
     enum Kind { case worktree, tab, project, pane }
 
     private(set) var current: Kind?
+
+    /// The pane this drag carries. AppKit's own drag, whose pasteboard item an
+    /// item provider cannot read as a string, so the drop reads it here.
+    var carriedPaneID: UUID? {
+        current == .pane ? currentSourceID.flatMap(UUID.init(uuidString:)) : nil
+    }
+
+    /// Whether the drag carries work a sidebar row can take: a tab, or a
+    /// pane ⌥⌘-dragged out of one.
+    var isCarryingToRow: Bool {
+        current == .tab || current == .pane
+    }
 
     /// Identifier of the in-flight payload. Lets drop targets skip the
     /// "would be a no-op" cases (dropping a row right before itself,
@@ -172,15 +189,64 @@ final class LimpidDragState {
     /// the snapshot itself).
     var restoreSnapshot: (() -> Void)?
 
+    /// The project whose header or rows a dragged tab or pane is over, in the one
+    /// window's sidebar it is dragged across: the whole project is marked,
+    /// so where the tab would go reads as this project before it reads as
+    /// one of its rows. Kept through the hairline between two of its lines
+    /// (`leaveProject`), so the mark does not flicker from row to row.
+    private(set) var carriedOverProject: SidebarDropProject?
+    /// The folded projects a dragged tab or pane rested on long enough
+    /// (`LimpidMotion.springOpenDelay`): drawn open until the drag ends,
+    /// without touching the window's arrangement, so a drag that goes
+    /// elsewhere leaves them folded as they were. All of them stay open: one
+    /// folding as the next opened would pull the rows under the pointer away.
+    private(set) var springOpenProjects: Set<SidebarDropProject> = []
+    /// The folded project the drag is resting on, waiting to open it.
+    private var restingProject: SidebarDropProject?
+    private var cancelRest: (@MainActor () -> Void)?
+    /// The project drawn open by the drag that a tab was just dropped into.
+    /// It outlives `end()` until the tab has landed and the sidebar opens the
+    /// project for good (`SessionSidebarView`), so the rows the tab
+    /// landed among do not fold away and back between the two.
+    private(set) var keptOpenProject: SidebarDropProject?
+    /// The row a tab was just dropped on, which flashes once so the eye
+    /// finds where the tab went.
+    private(set) var landing: SidebarLanding?
+    /// Cancels the wait before a left project's mark goes, so an old leave
+    /// never clears a mark the tab came back to.
+    private var cancelProjectLeave: (@MainActor () -> Void)?
+    /// Cancels the wait before the landed row's light fades, so an old drop
+    /// never puts out the light of the next.
+    private var cancelLandingFade: (@MainActor () -> Void)?
+
     private var globalMonitor: Any?
     private var localMonitor: Any?
+    /// Ends a drag that AppKit let go of without telling us
+    /// (`watchForRelease`). Stored so `end()` can stop it.
+    private var cancelReleaseWatch: (@MainActor () -> Void)?
+    /// Whether the mouse button is held. Injected so a test can hold a drag
+    /// open with no real button down.
+    private let isMouseButtonDown: () -> Bool
 
-    init() {}
+    /// Runs the drag's waits. Injected so a test steps them without sleeping.
+    private let timer: HoverDelayTimer
+
+    init(
+        isMouseButtonDown: @escaping () -> Bool = { NSEvent.pressedMouseButtons & 1 != 0 },
+        timer: HoverDelayTimer = .live
+    ) {
+        self.isMouseButtonDown = isMouseButtonDown
+        self.timer = timer
+    }
 
     func begin(_ kind: Kind, sourceID: String? = nil) {
         current = kind
         currentSourceID = sourceID
+        // A drop that never landed, whose payload could not be read, holds
+        // nothing open past the next drag.
+        keptOpenProject = nil
         installMouseUpMonitor()
+        watchForRelease()
     }
 
     func end() {
@@ -202,6 +268,14 @@ final class LimpidDragState {
         lastLivePosition = nil
         current = nil
         currentSourceID = nil
+        springOpenProjects = []
+        cancelRest?()
+        cancelRest = nil
+        restingProject = nil
+        cancelReleaseWatch?()
+        cancelReleaseWatch = nil
+        cancelProjectLeave?()
+        cancelProjectLeave = nil
         // Animate the indicator out so it never snaps off-screen
         // mid-drop. Also a safety net in case SwiftUI skipped the
         // delegate's `dropExited` (which sometimes happens when the
@@ -209,8 +283,91 @@ final class LimpidDragState {
         withAnimation(LimpidMotion.dropIndicator) {
             hoverTargetID = nil
             hoverPosition = nil
+            carriedOverProject = nil
         }
         removeMouseUpMonitor()
+    }
+
+    // MARK: - A tab over the sidebar's projects
+
+    /// A dragged tab or pane came onto one of `project`'s lines.
+    func enterProject(_ project: SidebarDropProject) {
+        cancelProjectLeave?()
+        cancelProjectLeave = nil
+        guard carriedOverProject != project else { return }
+        withAnimation(LimpidMotion.dropIndicator) {
+            carriedOverProject = project
+        }
+    }
+
+    /// A dragged tab or pane left one of `project`'s lines. The mark goes only when
+    /// it has not come onto another of them a moment later: crossing the
+    /// hairline between two rows leaves one before it enters the next.
+    func leaveProject(_ project: SidebarDropProject) {
+        guard carriedOverProject == project else { return }
+        cancelProjectLeave?()
+        cancelProjectLeave = timer.schedule(.seconds(LimpidMotion.projectLeaveGrace)) { [weak self] in
+            guard let self, carriedOverProject == project else { return }
+            withAnimation(LimpidMotion.dropIndicator) {
+                carriedOverProject = nil
+            }
+        }
+    }
+
+    /// The drag came to rest on folded `project`, which opens once it has
+    /// waited there.
+    func beginRest(on project: SidebarDropProject) {
+        cancelRest?()
+        restingProject = project
+        cancelRest = timer.schedule(.seconds(LimpidMotion.springOpenDelay)) { [weak self] in
+            self?.restingProject = nil
+            self?.springOpen(project)
+        }
+    }
+
+    /// The drag moved off `project`, which cancels its wait. Another
+    /// project's rest, begun first as the pointer crossed between them, goes
+    /// on.
+    func endRest(on project: SidebarDropProject) {
+        guard restingProject == project else { return }
+        cancelRest?()
+        cancelRest = nil
+        restingProject = nil
+    }
+
+    /// Draws `project` open while the drag lasts.
+    func springOpen(_ project: SidebarDropProject) {
+        guard isCarryingToRow, !springOpenProjects.contains(project) else { return }
+        withAnimation(LimpidMotion.reorderUnlessReduced) {
+            _ = springOpenProjects.insert(project)
+        }
+    }
+
+    /// A tab dropped into `project`: when the drag drew it open, it stays
+    /// open past `end()` (`keptOpenProject`). Called before `end()`.
+    func keepSpringOpen(for project: SidebarDropProject) {
+        guard springOpenProjects.contains(project) else { return }
+        keptOpenProject = project
+    }
+
+    /// The tab did not land after all, or the sidebar now holds its project
+    /// open itself.
+    func releaseKeptOpen() {
+        keptOpenProject = nil
+    }
+
+    /// The tab landed on `container` in `window`'s sidebar: that row
+    /// flashes, and stops by itself.
+    func land(on container: ContainerID, in window: WindowID) {
+        let landing = SidebarLanding(window: window, container: container)
+        self.landing = landing
+        cancelLandingFade?()
+        cancelLandingFade = timer.schedule(.seconds(LimpidMotion.landingHold)) { [weak self] in
+            guard let self else { return }
+            withAnimation(LimpidMotion.landingFadeUnlessReduced) {
+                self.landing = nil
+            }
+        }
     }
 
     /// Called by `performDrop` once it has accepted the drop. Wipes
@@ -223,12 +380,40 @@ final class LimpidDragState {
         lastLivePosition = nil
     }
 
+    /// Ends the drag once the button has been up for a moment. A release
+    /// over no drop target calls no delegate, and the drag session's own
+    /// mouse-up reaches neither monitor, so without this the drag lasted
+    /// until the next click: the source stayed faded and a project the drag
+    /// opened stayed open. The wait leaves `performDrop`, which reads
+    /// `current` and arrives just after the release, to go first.
+    private func watchForRelease() {
+        guard cancelReleaseWatch == nil else { return }
+        scheduleReleaseCheck()
+    }
+
+    private func scheduleReleaseCheck() {
+        cancelReleaseWatch = timer.schedule(.seconds(LimpidMotion.dragReleasePoll)) { [weak self] in
+            guard let self else { return }
+            guard !isMouseButtonDown() else {
+                scheduleReleaseCheck()
+                return
+            }
+            cancelReleaseWatch = timer.schedule(.seconds(LimpidMotion.dragReleaseGrace)) { [weak self] in
+                guard let self else { return }
+                guard !isMouseButtonDown() else {
+                    scheduleReleaseCheck()
+                    return
+                }
+                end()
+            }
+        }
+    }
+
     private func installMouseUpMonitor() {
         guard globalMonitor == nil else { return }
         // Local monitor handles mouse-up inside the app; global covers
-        // mouse-up while the cursor is over another app's window. Both
-        // are needed so the indicator never lingers regardless of where
-        // the drag finishes.
+        // mouse-up while the cursor is over another app's window. A drag
+        // session's own mouse-up reaches neither (`watchForRelease`).
         //
         // Once `performDrop` lands on a target it already calls
         // `dragState.end()` itself before doing anything else, so
@@ -257,4 +442,19 @@ final class LimpidDragState {
             globalMonitor = nil
         }
     }
+}
+
+/// A project as one window's sidebar lists it: every window lists every
+/// project, and a drag marks only the one it is dragged across.
+struct SidebarDropProject: Hashable {
+    let window: WindowID
+    let projectID: UUID
+}
+
+/// A row a tab was dropped on, told apart from the next drop on the same
+/// row, which flashes again.
+struct SidebarLanding: Equatable {
+    let id = UUID()
+    let window: WindowID
+    let container: ContainerID
 }

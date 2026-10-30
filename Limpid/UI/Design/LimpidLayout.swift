@@ -336,6 +336,11 @@ enum LimpidLayout {
         /// rather than a second focus. 1.5pt is three pixels on a Retina
         /// display, as the attention frame's is, so it stays crisp there.
         static let dropTargetRingWidth: CGFloat = 1.5
+        /// How wide a drag's chip grows before its name is cut.
+        static let dragChipMaxWidth: CGFloat = 240
+        /// A drag's preview at its smallest: macOS 26 refuses to begin a drag
+        /// from an invisible snapshot.
+        static let dragPreviewMinSize = CGSize(width: 40, height: 24)
         /// How far a pane's mark stands in from every line around the pane:
         /// the surface's border on an outer edge, the seam on an inner one
         /// (`SurfaceFrameFit.inset(by:)`). None: the ring runs along the

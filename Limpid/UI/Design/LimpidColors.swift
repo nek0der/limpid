@@ -111,7 +111,7 @@ enum LimpidColor {
         dark: Color.black.opacity(0.28)
     )
 
-    /// Fills for the one-line header above each pane of a split tab. Washes
+    /// Fills for the one-line header above every pane. Washes
     /// laid over whatever the pane itself shows rather than solid tones: the
     /// terminal's background follows the user's theme and window opacity,
     /// and a fixed tone read as a dark band over the lighter terminals people

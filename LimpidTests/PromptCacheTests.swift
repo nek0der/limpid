@@ -487,31 +487,31 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func autoOpen_neverHangsFromAClockOutsideTheWindow() {
-        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let presentation = PromptCachePanelPresentation()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
-        // A tab row a lazy list keeps alive after scrolling it out of view.
+        // A header a lazy list keeps alive after scrolling it out of view.
         presentation.clockMoved(
-            place: .tabRow(tabID: tab.id),
+            place: .paneHeader(paneID: paneID),
             instance: UUID(),
             anchor: CGRect(x: 40, y: -400, width: 16, height: 16)
         )
         #expect(!attention.autoOpenPromptCachePanel(
             paneID: paneID,
-            in: .test(tabID: tab.id),
+            in: .test(),
             presentation: presentation
         ))
         #expect(presentation.request == nil)
     }
 
     @Test func panelOpenedWhileExpiring_countsAsShownOnceItExpires() throws {
-        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let presentation = PromptCachePanelPresentation()
         let target = PromptCacheTarget(runtimeID: "claude:run", paneID: paneID)
         presentation.clockMoved(
-            place: .tabRow(tabID: tab.id),
+            place: .paneHeader(paneID: paneID),
             instance: UUID(),
             anchor: CGRect(x: 0, y: 0, width: 16, height: 16)
         )
@@ -527,7 +527,7 @@ struct PromptCacheAttentionTests {
         attention.notePromptCachePanelShown(target)
         #expect(!attention.autoOpenPromptCachePanel(
             paneID: paneID,
-            in: .test(tabID: tab.id),
+            in: .test(),
             presentation: presentation
         ), "it was seen red, so it does not open by itself")
     }
@@ -630,28 +630,27 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func autoOpen_opensOnceBelowTheClockFocusArrivedAt() throws {
-        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let presentation = PromptCachePanelPresentation()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
 
-        func autoOpen(showsPaneHeader: Bool = false, isAnotherPanelOpen: Bool = false) -> Bool {
+        func autoOpen(isAnotherPanelOpen: Bool = false) -> Bool {
             attention.autoOpenPromptCachePanel(
                 paneID: paneID,
-                in: .test(tabID: tab.id, showsPaneHeader: showsPaneHeader, isAnotherPanelOpen: isAnotherPanelOpen),
+                in: .test(isAnotherPanelOpen: isAnotherPanelOpen),
                 presentation: presentation
             )
         }
 
         #expect(!autoOpen(), "no clock on screen to hang from")
-        let tabRow = PromptCacheClockPlace.tabRow(tabID: tab.id)
-        presentation.clockMoved(place: tabRow, instance: UUID(), anchor: CGRect(x: 40, y: 80, width: 16, height: 16))
+        let clock = PromptCacheClockPlace.paneHeader(paneID: paneID)
+        presentation.clockMoved(place: clock, instance: UUID(), anchor: CGRect(x: 40, y: 80, width: 16, height: 16))
         #expect(!autoOpen(isAnotherPanelOpen: true), "never over another floating panel")
-        #expect(!autoOpen(showsPaneHeader: true), "with headers it hangs from the header clock, not drawn here")
 
         #expect(autoOpen())
         let request = try #require(presentation.request)
-        #expect(request.place == tabRow)
+        #expect(request.place == clock)
         #expect(request.trigger == .automatic)
         #expect(request.target == PromptCacheTarget(runtimeID: "claude:run", paneID: paneID))
 
@@ -664,7 +663,7 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func autoOpen_onlyForAnExpiryItsCommandsCanActOn() throws {
-        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let presentation = PromptCachePanelPresentation()
         presentation.clockMoved(
@@ -675,7 +674,7 @@ struct PromptCacheAttentionTests {
         func autoOpen() -> Bool {
             attention.autoOpenPromptCachePanel(
                 paneID: paneID,
-                in: .test(tabID: tab.id, showsPaneHeader: true),
+                in: .test(),
                 presentation: presentation
             )
         }
@@ -692,11 +691,11 @@ struct PromptCacheAttentionTests {
     }
 
     @Test func panelTheUserOpened_countsAsTheOneAutoOpen() {
-        let (_, tab, paneID) = WorkspaceSessionFixture.withLooseTab()
+        let (_, _, paneID) = WorkspaceSessionFixture.withLooseTab()
         let attention = AttentionState()
         let presentation = PromptCachePanelPresentation()
         publish(attention, paneID: paneID, state: .finished, window: window(minutesAgo: 70))
-        let place = PromptCacheClockPlace.tabRow(tabID: tab.id)
+        let place = PromptCacheClockPlace.paneHeader(paneID: paneID)
         let target = PromptCacheTarget(runtimeID: "claude:run", paneID: paneID)
         let frame = CGRect(x: 0, y: 0, width: 16, height: 16)
         presentation.clockClicked(place: place, instance: UUID(), anchor: frame, target: target)
@@ -705,18 +704,16 @@ struct PromptCacheAttentionTests {
 
         #expect(!attention.autoOpenPromptCachePanel(
             paneID: paneID,
-            in: .test(tabID: tab.id),
+            in: .test(),
             presentation: presentation
         ))
     }
 }
 
 extension PromptCacheAutoOpenWindow {
-    /// The window of `tabID`, at the suites' window size.
-    static func test(tabID: UUID, showsPaneHeader: Bool = false, isAnotherPanelOpen: Bool = false) -> Self {
+    /// A window at the suites' window size.
+    static func test(isAnotherPanelOpen: Bool = false) -> Self {
         Self(
-            tabID: tabID,
-            showsPaneHeader: showsPaneHeader,
             isAnotherPanelOpen: isAnotherPanelOpen,
             bounds: PromptCacheAttentionTests.windowBounds
         )

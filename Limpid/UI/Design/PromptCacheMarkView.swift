@@ -2,7 +2,7 @@
 // Limpid — the clock that says a pane's prompt cache is about to expire or
 // already has.
 //
-// Drawn beside the agent state mark in a split pane's header, at that
+// Drawn beside the agent state mark in a pane's header, at that
 // mark's metrics, so the two read as one status group, and as a chip with
 // words in the supervision window's session header. Either one is the way
 // into the cache panel, below itself: resting the pointer on it, clicking
@@ -52,7 +52,7 @@ extension PromptCacheMark {
     }
 }
 
-/// The interactive clock in a split pane's header, or the chip in the
+/// The interactive clock in a pane's header, or the chip in the
 /// supervision window's session header.
 struct PromptCacheMarkView: View {
     /// How the clock is drawn: a glyph beside a pane header's state mark,
@@ -146,7 +146,7 @@ struct PromptCacheMarkView: View {
     }
 }
 
-/// The clock in a split pane's header, or nothing while the pane's agent
+/// The clock in a pane's header, or nothing while the pane's agent
 /// has none. Its own view so the header names it in one line and drops it
 /// together with the state mark beside it.
 struct PromptCachePaneClock: View {

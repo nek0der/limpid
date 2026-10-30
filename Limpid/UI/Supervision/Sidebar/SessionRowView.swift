@@ -37,6 +37,9 @@ struct SessionRowView: View {
     let onRename: ((String) -> Void)?
     @Binding var isRenaming: Bool
     @Environment(\.locale) private var locale
+    /// A dragged tab or pane would land here: the name takes the accent.
+    @Environment(\.isDropTarget) private var isDropTarget
+    @Environment(\.limpidAccent) private var accent
     @State private var isHovering = false
 
     private typealias Layout = LimpidLayout.Supervision
@@ -47,7 +50,7 @@ struct SessionRowView: View {
         if let drag {
             content
                 .opacity(drag.dragState.currentSourceID == drag.id ? Layout.draggedItemOpacity : baseOpacity)
-                .limpidDraggable(kind: .worktree, prefix: "worktree:", id: drag.id, dragState: drag.dragState)
+                .limpidDraggable(kind: .worktree, prefix: DragPrefix.worktree, id: drag.id, dragState: drag.dragState)
         } else {
             content
                 .opacity(baseOpacity)
@@ -81,7 +84,7 @@ struct SessionRowView: View {
                         // opening it does not move where its name is cut;
                         // the fill says which row is open.
                         font: .supervision(.label, weight: .medium),
-                        foregroundColor: SupervisionTokens.text.color,
+                        foregroundColor: isDropTarget ? accent : SupervisionTokens.text.color,
                         onRename: onRename,
                         // The repository's tag follows the name rather
                         // than the column, so the name keeps only its own
@@ -382,6 +385,9 @@ struct ScratchRowView: View {
     var isKeyboardSelected = false
     let actions: SessionRowActions
     let onActivate: () -> Void
+    /// A dragged tab or pane would land here: the name takes the accent.
+    @Environment(\.isDropTarget) private var isDropTarget
+    @Environment(\.limpidAccent) private var accent
     @State private var isHovering = false
 
     private typealias Layout = LimpidLayout.Supervision
@@ -394,7 +400,7 @@ struct ScratchRowView: View {
                 Text("Scratch")
                     // The session rows' one weight.
                     .font(.supervision(.label, weight: .medium))
-                    .foregroundStyle(SupervisionTokens.text.color)
+                    .foregroundStyle(isDropTarget ? accent : SupervisionTokens.text.color)
                 Spacer(minLength: LimpidLayout.Supervision.spaceXS)
                 ShellPromptBadge()
             }
@@ -433,15 +439,22 @@ struct SessionRowFace: ViewModifier {
     let isActive: Bool
     let isHovering: Bool
     let isKeyboardSelected: Bool
+    /// Optional: a row drawn outside a window, as a test draws one, has no
+    /// drag to read.
+    @Environment(LimpidDragState.self) private var dragState: LimpidDragState?
 
     private typealias Layout = LimpidLayout.Supervision
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: Layout.sessionRowCornerRadius, style: .continuous)
+        // A drag reports no hover ending, so the line it started over or
+        // passed would stay filled for as long as it lasts, beside the mark
+        // of where the drag would land.
+        let isHovered = isHovering && dragState?.current == nil
         content
             .padding(.horizontal, Layout.sessionRowHorizontalInset)
             .frame(height: height)
-            .background(shape.fill(SessionRowFill.color(isActive: isActive, isHovering: isHovering)))
+            .background(shape.fill(SessionRowFill.color(isActive: isActive, isHovering: isHovered)))
             // On the row's edge rather than outside it: the rows sit close,
             // and a ring outside would reach into the next one.
             .supervisionFocusRing(

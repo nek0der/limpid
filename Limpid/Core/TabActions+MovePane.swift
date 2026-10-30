@@ -18,14 +18,26 @@ extension TabActions {
     /// "split off", and creating an empty source tab would surprise the
     /// user. The right-click menu hides the item in that case via
     /// `canMoveToNewTab`; the guard here covers programmatic callers.
+    /// Returns the new tab, `nil` when it made none.
+    @discardableResult
     static func movePaneToNewTab(
         _ session: WorkspaceSession,
         paneID: UUID,
         in window: WindowID,
         intent: SelectionIntent
-    ) {
-        guard let sourceTab = session.tab(containing: paneID) else { return }
-        guard sourceTab.splitTree.allLeafIDs().count > 1 else { return }
+    ) -> UUID? {
+        guard let newTabID = splitPaneOff(session, paneID: paneID) else { return nil }
+        session.setActiveTab(newTabID, in: window, intent: intent)
+        return newTabID
+    }
+
+    /// The move itself, selecting nothing: a pane dropped on a sidebar row
+    /// leaves every window where it was. Returns the new tab, `nil` when
+    /// the pane is alone in its tab.
+    @discardableResult
+    static func splitPaneOff(_ session: WorkspaceSession, paneID: UUID) -> UUID? {
+        guard let sourceTab = session.tab(containing: paneID) else { return nil }
+        guard sourceTab.splitTree.allLeafIDs().count > 1 else { return nil }
 
         // A pane the user named carries that name to its new tab, pinned
         // the way a tab rename pins one: the source tab's title belongs to
@@ -60,6 +72,6 @@ extension TabActions {
         }
 
         session.tabs.append(newTab)
-        session.setActiveTab(newTab.id, in: window, intent: intent)
+        return newTab.id
     }
 }

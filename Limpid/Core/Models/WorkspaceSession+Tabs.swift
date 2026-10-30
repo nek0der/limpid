@@ -319,6 +319,9 @@ extension WorkspaceSession {
     ///   3. every window or view that showed the tab stays on the source
     ///      container, on the neighbor that slid into its place (or none
     ///      when the source is empty)
+    ///   4. a window or view standing on the empty destination shows it,
+    ///      unless the window is choosing a project and shows nothing
+    ///   5. its new panes start in the destination's folder
     func moveTab(_ tabID: UUID, to target: ContainerID) {
         guard let index = tabs.firstIndex(where: { $0.id == tabID }) else { return }
         if tabs[index].container == target {
@@ -338,15 +341,28 @@ extension WorkspaceSession {
         forgetLastActive(tabID: tabID, container: sourceContainer)
         var moved = tabs.remove(at: index)
         moved.container = target
-        // A tab moved into a project starts its panes where the tab opened,
-        // as a tab moved between projects does; the folder default it kept
-        // from a group was for the scratch tabs. Its name prefix and color
-        // stay with it.
+        // A tab moved to a row starts its panes in that row's folder, so the
+        // row says where they run, and they outlive the row it left; the
+        // folder default it kept from a group was for the scratch tabs. Its
+        // running panes stay where they are, and an agent resumes in its
+        // own recorded folder. Its name prefix and color stay with it.
         if target.projectID != nil {
             moved.cwdMode = nil
             moved.cwdPath = nil
+            moved.workingDirectory = rootDirectory(of: target)?.path ?? moved.workingDirectory
         }
         tabs.append(moved)
+        // A window or view standing on the empty row it landed on shows it:
+        // left with no tab selected, the row would list a tab its window
+        // does not draw.
+        for holder in selectionTargets(where: { $0 == target && $1 == nil }) {
+            // Choosing a project, a window stands on the scratch row without
+            // showing it (`holdsSelection`).
+            if case let .window(selection) = holder, selection.isChoosingProject {
+                continue
+            }
+            setActiveTab(tabID, at: holder, intent: .repair)
+        }
         // Stay on the source container — yanking the user across
         // to the destination on every drag feels like a bug. For
         // active-tab drags promote the sibling that slid into the
@@ -369,8 +385,7 @@ extension WorkspaceSession {
         // otherwise `remove` drops the source first, `beforeID` is then
         // not found, and we'd `append` it to the very end. Mirrors the
         // `sourceID != targetID` guard in `reorderInPlace`.
-        guard beforeID != tabID else { return }
-        guard let from = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+        guard beforeID != tabID, let from = tabs.firstIndex(where: { $0.id == tabID }) else { return }
         let moved = tabs.remove(at: from)
         if let beforeID,
            let to = tabs.firstIndex(where: { $0.id == beforeID })
@@ -386,8 +401,7 @@ extension WorkspaceSession {
     func reorderTab(_ tabID: UUID, after afterID: UUID) {
         // Dropping after yourself is a no-op — same append-to-end hazard
         // as the `before` overload.
-        guard afterID != tabID else { return }
-        guard let from = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+        guard afterID != tabID, let from = tabs.firstIndex(where: { $0.id == tabID }) else { return }
         let moved = tabs.remove(at: from)
         guard let toBase = tabs.firstIndex(where: { $0.id == afterID }) else {
             tabs.append(moved)

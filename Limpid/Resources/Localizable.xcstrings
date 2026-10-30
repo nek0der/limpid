@@ -5866,7 +5866,7 @@
       }
     },
     "Pane actions": {
-      "comment": "Help tag and accessibility label of the ellipsis menu on a split pane's header",
+      "comment": "Help tag and accessibility label of the ellipsis menu on a pane's header",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -10312,7 +10312,7 @@
       }
     },
     "Terminal": {
-      "comment": "Keyboard settings section title for terminal-specific shortcuts; also the name a split pane's header shows before its shell reports a directory",
+      "comment": "Keyboard settings section title for terminal-specific shortcuts; also the name a pane's header shows before its shell reports a directory",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -22974,6 +22974,74 @@
           "stringUnit": {
             "state": "translated",
             "value": "エージェントの設定を特定できません"
+          }
+        }
+      }
+    },
+    "Moved the tab to %@ in %@": {
+      "comment": "Sidebar, VoiceOver: a dragged tab was dropped on a row (first) of a project (second)",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moved the tab to %1$@ in %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブを %2$@ の %1$@ に移動しました。"
+          }
+        }
+      }
+    },
+    "Moved the tab to %@": {
+      "comment": "Sidebar, VoiceOver: a dragged tab was dropped on the scratch row, named here",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moved the tab to %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブを %@ に移動しました。"
+          }
+        }
+      }
+    },
+    "Moved the pane to %@ in %@": {
+      "comment": "Sidebar, VoiceOver: a dragged pane was dropped on a row (first) of a project (second)",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moved the pane to %1$@ in %2$@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインを %2$@ の %1$@ に移動しました。"
+          }
+        }
+      }
+    },
+    "Moved the pane to %@": {
+      "comment": "Sidebar, VoiceOver: a dragged pane was dropped on the scratch row, named here",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Moved the pane to %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ペインを %@ に移動しました。"
           }
         }
       }
