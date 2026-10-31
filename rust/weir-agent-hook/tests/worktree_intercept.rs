@@ -72,7 +72,7 @@ fn intercept_creates_the_worktree_where_the_project_says_and_notifies() {
     )
     .expect("intent");
     let result = weir_agent_hook::run_worktree_intercept(&intent, "claude", &states);
-    let expected = repo.root.join("repo-demo");
+    let expected = repo.root.join("repo-feature-demo");
     assert_eq!(
         result,
         InterceptResult::Created {
@@ -115,6 +115,28 @@ fn intercept_creates_the_worktree_where_the_project_says_and_notifies() {
     assert_eq!(event["event"], "WorktreeCreate");
     assert_eq!(event["branch"], "feature/demo");
     assert_eq!(event["worktreePath"], expected.to_string_lossy().as_ref());
+}
+
+#[test]
+fn intercept_gives_branches_with_one_last_part_their_own_folders() {
+    let repo = Repo::new("one-last-part");
+    let states = routing(&repo, "");
+    for (branch, folder) in [
+        ("feature/alpha", "repo-feature-alpha"),
+        ("fix/alpha", "repo-fix-alpha"),
+    ] {
+        let intent = WorktreeIntent::parse(
+            &format!("git worktree add -b {branch} ../elsewhere"),
+            Some(repo.path.to_str().expect("path")),
+        )
+        .expect("intent");
+        let result = weir_agent_hook::run_worktree_intercept(&intent, "claude", &states);
+        let expected = repo.root.join(folder);
+        assert!(
+            matches!(&result, InterceptResult::Created { path, .. } if *path == expected),
+            "{branch}: {result:?}"
+        );
+    }
 }
 
 #[test]

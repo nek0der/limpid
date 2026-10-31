@@ -20,6 +20,20 @@ struct SharedValuesContractTests {
         let paneIdentifierVariable: String
         let atWorkStates: [String]
         let notAtWorkStates: [String]
+        let worktreeFolders: WorktreeFolders
+    }
+
+    struct WorktreeFolders: Decodable {
+        let projectRoot: String
+        let customParent: String
+        let cases: [WorktreeFolderCase]
+    }
+
+    struct WorktreeFolderCase: Decodable {
+        let branch: String
+        let siblingPrefixed: String
+        let insideHidden: String
+        let custom: String
     }
 
     private static func sharedValues() throws -> SharedValues {
@@ -45,6 +59,30 @@ struct SharedValuesContractTests {
             basePath: "/usr/bin"
         )
         #expect(env[shared.paneIdentifierVariable] != nil)
+    }
+
+    @Test func theWorktreeFolders_areTheOnesTheHookMakes() throws {
+        let folders = try Self.sharedValues().worktreeFolders
+        #expect(!folders.cases.isEmpty)
+        let customParent = URL(fileURLWithPath: folders.customParent)
+        for folder in folders.cases {
+            let leaf = BranchNameSuggester.folderLeaf(of: folder.branch)
+            let placements: [(WorktreePlacement, String)] = [
+                (.siblingPrefixed, folder.siblingPrefixed),
+                (.insideHidden, folder.insideHidden),
+                (.custom(customParent), folder.custom)
+            ]
+            for (placement, expected) in placements {
+                let project = Project(
+                    id: UUID(),
+                    name: "repo",
+                    rootURL: URL(fileURLWithPath: folders.projectRoot),
+                    worktrees: [],
+                    worktreePlacement: placement
+                )
+                #expect(project.resolvedWorktreeURL(branchLeaf: leaf).path == expected, "\(folder.branch)")
+            }
+        }
     }
 
     @Test func theMidTurnStates_areTheOnesTheHookCountsAsAtWork() throws {

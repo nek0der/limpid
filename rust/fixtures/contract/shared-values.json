@@ -5,5 +5,35 @@
   "paneIdentifierVariable": "WEIR_PANE_ID",
   "atWorkStates": ["running", "needsInput", "compacting"],
   "notAtWorkStates": ["idle", "finished", "error", "unknown"],
-  "claudeStatusLineRelayArguments": "statusline claude"
+  "claudeStatusLineRelayArguments": "statusline claude",
+  "worktreeFolders": {
+    "projectRoot": "/projects/repo",
+    "customParent": "/elsewhere",
+    "cases": [
+      {
+        "branch": "feature/alpha",
+        "siblingPrefixed": "/projects/repo-feature-alpha",
+        "insideHidden": "/projects/repo/.worktrees/feature-alpha",
+        "custom": "/elsewhere/feature-alpha"
+      },
+      {
+        "branch": "fix/alpha",
+        "siblingPrefixed": "/projects/repo-fix-alpha",
+        "insideHidden": "/projects/repo/.worktrees/fix-alpha",
+        "custom": "/elsewhere/fix-alpha"
+      },
+      {
+        "branch": "feat/a/b",
+        "siblingPrefixed": "/projects/repo-feat-a-b",
+        "insideHidden": "/projects/repo/.worktrees/feat-a-b",
+        "custom": "/elsewhere/feat-a-b"
+      },
+      {
+        "branch": "main",
+        "siblingPrefixed": "/projects/repo-main",
+        "insideHidden": "/projects/repo/.worktrees/main",
+        "custom": "/elsewhere/main"
+      }
+    ]
+  }
 }

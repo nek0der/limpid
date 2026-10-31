@@ -66,4 +66,9 @@ struct BranchNameSuggesterTests {
     @Test func aBranchsFolder_hasNoSlash() {
         #expect(BranchNameSuggester.folderLeaf(of: "feat/a/b") == "feat-a-b")
     }
+
+    @Test func branchesWithOneLastPart_getTheirOwnFolders() {
+        #expect(BranchNameSuggester.folderLeaf(of: "feature/alpha") == "feature-alpha")
+        #expect(BranchNameSuggester.folderLeaf(of: "fix/alpha") == "fix-alpha")
+    }
 }

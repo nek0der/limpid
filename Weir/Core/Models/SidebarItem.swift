@@ -228,7 +228,9 @@ struct Project: Codable, Equatable, Identifiable {
 
     /// Resolve the final on-disk URL for a worktree with the given
     /// (already sanitized) branch leaf, using this project's
-    /// placement strategy.
+    /// placement strategy. The worktree hook resolves the same path
+    /// (`worktree_path` in `rust/weir-agent-hook/src/worktree.rs`); the two
+    /// sides check it against `rust/fixtures/contract/shared-values.json`.
     func resolvedWorktreeURL(branchLeaf: String) -> URL {
         let repoBasename = rootURL.lastPathComponent
         switch worktreePlacement {

@@ -162,7 +162,7 @@ struct WorktreeRoutingHookTests {
         // Status 2 is the only success: the provider cancels its own command
         // and shows our message to the model.
         #expect(status == 2)
-        let worktree = scratch.root.appendingPathComponent("repo-alpha")
+        let worktree = scratch.root.appendingPathComponent("repo-feature-alpha")
         #expect(FileManager.default.fileExists(atPath: worktree.path))
         #expect(FileManager.default.fileExists(
             atPath: worktree.appendingPathComponent("bootstrapped.txt").path
@@ -171,6 +171,19 @@ struct WorktreeRoutingHookTests {
         // not list is a worktree it never shows.
         let event = try #require(try event(in: states(scratch, provider: "claude")))
         #expect(event["branch"] as? String == "feature/alpha")
+    }
+
+    @Test("branches with one last part get their own folders, where the sheet would put them")
+    func branchesWithOneLastPart_getTheirOwnFolders() async throws {
+        let scratch = try await Scratch.make()
+        defer { scratch.cleanup() }
+        writeRouting(scratch, routeClaude: true)
+
+        for branch in ["feature/alpha", "fix/alpha"] {
+            #expect(try interceptWorktreeAdd(scratch, branch: branch) == 2)
+            let folder = "repo-\(BranchNameSuggester.folderLeaf(of: branch))"
+            #expect(FileManager.default.fileExists(atPath: scratch.root.appendingPathComponent(folder).path), "\(branch)")
+        }
     }
 
     /// Each provider's wrapper names its own subcommand of the helper, so
