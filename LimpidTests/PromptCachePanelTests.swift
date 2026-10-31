@@ -140,6 +140,7 @@ struct PromptCacheRulesTests {
 
 // MARK: - Panel presentation
 
+@Suite(.timeLimit(.minutes(1)))
 @MainActor
 struct PromptCachePanelPresentationTests {
     /// Short enough that the suite spends no real time waiting; what is
@@ -161,7 +162,7 @@ struct PromptCachePanelPresentationTests {
     /// Outwaits a pending open or dismiss and the main-actor turn after it,
     /// with a generous margin, for a test that shows nothing happened: no
     /// hook tells when a timer fired without acting. A transition that does
-    /// happen is waited for with `pollUntil` instead.
+    /// happen is waited for with `untilObserved` instead.
     private func settle() async throws {
         try await Task.sleep(for: Self.delay * 10)
         await Task.yield()
@@ -180,11 +181,11 @@ struct PromptCachePanelPresentationTests {
         let presentation = makePresentation()
         presentation.clockEntered(place: place, instance: clock, anchor: frame, target: target)
         #expect(presentation.request == nil, "not before the pointer has rested")
-        await pollUntil(interval: .milliseconds(5)) { presentation.request?.trigger == .pointer }
+        await untilObserved { presentation.request?.trigger == .pointer }
         #expect(presentation.request?.trigger == .pointer)
 
         presentation.clockExited(place: place, instance: clock)
-        await pollUntil(interval: .milliseconds(5)) { presentation.request == nil }
+        await untilObserved { presentation.request == nil }
         #expect(presentation.request == nil)
     }
 
@@ -206,7 +207,7 @@ struct PromptCachePanelPresentationTests {
         #expect(presentation.request != nil)
 
         presentation.panelHoverChanged(false)
-        await pollUntil(interval: .milliseconds(5)) { presentation.request == nil }
+        await untilObserved { presentation.request == nil }
         #expect(presentation.request == nil)
     }
 
@@ -223,7 +224,7 @@ struct PromptCachePanelPresentationTests {
         // Once the pointer is seen arriving, leaving closes it.
         presentation.clockEntered(place: place, instance: clock, anchor: frame, target: target)
         presentation.clockExited(place: place, instance: clock)
-        await pollUntil(interval: .milliseconds(5)) { presentation.request == nil }
+        await untilObserved { presentation.request == nil }
         #expect(presentation.request == nil)
     }
 
@@ -239,7 +240,7 @@ struct PromptCachePanelPresentationTests {
         let presentation = makePresentation()
         let replacement = UUID()
         presentation.clockEntered(place: place, instance: clock, anchor: frame, target: target)
-        await pollUntil(interval: .milliseconds(5)) { presentation.request != nil }
+        await untilObserved { presentation.request != nil }
         #expect(presentation.request != nil)
 
         // A row swapping layouts: its new clock reports the pointer before
@@ -247,7 +248,7 @@ struct PromptCachePanelPresentationTests {
         presentation.clockEntered(place: place, instance: replacement, anchor: frame, target: target)
         presentation.clockExited(place: place, instance: clock)
         presentation.clockDisappeared(place: place, instance: clock)
-        await pollUntil(interval: .milliseconds(5)) { presentation.request?.clock.instance == replacement }
+        await untilObserved { presentation.request?.clock.instance == replacement }
         // The dismiss the old clock's exit scheduled comes due: with the
         // pointer on the replacement, it closes nothing. This proves that
         // nothing happens, so it waits past the delay.
@@ -255,7 +256,7 @@ struct PromptCachePanelPresentationTests {
         #expect(presentation.request?.clock.instance == replacement)
 
         presentation.clockExited(place: place, instance: replacement)
-        await pollUntil(interval: .milliseconds(5)) { presentation.request == nil }
+        await untilObserved { presentation.request == nil }
         #expect(presentation.request == nil)
     }
 
@@ -276,7 +277,7 @@ struct PromptCachePanelPresentationTests {
 
         presentation.panelHoverChanged(true)
         presentation.panelHoverChanged(false)
-        await pollUntil(interval: .milliseconds(5)) { presentation.request == nil }
+        await untilObserved { presentation.request == nil }
         #expect(presentation.request == nil)
     }
 
@@ -321,7 +322,7 @@ struct PromptCachePanelPresentationTests {
         #expect(presentation.anchor(for: place) == moved)
 
         presentation.clockDisappeared(place: place, instance: new)
-        await pollUntil(interval: .milliseconds(5)) { presentation.request == nil }
+        await untilObserved { presentation.request == nil }
         #expect(presentation.request == nil)
         #expect(presentation.anchor(for: place) == nil)
     }
@@ -337,7 +338,7 @@ struct PromptCachePanelPresentationTests {
         let moved = frame.offsetBy(dx: 0, dy: 12)
         presentation.clockDisappeared(place: place, instance: old)
         presentation.clockMoved(place: place, instance: UUID(), anchor: moved)
-        await pollUntil(interval: .milliseconds(5)) { presentation.request?.anchor == moved }
+        await untilObserved { presentation.request?.anchor == moved }
         #expect(presentation.request?.anchor == moved)
     }
 
@@ -360,7 +361,7 @@ struct PromptCachePanelPresentationTests {
         presentation.close()
 
         presentation.clockEntered(place: place, instance: clock, anchor: here, target: target)
-        await pollUntil(interval: .milliseconds(5)) { presentation.request != nil }
+        await untilObserved { presentation.request != nil }
         #expect(presentation.request?.anchor == here)
     }
 

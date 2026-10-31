@@ -68,8 +68,8 @@ struct PaneContainerView: View {
         // Every pane carries a header, alone in its tab or not, shell or
         // agent: it is where a pane is named and acted on, and where an
         // agent's model and permission mode show. It stacks above the
-        // terminal instead of floating over it, so the overlays below stay
-        // positioned against the terminal alone.
+        // terminal instead of floating over it, so the overlays inside
+        // `terminal(...)` stay positioned against the terminal alone.
         return VStack(spacing: 0) {
             PaneHeaderView(paneID: paneID, isFocused: isFocusedPane)
             terminal(exitCode: exitCode, bellRinging: bellRinging, opacity: opacity)
@@ -79,8 +79,13 @@ struct PaneContainerView: View {
             PaneDecisionBar(paneID: paneID, restingOpacity: opacity)
                 .transition(.identity)
         }
-        // Around the header and the bar too: it is the whole pane a card asks
-        // about.
+        // Around the header and the bar too: it is the whole pane that needs
+        // the person, and the header is what names it.
+        .overlay {
+            PaneAttentionFrame(paneID: paneID)
+        }
+        // On the same line, and over the attention frame: a card's hover is
+        // brief, and it has to say which pane the card is about.
         .overlay {
             PaneConversationFrame(paneID: paneID)
         }
@@ -196,9 +201,6 @@ struct PaneContainerView: View {
                     : Text("Answer approval request for \(approval.toolName)"))
                 .accessibilityHint(Text("Opens the approval card"))
             }
-        }
-        .overlay {
-            PaneAttentionFrame(paneID: paneID)
         }
         .animation(ModalMotion.floatingPanel.animation(reduceMotion: reduceMotion), value: exitCode)
         .animation(ModalMotion.paneBar.animation(reduceMotion: reduceMotion), value: session.paneSearchStates[paneID] != nil)

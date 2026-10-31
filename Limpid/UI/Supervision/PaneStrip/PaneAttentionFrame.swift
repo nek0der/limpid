@@ -3,8 +3,9 @@
 
 import SwiftUI
 
-/// A thin inner frame (`paneAttentionFrameWidth`): amber while the
-/// pane's agent waits for an answer or an approval, red once it stopped.
+/// A thin inner frame (`paneAttentionFrameWidth`) around the whole pane,
+/// header and decision bar included: amber while the pane's agent waits
+/// for an answer or an approval, red once it stopped.
 /// It blinks once, for 600ms, when it appears, and not under Reduce
 /// Motion. An unread turn has none: it is not urgent. The keyboard stays
 /// with the terminal. Where the pane
