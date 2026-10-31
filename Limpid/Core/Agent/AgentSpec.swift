@@ -165,6 +165,11 @@ struct AgentBadge: Codable, Equatable {
     /// a hook has said, and in a badge persisted before this field existed.
     var model: String?
 
+    /// How hard the session's model reasons, in the provider's own word
+    /// (`medium`, `xhigh`), for the pane header. `nil` until the agent has
+    /// said, and in a badge persisted before this field existed.
+    var effort: String?
+
     /// How freely the session may act without asking, as the projection
     /// spells it ("bypassPermissions"). Kept as the word, as `waitKind` is,
     /// so a mode a newer build writes still decodes, as none

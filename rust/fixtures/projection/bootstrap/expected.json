@@ -15,6 +15,7 @@
           "sessionStartedAt": "2026-09-14T12:00:00Z",
           "hasPrompt": true,
           "model": "Fable 5.1",
+          "effort": "high",
           "permissionMode": "auto"
         },
         "panes": [
@@ -43,6 +44,7 @@
           "sessionStartedAt": "2026-09-14T12:00:00Z",
           "hasPrompt": true,
           "model": "Fable 5.1",
+          "effort": "high",
           "permissionMode": "auto"
         }
       }

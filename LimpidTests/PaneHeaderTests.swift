@@ -202,6 +202,22 @@ struct PaneHeaderTests {
         #expect(label.runsWithoutAsking == (mode == .bypassPermissions))
     }
 
+    @Test func settingsText_putsTheEffortBetweenTheModelAndTheMode() {
+        var label = PaneHeaderLabel(
+            name: "x",
+            detail: nil,
+            agentKind: .claude,
+            agentName: "Claude",
+            model: "Opus 5.5",
+            permissionMode: .plan
+        )
+        label.effort = "xhigh"
+        #expect(label.settingsText(locale: Locale(identifier: "en")) == "Opus 5.5 · xhigh · Plan")
+        #expect(label.settingsText(tokens: "31K tok", locale: Locale(identifier: "en")) == "Opus 5.5 · xhigh · Plan · 31K tok")
+        label.settingsAreAmbiguous = true
+        #expect(label.settingsText(locale: Locale(identifier: "en")) == nil)
+    }
+
     @Test func label_shell_namesDirectoryAndShowsItsPath() {
         let label = PaneHeaderRules.label(
             customName: "   ",
@@ -577,26 +593,27 @@ struct PaneHeaderTests {
 
     // MARK: - Forms
 
-    /// Narrowing drops the directory first, then the model and mode, then
-    /// the name; the warning stays while the state mark does, in words only
-    /// while the model and mode still show.
-    @Test func forms_dropDetailThenSettingsThenNameThenMark() {
+    /// Narrowing drops the directory first, then the tokens, then the model
+    /// and mode, then the name; the warning stays while the state mark does,
+    /// in words only while the model and mode still show.
+    @Test func forms_dropDetailThenTokensThenSettingsThenNameThenMark() {
         let forms = PaneHeaderRules.forms(isEditing: false, showsPromptCacheClock: false)
-        #expect(forms == [.all, .withSettings, .withName, .withMark, .kindAndMenu])
-        #expect(forms.map(\.showsDetail) == [true, false, false, false, false])
-        #expect(forms.map(\.showsSettings) == [true, true, false, false, false])
-        #expect(forms.map(\.showsName) == [true, true, true, false, false])
-        #expect(forms.map(\.showsMark) == [true, true, true, true, false])
+        #expect(forms == [.all, .withTokens, .withSettings, .withName, .withMark, .kindAndMenu])
+        #expect(forms.map(\.showsDetail) == [true, false, false, false, false, false])
+        #expect(forms.map(\.showsTokens) == [true, true, false, false, false, false])
+        #expect(forms.map(\.showsSettings) == [true, true, true, false, false, false])
+        #expect(forms.map(\.showsName) == [true, true, true, true, false, false])
+        #expect(forms.map(\.showsMark) == [true, true, true, true, true, false])
     }
 
     @Test func forms_withACacheClock_dropTheMarkBeforeTheClock() {
         let forms = PaneHeaderRules.forms(isEditing: false, showsPromptCacheClock: true)
-        #expect(forms == [.all, .withSettings, .withName, .withMark, .withClock, .kindAndMenu])
-        #expect(forms.map(\.showsDetail) == [true, false, false, false, false, false])
-        #expect(forms.map(\.showsSettings) == [true, true, false, false, false, false])
-        #expect(forms.map(\.showsName) == [true, true, true, false, false, false])
-        #expect(forms.map(\.showsMark) == [true, true, true, true, false, false])
-        #expect(forms.map(\.showsPromptCacheClock) == [true, true, true, true, true, false])
+        #expect(forms == [.all, .withTokens, .withSettings, .withName, .withMark, .withClock, .kindAndMenu])
+        #expect(forms.map(\.showsDetail) == [true, false, false, false, false, false, false])
+        #expect(forms.map(\.showsSettings) == [true, true, true, false, false, false, false])
+        #expect(forms.map(\.showsName) == [true, true, true, true, false, false, false])
+        #expect(forms.map(\.showsMark) == [true, true, true, true, true, false, false])
+        #expect(forms.map(\.showsPromptCacheClock) == [true, true, true, true, true, true, false])
     }
 
     @Test func forms_whileEditing_keepTheName() {

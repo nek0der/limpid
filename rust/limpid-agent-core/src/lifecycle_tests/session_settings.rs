@@ -9,6 +9,9 @@ fn saying(model: Option<&str>, mode: Option<PermissionMode>) -> ApplyContext {
     ApplyContext {
         settings: SessionSettings {
             model: model.map(str::to_owned),
+            answered_model: None,
+            is_awaiting_answer: false,
+            effort: None,
             permission_mode: mode,
         },
         ..context()
@@ -215,4 +218,113 @@ fn parent_identity_is_immutable_and_own_observations_advance_without_a_state_cha
         .expect("state write");
     assert_eq!(changed.parent_run_id.as_deref(), Some("parent"));
     assert_eq!(changed.run_observed_order, Some(200));
+}
+
+#[test]
+fn a_new_model_drops_the_effort_said_of_the_old_one() {
+    let saying_effort = |model: Option<&str>, effort: Option<&str>| ApplyContext {
+        settings: SessionSettings {
+            model: model.map(str::to_owned),
+            answered_model: None,
+            is_awaiting_answer: false,
+            effort: effort.map(str::to_owned),
+            permission_mode: None,
+        },
+        ..context()
+    };
+    let (session, _, _) = run(&claude(), &[started(None), prompt("go")]);
+    let said = apply(
+        Some(&session),
+        &model_switch(),
+        &saying_effort(Some("Opus 5.5"), Some("high")),
+        &claude(),
+        NOW,
+    )
+    .run
+    .expect("record");
+    assert_eq!(said.effort.as_deref(), Some("high"));
+
+    let same = apply(
+        Some(&said),
+        &model_switch(),
+        &saying_effort(Some("Opus 5.5"), None),
+        &claude(),
+        LATER,
+    );
+    let same = same.run.as_ref().unwrap_or(&said);
+    assert_eq!(
+        same.effort.as_deref(),
+        Some("high"),
+        "the same model keeps it"
+    );
+
+    let switched = apply(
+        Some(&said),
+        &model_switch(),
+        &saying_effort(Some("Haiku 5.5"), None),
+        &claude(),
+        LATER,
+    )
+    .run
+    .expect("record");
+    assert_eq!(switched.effort, None);
+
+    let both = apply(
+        Some(&said),
+        &model_switch(),
+        &saying_effort(Some("Haiku 5.5"), Some("low")),
+        &claude(),
+        LATER,
+    )
+    .run
+    .expect("record");
+    assert_eq!(both.effort.as_deref(), Some("low"));
+}
+
+#[test]
+fn an_answered_model_fills_only_a_record_without_one() {
+    let answering = |model: &str| ApplyContext {
+        settings: SessionSettings {
+            answered_model: Some(model.to_owned()),
+            effort: Some("high".to_owned()),
+            ..SessionSettings::default()
+        },
+        ..context()
+    };
+    let (session, _, _) = run(&claude(), &[started(None), prompt("go")]);
+    assert_eq!(session.model, None);
+    let filled = apply(
+        Some(&session),
+        &model_switch(),
+        &answering("Opus 5.5"),
+        &claude(),
+        NOW,
+    )
+    .run
+    .expect("record");
+    assert_eq!(filled.model.as_deref(), Some("Opus 5.5"));
+    assert_eq!(
+        filled.effort.as_deref(),
+        Some("high"),
+        "said in the same call"
+    );
+
+    let said = apply(
+        Some(&session),
+        &model_switch(),
+        &saying(Some("Fable 5.1 1M"), None),
+        &claude(),
+        NOW,
+    )
+    .run
+    .expect("record");
+    let kept = apply(
+        Some(&said),
+        &model_switch(),
+        &answering("Fable 5.1"),
+        &claude(),
+        LATER,
+    );
+    let kept = kept.run.as_ref().unwrap_or(&said);
+    assert_eq!(kept.model.as_deref(), Some("Fable 5.1 1M"));
 }

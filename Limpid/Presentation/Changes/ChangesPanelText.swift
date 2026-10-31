@@ -13,14 +13,68 @@ enum ChangesPanelText {
     /// rather than names a control, so it is in sentence case. "0
     /// unviewed" stays once every turn is viewed: a count of nothing is
     /// quiet rather than gone, so the head keeps its shape as the
-    /// lines move.
-    static func summary(turns: Int, unviewed: Int, locale: Locale) -> String {
+    /// lines move. `tokens` ends the line where the turns have a count:
+    /// "14 turns · 10 unviewed · 1.2M tok".
+    static func summary(turns: Int, unviewed: Int, tokens: String? = nil, locale: Locale) -> String {
         let count = LocalizedStringResource(
             "\(turns) turns",
             comment: "A count of turns: the changes panel's head, the turns a setting keeps"
         )
         .resolved(in: locale)
-        return AgentStatusText.joined([count, ConversationText.unviewed(unviewed, locale: locale)], locale: locale)
+        let pieces = [count, ConversationText.unviewed(unviewed, locale: locale), tokens].compactMap(\.self)
+        return AgentStatusText.joined(pieces, locale: locale)
+    }
+
+    /// The head's tooltip: what "unviewed" counts, as the panel has no
+    /// standing line that says so, then what the worktree's turns used,
+    /// with the turns it covers named, as a retention setting drops old ones.
+    static func summaryHelp(usage: TurnUsage?, locale: Locale) -> String {
+        var lines = [LocalizedStringResource(
+            "Unviewed: turns not yet marked as viewed, in every conversation in this worktree"
+        ).resolved(in: locale)]
+        if let usage {
+            lines += usageCounts(usage, locale: locale)
+            if usage.isPartial {
+                lines.append(LocalizedStringResource(
+                    "tokens.partialTotal",
+                    defaultValue: "Some turns could not be read, so the count may be short",
+                    comment: "Changes panel head's tooltip: its token count may be lower than what the turns used"
+                ).resolved(in: locale))
+            }
+            lines.append(LocalizedStringResource(
+                "tokens.worktreeScope",
+                defaultValue: "Tokens add up every conversation’s turns still kept in this worktree",
+                comment: "Changes panel head's tooltip: which turns its token count adds up"
+            ).resolved(in: locale))
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// "1.2M tok": a count written as a card writes its own, for the panel's
+    /// head and a pane's header.
+    static func tokenCount(_ usage: TurnUsage, locale: Locale) -> String {
+        "\(tokens(usage, locale: locale)) \(tokenUnit(locale: locale))"
+    }
+
+    /// "14 turns · 10 unviewed · 1.2M tok": the head's line.
+    static func headSummary(_ list: ChangesPanelModel.TurnList, locale: Locale) -> String {
+        summary(
+            turns: list.turnCount,
+            unviewed: list.unviewedCount,
+            tokens: list.usage.map { tokenCount($0, locale: locale) },
+            locale: locale
+        )
+    }
+
+    /// The head's line as VoiceOver says it: "At least 1.2M tokens", never
+    /// the "≥" a voice reads as a symbol.
+    static func spokenHeadSummary(_ list: ChangesPanelModel.TurnList, locale: Locale) -> String {
+        AgentStatusText.spoken(summary(
+            turns: list.turnCount,
+            unviewed: list.unviewedCount,
+            tokens: list.usage.map { tokenTotal($0, isExact: false, locale: locale) },
+            locale: locale
+        ), locale: locale)
     }
 
     /// "Unviewed range: 5 files +288 −24", "Includes changes by shell
@@ -189,12 +243,12 @@ enum ChangesPanelText {
         return usage.isPartial ? "≥\(count)" : count
     }
 
-    /// "tok", the unit the card writes after its count of tokens.
+    /// "tok", the unit written after a count of tokens.
     static func tokenUnit(locale: Locale) -> String {
         LocalizedStringResource(
             "tokens.unit",
             defaultValue: "tok",
-            comment: "A turn card: the unit after its count of tokens, as in 84K tok; kept short, as the card's column is narrow"
+            comment: "The unit after a count of tokens, as in 84K tok, on a card, the panel head, and a pane header"
         ).resolved(in: locale)
     }
 
@@ -230,20 +284,33 @@ enum ChangesPanelText {
             ? LocalizedStringResource(
                 "tokens.atLeast",
                 defaultValue: "At least \(count) tokens",
-                comment: "A turn's tokens, part of the turn unread so it used more; argument: the count, as in 84,123 or 84K"
+                comment: "Tokens of a turn, conversation, or worktree, some unread so they used more; argument: the count, as in 84K"
             )
             : LocalizedStringResource(
                 "tokens.total",
                 defaultValue: "\(count) tokens",
-                comment: "A turn's tokens, the cache reads left out; argument: the count, as in 84,123 or 84K"
+                comment: "Tokens of a turn, conversation, or worktree, the cache reads left out; argument: the count, as in 84K"
             )
         return resource.resolved(in: locale)
     }
 
-    /// The tooltip's lines on what the turn used: its exact count, what it
-    /// is made of, the cache reads left out of it, and that the count is
-    /// short where it is.
+    /// The tooltip's lines on what the turn used: `usageCounts`, and that
+    /// the count is short where it is.
     static func usageDetails(_ usage: TurnUsage, locale: Locale) -> [String] {
+        var lines = usageCounts(usage, locale: locale)
+        if usage.isPartial {
+            lines.append(LocalizedStringResource(
+                "tokens.partial",
+                defaultValue: "Part of the turn could not be read, so the count may be short",
+                comment: "Tooltip of a turn: its token count may be lower than what it used"
+            ).resolved(in: locale))
+        }
+        return lines
+    }
+
+    /// A count's exact figure, what it is made of, and the cache reads left
+    /// out of it, for one turn or for the head's total.
+    private static func usageCounts(_ usage: TurnUsage, locale: Locale) -> [String] {
         let count = { exactCount($0, locale: locale) }
         let input = count(usage.inputTokens)
         let written = count(usage.cacheWriteTokens)
@@ -253,21 +320,14 @@ enum ChangesPanelText {
             LocalizedStringResource(
                 "tokens.breakdown",
                 defaultValue: "Input \(input) · Cache writes \(written) · Output \(output)",
-                comment: "Tooltip of a turn: what its token count is made of; arguments: fresh input, cache writes, output, as counts"
+                comment: "Token tooltip: what the count is made of; arguments: fresh input, cache writes, output, as counts"
             ).resolved(in: locale)
         ]
         if usage.cacheReadTokens > 0 {
             lines.append(LocalizedStringResource(
                 "tokens.cacheReads",
                 defaultValue: "Not counted: \(count(usage.cacheReadTokens)) read from the cache",
-                comment: "Tooltip of a turn: the input read from the prompt cache, left out of its token count; argument: a count"
-            ).resolved(in: locale))
-        }
-        if usage.isPartial {
-            lines.append(LocalizedStringResource(
-                "tokens.partial",
-                defaultValue: "Part of the turn could not be read, so the count may be short",
-                comment: "Tooltip of a turn: its token count may be lower than what it used"
+                comment: "Token tooltip: the input read from the prompt cache, left out of the count; argument: a count"
             ).resolved(in: locale))
         }
         return lines

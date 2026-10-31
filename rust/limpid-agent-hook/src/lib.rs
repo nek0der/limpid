@@ -220,7 +220,7 @@ pub fn run_hook(provider: &str, stdin: &[u8], runtime: &HookRuntime<'_>) -> Hook
     // it ends a turn the person stopped (`stopped_turns`), so this call
     // costs no read.
     apply_context.transcript_path = adapter.turn_transcript_path(input).ok().flatten();
-    apply_context.settings = adapter.session_settings(input, &context);
+    apply_context.settings = settled_settings(adapter, input, &context);
     // A subagent's hook may advance the parent's lifecycle, but it does not
     // prove that the parent has resumed control of the terminal.
     if apply_context.settings.is_empty() {
@@ -488,6 +488,44 @@ impl turn::TurnTranscript for TranscriptFile<'_> {
         let reading = awaited(read(&transcript), self.path, read);
         end_reading(self.adapter, reading, Some(self.path), self.state)
     }
+}
+
+/// What the call says of the session's settings, read again from the
+/// transcript while they await the turn's answer, for at most `AWAIT_RESPONSE`.
+/// The wait is one the turn's end would otherwise make (`awaited`), so a `Stop`
+/// takes no longer for it.
+fn settled_settings(
+    adapter: &dyn ProviderAdapter,
+    input: RawHookInput<'_>,
+    context: &HookContext,
+) -> SessionSettings {
+    let mut settings = adapter.session_settings(input, context);
+    let path = adapter
+        .transcript_path(RawHookInput {
+            bytes: input.bytes,
+            transcript: None,
+        })
+        .ok()
+        .flatten();
+    let Some(path) = path.filter(|_| settings.is_awaiting_answer) else {
+        return settings;
+    };
+    let started = std::time::Instant::now();
+    while settings.is_awaiting_answer && started.elapsed() < AWAIT_RESPONSE {
+        std::thread::sleep(AWAIT_RESPONSE_STEP);
+        let Some(transcript) = records::read_bounded_tail(Path::new(&path), MAX_TRANSCRIPT_BYTES)
+        else {
+            break;
+        };
+        settings = adapter.session_settings(
+            RawHookInput {
+                bytes: input.bytes,
+                transcript: Some(&transcript),
+            },
+            context,
+        );
+    }
+    settings
 }
 
 /// Returns `reading`, read again from the transcript at `path` with `read`
@@ -1384,7 +1422,40 @@ mod stamp_tests {
 mod subagent_tests {
     use super::{MAX_TRANSCRIPT_BYTES, subagent_usage, with_subagents};
     use limpid_agent_model::TurnUsage;
+    use limpid_agent_model::{HookContext, RawHookInput};
     use limpid_provider_claude::ClaudeAdapter;
+
+    /// A `Stop` that finds no answer yet reads the transcript again for it,
+    /// as Claude writes the answer a moment after it calls the hook.
+    #[test]
+    fn a_stop_awaiting_its_answer_reads_the_transcript_again() {
+        let directory = tempfile::tempdir().expect("directory");
+        let path = directory.path().join("session.jsonl");
+        let user = r#"{"type":"user","isSidechain":false,"message":{}}"#;
+        std::fs::write(
+            &path,
+            format!(
+                "{user}\n{}\n",
+                r#"{"type":"assistant","isSidechain":false,"message":{"model":"claude-opus-5-5"}}"#
+            ),
+        )
+        .expect("transcript");
+        let payload = serde_json::json!({
+            "hook_event_name": "Stop",
+            "transcript_path": path,
+        })
+        .to_string();
+        let settings = super::settled_settings(
+            &ClaudeAdapter,
+            RawHookInput {
+                bytes: payload.as_bytes(),
+                transcript: Some(user.as_bytes()),
+            },
+            &HookContext::fixture(),
+        );
+        assert_eq!(settings.answered_model.as_deref(), Some("Opus 5.5"));
+        assert!(!settings.is_awaiting_answer);
+    }
 
     /// The subagents share one budget: a file read once the budget is spent
     /// is not read, and the usage says it is short.

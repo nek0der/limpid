@@ -52,7 +52,7 @@ extension AttentionState {
         // wears for it (`Tab.agentKind(inPane:)`): one in front before its
         // record, or a restored run that has not reported since. Only the
         // badge and the provider's name: neither has a conversation title,
-        // a model, or a mode to give, and `headerRuntime` stays the one that
+        // a model, an effort, or a mode to give, and `headerRuntime` stays the one that
         // names a conversation, which code restore and the changes panel
         // match on.
         let runtime = headerRuntime(inPane: paneID)
@@ -63,7 +63,8 @@ extension AttentionState {
                 providerName: AgentProviderRegistry.displayName(for: kind),
                 title: PaneHeaderRules.agentTitle(for: runtime.badge),
                 model: settingsRuntime?.badge.model,
-                permissionMode: settingsRuntime?.badge.agentPermissionMode
+                permissionMode: settingsRuntime?.badge.agentPermissionMode,
+                effort: settingsRuntime?.badge.effort
             )
         } ?? tab?.agentKind(inPane: paneID).map { kind in
             PaneHeaderAgent(kind: kind, providerName: AgentProviderRegistry.displayName(for: kind), title: nil)
@@ -85,6 +86,7 @@ extension AttentionState {
         if selection.isAmbiguous {
             label.model = nil
             label.permissionMode = nil
+            label.effort = nil
             label.settingsAreAmbiguous = true
         }
         return label

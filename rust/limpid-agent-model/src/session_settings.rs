@@ -1,11 +1,19 @@
-//! The model a session runs and how freely it may act, as the provider's
-//! hooks report them.
+//! The model a session runs, how hard it reasons, and how freely it may act,
+//! as the provider reports them.
 //!
-//! Both agents say so on most hook calls: Codex sends `model` and
+//! Both agents say the model and the mode on most hook calls: Codex sends `model` and
 //! `permission_mode` on nearly every event, and Claude sends
 //! `permission_mode` on most events and the model on `SessionStart` and
 //! `PostModelSwitch`. Neither sends a hook when the person changes the mode
 //! between turns, so a change shows with the next call that carries it.
+//!
+//! Claude says no model on the `SessionStart` of a resumed session, so we read
+//! one from its transcript as the turn ends (`answered_model`).
+//!
+//! The effort comes on Claude's `effort.level`, on `PreToolUse` and `Stop`
+//! among others, though not on `SessionStart` or `UserPromptSubmit`. No Codex
+//! hook carries it: its rollout does (`turn_context`), which we read as a turn
+//! ends, so Codex's shows from the end of the first turn.
 
 use serde::{Deserialize, Serialize};
 
@@ -53,14 +61,28 @@ impl PermissionMode {
 pub struct SessionSettings {
     /// The model, as the adapter names it for a person to read.
     pub model: Option<String>,
+    /// The model the session's latest answer names, for a record that has
+    /// none. It stays weaker than `model`, as it can lack what `model` says,
+    /// such as Claude's `[1m]` for the long context window.
+    pub answered_model: Option<String>,
+    /// Whether the answer that names `answered_model` is not yet in the part
+    /// of the transcript read: the provider may still be writing it as the
+    /// hook runs, and the runtime may read the transcript again for it.
+    pub is_awaiting_answer: bool,
+    /// How hard the model reasons, in the provider's own word for it
+    /// (`medium`, `xhigh`), which is the word its interface shows.
+    pub effort: Option<String>,
     pub permission_mode: Option<PermissionMode>,
 }
 
 impl SessionSettings {
-    /// Whether the call said nothing of either.
+    /// Whether the call said nothing of any of them.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.model.is_none() && self.permission_mode.is_none()
+        self.model.is_none()
+            && self.answered_model.is_none()
+            && self.effort.is_none()
+            && self.permission_mode.is_none()
     }
 }
 

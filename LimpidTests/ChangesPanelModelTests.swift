@@ -40,6 +40,30 @@ struct ChangesPanelModelTests {
 
     // MARK: - One conversation
 
+    @Test func theHeadsTokenTotal_addsTheTurns_andSaysWhenItIsShort() throws {
+        func usage(_ input: Int, isPartial: Bool = false) -> String {
+            #"{"inputTokens":\#(input),"cacheWriteTokens":10,"cacheReadTokens":5,"outputTokens":1,"isPartial":\#(isPartial)}"#
+        }
+        let first = try TurnSummaryFixture.turn("a", extras: .init(usage: usage(100)))
+        let second = try TurnSummaryFixture.turn("b", extras: .init(usage: usage(200)))
+        let running = try TurnSummaryFixture.turn("c", phase: "started")
+        let unrecorded = try TurnSummaryFixture.turn("d")
+        let partial = try TurnSummaryFixture.turn("e", extras: .init(usage: usage(1, isPartial: true)))
+
+        let total = try #require(TurnUsage.total(of: [first, second, running]))
+        #expect(ChangesPanelText.shownTokens(total) == 322)
+        #expect(total.cacheReadTokens == 10)
+        #expect(!total.isPartial, "a running turn has no count to miss")
+        #expect(TurnUsage.total(of: [first, unrecorded])?.isPartial == true)
+        #expect(TurnUsage.total(of: [first, partial])?.isPartial == true)
+        #expect(TurnUsage.total(of: [running]) == nil)
+
+        let help = ChangesPanelText.summaryHelp(usage: TurnUsage.total(of: [first, partial]), locale: Self.english)
+        #expect(help.contains("Some turns could not be read"))
+        #expect(!help.contains("Part of the turn"))
+        #expect(!ChangesPanelText.summaryHelp(usage: nil, locale: Self.english).contains("Tokens add up"))
+    }
+
     @Test func theRows_runOldestFirst_eachWithItsOwnViewedState() throws {
         let turns = try [Panel.turn(5), Panel.turn(6), Panel.turn(7)]
         let viewed = Panel.line(through: turns[1]).line
@@ -229,6 +253,8 @@ struct ChangesPanelModelTests {
         )
         #expect(ChangesPanelText.summary(turns: 3, unviewed: 1, locale: Self.japanese) == "3 ターン · 未確認 1")
         #expect(ChangesPanelText.summary(turns: 1, unviewed: 0, locale: Self.english) == "1 turn · 0 unviewed", "quiet, not gone")
+        #expect(ChangesPanelText
+            .summary(turns: 3, unviewed: 1, tokens: "1.2M tok", locale: Self.english) == "3 turns · 1 unviewed · 1.2M tok")
         #expect(ChangesPanelText.line(locale: Self.japanese) == "ここまで確認済み")
         #expect(ChangesPanelText.unmarkViewed(locale: Self.japanese) == "確認済みを取り消す")
     }

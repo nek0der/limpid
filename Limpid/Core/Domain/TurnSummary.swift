@@ -364,6 +364,23 @@ struct TurnUsage: Equatable, Sendable, Decodable {
         self.isPartial = isPartial
     }
 
+    /// What `turns` used together, `nil` when none has a count. The total is
+    /// partial if a turn's own count is, or if a turn ended without one, as
+    /// one recorded before we kept usage does. A running turn has no count
+    /// until it ends, so it does not make the total partial.
+    static func total(of turns: [TurnSummary]) -> Self? {
+        let usages = turns.compactMap(\.usage)
+        guard !usages.isEmpty else { return nil }
+        return Self(
+            inputTokens: usages.reduce(0) { $0 + $1.inputTokens },
+            cacheWriteTokens: usages.reduce(0) { $0 + $1.cacheWriteTokens },
+            cacheReadTokens: usages.reduce(0) { $0 + $1.cacheReadTokens },
+            outputTokens: usages.reduce(0) { $0 + $1.outputTokens },
+            isPartial: usages.contains(where: \.isPartial)
+                || turns.contains { $0.usage == nil && $0.phase != .started }
+        )
+    }
+
     private enum CodingKeys: String, CodingKey {
         case inputTokens, cacheWriteTokens, cacheReadTokens, outputTokens, isPartial
     }

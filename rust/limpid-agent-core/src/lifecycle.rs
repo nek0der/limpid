@@ -169,6 +169,7 @@ pub fn apply(
         observe_settings(&mut next, &context.settings);
         next.run_observed_order = next.run_observed_order.max(context.run_observed_order);
         if next.model != prev.model
+            || next.effort != prev.effort
             || next.permission_mode != prev.permission_mode
             || next.run_observed_order != prev.run_observed_order
         {
@@ -861,15 +862,27 @@ fn carried(prev: Option<&RunRecord>, context: &ApplyContext, now: &str) -> RunRe
         // Kept until a call says otherwise (`observe_settings`): most calls
         // do not say, and a session start does not reset them.
         model: prev.and_then(|record| record.model.clone()),
+        effort: prev.and_then(|record| record.effort.clone()),
         permission_mode: prev.and_then(|record| record.permission_mode),
         extra: prev.map(|record| record.extra.clone()).unwrap_or_default(),
     }
 }
 
-/// As with titles, a setting the call did not say is kept, never cleared.
+/// As with titles, a setting the call did not say is kept, never cleared. The
+/// effort is the exception: it belongs to the model it was said of, so a new
+/// model drops it until a call says the new one's.
 fn observe_settings(record: &mut RunRecord, settings: &SessionSettings) {
     if let Some(model) = settings.model.as_deref().and_then(title_field) {
+        if record.model.as_ref() != Some(&model) {
+            record.effort = None;
+        }
         record.model = Some(model);
+    }
+    if record.model.is_none() {
+        record.model = settings.answered_model.as_deref().and_then(title_field);
+    }
+    if let Some(effort) = settings.effort.as_deref().and_then(title_field) {
+        record.effort = Some(effort);
     }
     if let Some(mode) = settings.permission_mode {
         record.permission_mode = Some(mode);

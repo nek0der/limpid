@@ -79,6 +79,8 @@ struct ConversationMenuLayoutTests {
         let summaries = [
             ChangesPanelText.summary(turns: 2, unviewed: 0, locale: en),
             ChangesPanelText.summary(turns: 128, unviewed: 37, locale: en),
+            ChangesPanelText.summary(turns: 128, unviewed: 37, tokens: "≥1.2M tok", locale: en),
+            ChangesPanelText.summary(turns: 128, unviewed: 37, tokens: "≥1.2M tok", locale: ja),
             ChangesPanelText.summary(turns: 1, unviewed: 1, locale: ja),
             ChangesPanelText.summary(turns: 12, unviewed: 3, locale: ja)
         ]

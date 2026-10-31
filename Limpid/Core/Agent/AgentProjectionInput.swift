@@ -482,6 +482,7 @@ struct AgentProjectedBadge: Decodable, Sendable {
     var hasPrompt: Bool?
     var backgroundWork: AgentProjectedBackgroundWork?
     var model: String?
+    var effort: String?
     var permissionMode: String?
 
     private enum CodingKeys: String, CodingKey {
@@ -490,7 +491,7 @@ struct AgentProjectedBadge: Decodable, Sendable {
         case conversationID = "conversationId"
         case providerSessionTitle, providerGeneratedTitle, sessionStartedAt, runLaunchOrder, parentRunID, runObservedOrder
         case cacheWindow, usageLimit, waitKind, tool, stopReason, hasPrompt
-        case backgroundWork, model, permissionMode
+        case backgroundWork, model, effort, permissionMode
     }
 
     /// The badge as the interface holds it. An unreadable state shows as
@@ -523,6 +524,7 @@ struct AgentProjectedBadge: Decodable, Sendable {
             hasPrompt: hasPrompt,
             backgroundWork: backgroundWork?.work,
             model: model,
+            effort: effort,
             permissionMode: permissionMode
         )
     }

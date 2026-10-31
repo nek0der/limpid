@@ -205,6 +205,16 @@ as they are fixed or confirmed.
   once the next prompt, tool, or stop carries it, and a new Claude Code
   session shows its mode from its first prompt. A Codex model change shows
   the same way; Claude Code reports its model changes at once.
+- **An effort shows late.** Claude Code reports its effort with a tool or a
+  stop, so a new session shows it from then on. No Codex hook reports it, so
+  the header reads it from the session's rollout as a turn ends. A change made
+  at the prompt shows the same way, and a new model shows no effort until the
+  agent reports one for it.
+- **A resumed Claude Code session shows its model late.** Claude Code does not
+  name the model when a session resumes, so the header reads it from the first
+  answer as that turn ends. An answer does not say whether the session uses
+  the 1M context window, so the header leaves "1M" out until the model is
+  switched.
 - **Codex's header says only whether it asks.** Codex reports two modes to
   its hooks: one for an approval policy that never asks, which the header
   warns of as **Runs without asking**, and the default for every other

@@ -101,18 +101,25 @@ struct ChangesPanelView: View {
 
     private func head(_ content: ChangesPanelModel.Content) -> some View {
         // No counts without a worktree, nor without an agent.
-        let summary: String? = if case let .turns(list) = content, list.hasAgents {
-            ChangesPanelText.summary(turns: list.turnCount, unviewed: list.unviewedCount, locale: locale)
+        let listed: ChangesPanelModel.TurnList? = if case let .turns(list) = content, list.hasAgents {
+            list
         } else {
             nil
         }
+        let summary = listed.map { ChangesPanelText.headSummary($0, locale: locale) }
+        let spokenSummary = listed.map { ChangesPanelText.spokenHeadSummary($0, locale: locale) }
         let conversations: [ConversationChoice] = if case let .turns(list) = content {
             list.conversations
         } else {
             []
         }
         return VStack(alignment: .leading, spacing: Layout.changesHeadSpacing) {
-            ChangesPanelHeadLayout(summary: summary, hasFilter: !conversations.isEmpty) {
+            ChangesPanelHeadLayout(
+                summary: summary,
+                spokenSummary: spokenSummary,
+                usage: listed?.usage,
+                hasFilter: !conversations.isEmpty
+            ) {
                 title
             } buttons: {
                 headButtons(content)
@@ -229,6 +236,10 @@ enum ChangesSummaryPlacement: Equatable {
 struct ChangesPanelHeadLayout<Title: View, Buttons: View, Filter: View>: View {
     /// `nil` without a worktree or without an agent, where there are no counts.
     let summary: String?
+    /// `summary` as VoiceOver says it; `nil` to say `summary` as it reads.
+    var spokenSummary: String?
+    /// What the turns used, for the tooltip.
+    var usage: TurnUsage?
     let hasFilter: Bool
     @ViewBuilder var title: () -> Title
     @ViewBuilder var buttons: () -> Buttons
@@ -288,10 +299,8 @@ struct ChangesPanelHeadLayout<Title: View, Buttons: View, Filter: View>: View {
                 .font(.supervision(.row))
                 .foregroundStyle(SupervisionTokens.muted.color)
                 .fixedSize()
-                // The panel has no standing line that says what "unviewed"
-                // counts, so the counts say it on hover.
-                .help(Text("Unviewed: turns not yet marked as viewed, in every conversation in this worktree"))
-                .accessibilityLabel(Text(verbatim: AgentStatusText.spoken(summary, locale: locale)))
+                .help(Text(verbatim: ChangesPanelText.summaryHelp(usage: usage, locale: locale)))
+                .accessibilityLabel(Text(verbatim: spokenSummary ?? AgentStatusText.spoken(summary, locale: locale)))
         }
     }
 }
