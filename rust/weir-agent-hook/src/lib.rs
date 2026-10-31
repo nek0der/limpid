@@ -499,7 +499,7 @@ fn settled_settings(
     input: RawHookInput<'_>,
     context: &HookContext,
 ) -> SessionSettings {
-    let mut settings = adapter.session_settings(input, context);
+    let settings = adapter.session_settings(input, context);
     let path = adapter
         .transcript_path(RawHookInput {
             bytes: input.bytes,
@@ -510,41 +510,79 @@ fn settled_settings(
     let Some(path) = path.filter(|_| settings.is_awaiting_answer) else {
         return settings;
     };
-    let started = std::time::Instant::now();
-    while settings.is_awaiting_answer && started.elapsed() < AWAIT_RESPONSE {
-        std::thread::sleep(AWAIT_RESPONSE_STEP);
-        let Some(transcript) = records::read_bounded_tail(Path::new(&path), MAX_TRANSCRIPT_BYTES)
-        else {
-            break;
-        };
-        settings = adapter.session_settings(
-            RawHookInput {
-                bytes: input.bytes,
-                transcript: Some(&transcript),
-            },
-            context,
-        );
-    }
-    settings
+    read_while_awaiting(
+        settings,
+        |settings| settings.is_awaiting_answer,
+        Path::new(&path),
+        |transcript| {
+            adapter.session_settings(
+                RawHookInput {
+                    bytes: input.bytes,
+                    transcript: Some(transcript),
+                },
+                context,
+            )
+        },
+        &SystemWaitClock::start(),
+    )
 }
 
 /// Returns `reading`, read again from the transcript at `path` with `read`
 /// while it awaits the turn's last response, for at most `AWAIT_RESPONSE`;
 /// past that the reading stays partial.
-fn awaited(
-    mut reading: TurnReading,
+fn awaited(reading: TurnReading, path: &Path, read: impl Fn(&[u8]) -> TurnReading) -> TurnReading {
+    read_while_awaiting(
+        reading,
+        |reading| reading.is_awaiting_response,
+        path,
+        read,
+        &SystemWaitClock::start(),
+    )
+}
+
+/// The clock a wait for the transcript reads. Its tests pass a clock of their
+/// own, so what they say of the bound does not rest on how busy the machine is.
+trait WaitClock {
+    fn elapsed(&self) -> std::time::Duration;
+    fn sleep(&self, step: std::time::Duration);
+}
+
+struct SystemWaitClock(std::time::Instant);
+
+impl SystemWaitClock {
+    fn start() -> Self {
+        Self(std::time::Instant::now())
+    }
+}
+
+impl WaitClock for SystemWaitClock {
+    fn elapsed(&self) -> std::time::Duration {
+        self.0.elapsed()
+    }
+
+    fn sleep(&self, step: std::time::Duration) {
+        std::thread::sleep(step);
+    }
+}
+
+/// Returns `value`, read again from the transcript at `path` with `read` while
+/// `is_awaiting` holds of it, until `AWAIT_RESPONSE` has gone by on `clock` or
+/// the file cannot be read.
+fn read_while_awaiting<T>(
+    mut value: T,
+    is_awaiting: impl Fn(&T) -> bool,
     path: &Path,
-    read: impl Fn(&[u8]) -> TurnReading,
-) -> TurnReading {
-    let started = std::time::Instant::now();
-    while reading.is_awaiting_response && started.elapsed() < AWAIT_RESPONSE {
-        std::thread::sleep(AWAIT_RESPONSE_STEP);
+    read: impl Fn(&[u8]) -> T,
+    clock: &impl WaitClock,
+) -> T {
+    while is_awaiting(&value) && clock.elapsed() < AWAIT_RESPONSE {
+        clock.sleep(AWAIT_RESPONSE_STEP);
         let Some(transcript) = records::read_bounded_tail(path, MAX_TRANSCRIPT_BYTES) else {
             break;
         };
-        reading = read(&transcript);
+        value = read(&transcript);
     }
-    reading
+    value
 }
 
 /// What a turn's end records of `reading`, read from the transcript at
@@ -1415,6 +1453,102 @@ mod stamp_tests {
             begin_time("2026-09-13T16:00:01Z", after),
             "2026-09-13T16:00:01Z"
         );
+    }
+}
+
+#[cfg(test)]
+mod await_response_tests {
+    use super::{AWAIT_RESPONSE, AWAIT_RESPONSE_STEP, WaitClock, read_while_awaiting};
+    use std::cell::Cell;
+    use std::time::Duration;
+
+    /// A clock that moves only when the wait sleeps or a test says so.
+    #[derive(Default)]
+    struct FakeClock {
+        now: Cell<Duration>,
+    }
+
+    impl FakeClock {
+        fn pass(&self, time: Duration) {
+            self.now.set(self.now.get() + time);
+        }
+    }
+
+    impl WaitClock for FakeClock {
+        fn elapsed(&self) -> Duration {
+            self.now.get()
+        }
+
+        fn sleep(&self, step: Duration) {
+            self.pass(step);
+        }
+    }
+
+    /// How many looks the bound allows when each costs only its step.
+    fn looks_in_the_bound() -> u32 {
+        u32::try_from(AWAIT_RESPONSE.as_millis() / AWAIT_RESPONSE_STEP.as_millis())
+            .expect("a small count")
+    }
+
+    /// Returns what the wait ends with and how many looks it took, for a
+    /// transcript whose `read` says on each look whether it still awaits. A
+    /// look past the bound fails the test, so a wait with no bound fails
+    /// rather than hangs.
+    fn wait(clock: &FakeClock, read: impl Fn(u32) -> bool) -> (bool, u32) {
+        let directory = tempfile::tempdir().expect("directory");
+        let path = directory.path().join("session.jsonl");
+        std::fs::write(&path, "").expect("transcript");
+        let looks = Cell::new(0);
+        let is_awaiting = read_while_awaiting(
+            true,
+            |&is_awaiting| is_awaiting,
+            &path,
+            |_| {
+                looks.set(looks.get() + 1);
+                assert!(looks.get() <= looks_in_the_bound(), "the wait is unbounded");
+                read(looks.get())
+            },
+            clock,
+        );
+        (is_awaiting, looks.get())
+    }
+
+    #[test]
+    fn a_response_that_never_comes_ends_the_wait_at_its_bound() {
+        let clock = FakeClock::default();
+        assert_eq!(wait(&clock, |_| true), (true, looks_in_the_bound()));
+        assert_eq!(clock.elapsed(), AWAIT_RESPONSE);
+    }
+
+    /// The bound is on time rather than on looks, so a slow disk does not
+    /// stretch the wait by a slow read for every look.
+    #[test]
+    fn a_slow_read_spends_the_wait() {
+        let clock = FakeClock::default();
+        let read = |_| {
+            clock.pass(AWAIT_RESPONSE);
+            true
+        };
+        assert_eq!(wait(&clock, read), (true, 1));
+    }
+
+    #[test]
+    fn a_response_that_comes_ends_the_wait_early() {
+        let clock = FakeClock::default();
+        assert_eq!(wait(&clock, |look| look < 3), (false, 3));
+    }
+
+    #[test]
+    fn a_transcript_that_cannot_be_read_ends_the_wait() {
+        let directory = tempfile::tempdir().expect("directory");
+        let is_awaiting = read_while_awaiting(
+            true,
+            |&is_awaiting| is_awaiting,
+            &directory.path().join("missing.jsonl"),
+            |_| panic!("nothing to read"),
+            &FakeClock::default(),
+        );
+        assert!(is_awaiting);
     }
 }
 

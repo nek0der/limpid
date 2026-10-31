@@ -2201,16 +2201,11 @@ fn a_response_that_never_comes_leaves_the_turn_without_usage() {
         )
         .as_bytes(),
     );
-    let started = std::time::Instant::now();
     scratch.call(
         RUN,
         Some(&new_call()),
         format!(r#"{{"hook_event_name":"Stop","session_id":"s1","transcript_path":"{path}"}}"#)
             .as_bytes(),
-    );
-    assert!(
-        started.elapsed() < std::time::Duration::from_secs(3),
-        "the wait is bounded"
     );
     assert_eq!(scratch.turns().remove(0).usage, None);
 }
