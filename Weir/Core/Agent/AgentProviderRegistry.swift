@@ -132,6 +132,18 @@ extension AgentProviderRegistry {
 /// fixtures, not a list on this side that could disagree about a name.
 struct AgentInstallRecipe: Decodable {
     var environment: [Variable] = []
+    var settingsFragments: [SettingsFragment] = []
+
+    private enum CodingKeys: String, CodingKey {
+        case environment
+        case settingsFragments = "settings_fragments"
+    }
+
+    /// Configuration the provider's crate states and the platform places.
+    struct SettingsFragment: Decodable {
+        var target: String
+        var body: String
+    }
 
     struct Variable: Decodable {
         var name: String

@@ -9,22 +9,23 @@ use weir_agent_model::{
     SettingsFragment,
 };
 
-/// Hook events Codex is asked to call, with the timeout each definition is
-/// hashed with. Codex trusts a hook by the hash of its full definition, so
-/// the timeouts are part of the identity and must be stated. The two events
-/// that end a session or a turn default to one second in Codex; the rest to
-/// 600.
-pub const SUBSCRIBED_EVENTS: [(&str, u32); 10] = [
-    ("SessionStart", 600),
-    ("SessionEnd", 1),
-    ("UserPromptSubmit", 600),
-    ("PreToolUse", 600),
-    ("PostToolUse", 600),
-    ("PreCompact", 600),
-    ("PostCompact", 600),
-    ("PermissionRequest", 600),
-    ("Interrupt", 1),
-    ("Stop", 600),
+/// Hook events Codex is asked to call, each with the group segment of its
+/// trust key and the timeout its definition is hashed with. Codex trusts a
+/// hook by the hash of its full definition, so the timeouts are part of the
+/// identity and must be stated. The two events that end a session or a turn
+/// default to one second in Codex; the rest to 600. The app builds its `-c`
+/// flags from this list through the install recipe.
+pub const SUBSCRIBED_EVENTS: [(&str, &str, u32); 10] = [
+    ("SessionStart", "session_start", 600),
+    ("SessionEnd", "session_end", 1),
+    ("UserPromptSubmit", "user_prompt_submit", 600),
+    ("PreToolUse", "pre_tool_use", 600),
+    ("PostToolUse", "post_tool_use", 600),
+    ("PreCompact", "pre_compact", 600),
+    ("PostCompact", "post_compact", 600),
+    ("PermissionRequest", "permission_request", 600),
+    ("Interrupt", "interrupt", 1),
+    ("Stop", "stop", 600),
 ];
 
 /// Regex Codex evaluates against the tool name for the worktree intercept.
@@ -74,7 +75,7 @@ pub(crate) fn descriptor() -> &'static ProviderDescriptor {
 pub(crate) fn install_recipe() -> InstallRecipe {
     let events: Vec<serde_json::Value> = SUBSCRIBED_EVENTS
         .iter()
-        .map(|(key, timeout)| json!({"event": key, "timeout_seconds": timeout}))
+        .map(|(key, label, timeout)| json!({"event": key, "label": label, "timeout_seconds": timeout}))
         .collect();
     InstallRecipe {
         environment: vec![

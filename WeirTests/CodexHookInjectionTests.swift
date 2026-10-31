@@ -31,6 +31,26 @@ struct CodexHookInjectionTests {
         #expect(!preToolUse.contains(approval))
     }
 
+    /// A wrong label or timeout changes what Codex hashes, and it then never
+    /// runs the hook, so the values the crate hands over are pinned here too.
+    @Test
+    func subscribedEvents_comeFromTheCodexCrate() {
+        let events = CodexHookInjection.subscribedEvents.map { "\($0.jsonKey) \($0.label) \($0.timeoutSec)" }
+        #expect(events == [
+            "SessionStart session_start 600",
+            "SessionEnd session_end 1",
+            "UserPromptSubmit user_prompt_submit 600",
+            "PreToolUse pre_tool_use 600",
+            "PostToolUse post_tool_use 600",
+            "PreCompact pre_compact 600",
+            "PostCompact post_compact 600",
+            "PermissionRequest permission_request 600",
+            "Interrupt interrupt 1",
+            "Stop stop 600"
+        ])
+        #expect(CodexHookInjection.worktreeMatcher == "^Bash$")
+    }
+
     @Test("emits one -c flag per subscribed event, plus trust and the title suppression")
     func arguments_coverEverySubscribedEvent() {
         let args = CodexHookInjection.arguments(

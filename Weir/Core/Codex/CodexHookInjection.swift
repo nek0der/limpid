@@ -9,10 +9,13 @@
 // a silent failure.
 
 import Foundation
+import OSLog
+
+private let log = Logger.weir("codex.hooks")
 
 enum CodexHookInjection {
     /// One hook event we ask Codex to call us on.
-    struct SubscribedEvent: Sendable {
+    struct SubscribedEvent: Decodable, Sendable {
         /// Our own name for the event. Doubles as the group segment of the
         /// trust key, so changing it invalidates that entry.
         let label: String
@@ -28,26 +31,41 @@ enum CodexHookInjection {
         let timeoutSec: Int
     }
 
-    /// Hook events we subscribe to. Mirrors what `codex-shim/weir-hook`
-    /// knows how to handle.
-    static let subscribedEvents: [SubscribedEvent] = [
-        SubscribedEvent(label: "session_start", jsonKey: "SessionStart", timeoutSec: 600),
-        SubscribedEvent(label: "session_end", jsonKey: "SessionEnd", timeoutSec: 1),
-        SubscribedEvent(label: "user_prompt_submit", jsonKey: "UserPromptSubmit", timeoutSec: 600),
-        SubscribedEvent(label: "pre_tool_use", jsonKey: "PreToolUse", timeoutSec: 600),
-        SubscribedEvent(label: "post_tool_use", jsonKey: "PostToolUse", timeoutSec: 600),
-        SubscribedEvent(label: "pre_compact", jsonKey: "PreCompact", timeoutSec: 600),
-        SubscribedEvent(label: "post_compact", jsonKey: "PostCompact", timeoutSec: 600),
-        SubscribedEvent(label: "permission_request", jsonKey: "PermissionRequest", timeoutSec: 600),
-        SubscribedEvent(label: "interrupt", jsonKey: "Interrupt", timeoutSec: 1),
-        SubscribedEvent(label: "stop", jsonKey: "Stop", timeoutSec: 600)
-    ]
+    /// What the Codex crate's install recipe says to hand Codex.
+    private struct Subscription: Decodable {
+        var events: [SubscribedEvent] = []
+        var worktreeMatcher = ""
+    }
+
+    /// Read once from the crate, which owns the list. Empty when the recipe
+    /// cannot be read: no hooks are handed to Codex, the same "decide nothing"
+    /// an empty registry gives, rather than a list that could disagree.
+    private static let subscription: Subscription = {
+        let fragment = AgentProviderRegistry.recipes["codex"]?.settingsFragments
+            .first { $0.target == "codex.hooks" }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        guard let body = fragment?.body.data(using: .utf8),
+              let subscription = try? decoder.decode(Subscription.self, from: body)
+        else {
+            log.error("Codex hook subscription unavailable")
+            return Subscription()
+        }
+        return subscription
+    }()
+
+    /// Hook events we subscribe to.
+    static var subscribedEvents: [SubscribedEvent] {
+        subscription.events
+    }
 
     /// Codex evaluates the handler's `matcher` field as a regex (Claude
-    /// uses a flat string equal-match). `^Bash$` pins the worktree
+    /// uses a flat string equal-match). The crate's `^Bash$` pins the worktree
     /// intercept to the exact Bash tool the way Claude's
     /// `settings.template.json` does with `"matcher": "Bash"`.
-    static let worktreeMatcher = "^Bash$"
+    static var worktreeMatcher: String {
+        subscription.worktreeMatcher
+    }
 
     // MARK: - Flags
 
@@ -178,5 +196,15 @@ enum CodexHookInjection {
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         return "\"\(escaped)\""
+    }
+}
+
+extension CodexHookInjection.SubscribedEvent {
+    /// The crate's names for these fields, once the decoder has converted them
+    /// from snake case.
+    private enum CodingKeys: String, CodingKey {
+        case label
+        case jsonKey = "event"
+        case timeoutSec = "timeoutSeconds"
     }
 }
