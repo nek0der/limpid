@@ -60,8 +60,15 @@ struct SidebarArrangementTests {
         #expect(arrangement.projectOrder == [Self.c, Self.b, Self.a])
         arrangement.moveToTop(Self.a, among: [Self.a, Self.b, Self.c])
         #expect(arrangement.projectOrder == [Self.a, Self.c, Self.b])
-        arrangement.drop(Self.a, on: Self.b, isAfter: true, among: [Self.a, Self.b, Self.c])
+        arrangement.setOrder([Self.c, Self.b, Self.a], among: [Self.a, Self.b, Self.c])
         #expect(arrangement.projectOrder == [Self.c, Self.b, Self.a])
+    }
+
+    /// A project that came or went during a drag is met as any such is.
+    @Test func theOrderADragMade_meetsAProjectThatCameOrWent() {
+        var arrangement = SidebarArrangement()
+        arrangement.setOrder([Self.c, Self.a], among: [Self.a, Self.b])
+        #expect(arrangement.projectOrder == [Self.a, Self.b])
     }
 
     /// ⌥-click folds or opens every header; Collapse Others folds every one

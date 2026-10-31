@@ -19,7 +19,6 @@ struct SidebarListModelTests {
         window: ProjectWindowState? = nil,
         queue: AttentionQueue = AttentionQueue(),
         running: [UUID: Int] = [:],
-        isDraggingProject: Bool = false,
         openedByDrag: Set<UUID> = []
     ) -> SidebarListModel {
         let window = window ?? fixture.primary
@@ -49,7 +48,6 @@ struct SidebarListModelTests {
                 running: { running[$0] ?? 0 },
                 locale: english
             ),
-            isDraggingProject: isDraggingProject,
             openedByDrag: openedByDrag
         )
     }
@@ -118,15 +116,6 @@ struct SidebarListModelTests {
         #expect(model.rows.map(\.id) == [.project(fixture.b.id), .project(fixture.c.id)])
     }
 
-    /// While a header is dragged, every header is drawn folded, so they
-    /// stand together to drop among.
-    @Test func whileAHeaderIsDragged_everyHeaderIsDrawnFolded() {
-        let fixture = Fixture()
-        let model = Self.model(fixture, isDraggingProject: true)
-        #expect(model.headers.allSatisfy { header in header.isCollapsed })
-        #expect(model.items.map(\.id) == model.headers.map { .header($0.id) })
-    }
-
     /// A folded project a dragged tab rested on is drawn open for the drag
     /// alone: its rows are built, and the window's arrangement still has it
     /// folded, so a drag that goes elsewhere leaves it as it was.
@@ -144,21 +133,6 @@ struct SidebarListModelTests {
         #expect(model.rows(ofProject: fixture.b.id).map(\.id) == [.project(fixture.b.id)])
         #expect(fixture.primary.selection.sidebarArrangement == arrangement)
         #expect(Self.model(fixture).headers.first { $0.id == fixture.b.id }?.isCollapsed == true)
-    }
-
-    /// A header dragged draws every project folded, even one a tab drag
-    /// held open.
-    @Test func whileAHeaderIsDragged_aProjectOpenedByDragIsFoldedToo() {
-        let fixture = Fixture()
-        let model = Self.model(fixture, isDraggingProject: true, openedByDrag: [fixture.b.id])
-        #expect(model.headers.allSatisfy { header in header.isCollapsed })
-    }
-
-    /// Every header but the first is set apart from the project before
-    /// it; a row never is.
-    @Test func aProjectStarts_atEachHeaderButTheFirst() {
-        let model = Self.model(Fixture())
-        #expect(model.items.filter(model.isProjectStart).map(\.id) == model.headers.dropFirst().map { .header($0.id) })
     }
 
     @Test func theDefaultFold_opensTheWindowsProject_andOneWithRows_butNotAnotherWindows() {

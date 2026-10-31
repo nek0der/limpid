@@ -328,7 +328,7 @@ struct SidebarRowCheckoutTests {
     }
 
     /// The project's folder row, labeled, shows its branch as any labeled
-    /// row does; its tag, not its line, says it is the repository.
+    /// row does; its mark, not its line, says it is the repository.
     @Test func theLabeledFolderRowWithABranch_showsItsBranch_asAWorktreeDoes() throws {
         let fixture = Self.project()
         let (session, project) = (fixture.session, fixture.project)

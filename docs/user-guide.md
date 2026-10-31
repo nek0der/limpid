@@ -55,9 +55,11 @@ is used up. A click outside the panel or Escape closes it.
 
 - Every project sits under its own header, in the order you give them (drag
   a header, or ⌥⌘↑ ⌥⌘↓ while the sidebar has focus). Under a header comes
-  the project's own folder first, tagged **Repository**, then its worktrees,
-  one per row, and the folded lists below. The repository's row always stays
-  first; worktrees move only among themselves.
+  the project's own folder first, marked with a house after its name, then its
+  worktrees, one per row, and the folded lists below. The repository's row
+  always stays first; worktrees move only among themselves. While the list
+  scrolls, a project's header stays at the top until the next project's reaches
+  it.
 - Drag a tab, or a pane by its header or with ⌥⌘, onto any row of any project
   to move it there; the window stays where it is. Dropped on a project's
   header it lands on the repository's row. Rest it on a folded header and the

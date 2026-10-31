@@ -157,16 +157,8 @@ enum SessionRowFactText {
         return false
     }
 
-    /// The tag beside the name of the project's own folder's row, the
-    /// repository the worktrees are made from. It is what the row is, not
-    /// a state, so it stays whatever the second line says.
-    static let repositoryTag = LocalizedStringResource(
-        "Repository",
-        comment: "Sidebar: the tag beside the name of the project's own folder's row, which the worktrees are made from"
-    )
-
     /// What the repository's row is, in its tooltip and read by VoiceOver
-    /// after its name, where the tag's one word would read short.
+    /// after its name, where the row's mark says nothing.
     static let repositoryFolder = LocalizedStringResource(
         "Repository folder",
         comment: "Sidebar row tooltip and VoiceOver: the row is the project's own folder, the repository the worktrees are made from"
@@ -196,8 +188,8 @@ enum SessionRowFactText {
         if row.section == .other, let other = SidebarSectionText.title(.other) {
             parts.append(other.resolved(in: locale))
         }
-        // The tag beside the name, read after the place as the tooltip
-        // says it.
+        // The mark after the name, read after the place as the tooltip says
+        // it.
         if row.isMainFolder {
             parts.append(repositoryFolder.resolved(in: locale))
         }

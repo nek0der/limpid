@@ -1,7 +1,7 @@
 // ReorderableDropTarget.swift
 // Limpid — the drop modifier for live reordering, for a tab dropped on a sidebar row, and for a header dropped at a line.
 //
-// Three interaction modes:
+// Two interaction modes:
 //   * live reorder — for in-list reorder (tabs, a project's worktree
 //     rows). As the cursor crosses a neighbor, `onDrop` fires
 //     immediately so the rows physically slide into their new positions
@@ -14,11 +14,6 @@
 //     the container; there's no positional semantics, so we wait for the
 //     actual `performDrop` to commit. A line that names its project marks
 //     the whole project too (`LimpidDragState.carriedOverProject`).
-//   * line — a project's header in the sidebar. A line is drawn where the
-//     header would land, before or after the one under the pointer, and
-//     nothing moves until the drop: a project carries its rows with it,
-//     and moving whole projects under the pointer would carry the target
-//     away with them.
 //
 // Live reorder mutates the model mid-drag. We snapshot the order
 // arrays on the first mutation and roll back if the drag ends outside
@@ -39,16 +34,13 @@ enum DropPosition {
 extension View {
     /// `targetID` MUST be unique across all drop targets in the
     /// window. `assignsOnDrop`: when `true`, a tab or pane payload
-    /// takes the row's drop mark and moves only on the drop. Project and
-    /// worktree payloads reorder live, or at a line when `dropsAtLine` is
-    /// set.
+    /// takes the row's drop mark and moves only on the drop. Worktree
+    /// payloads reorder live.
     /// `isNoOp`: caller-provided predicate that returns `true` when
     /// dropping the given source at the given position wouldn't
     /// actually move it (e.g. drop right where it already is).
     /// Used to hide the indicator for those cases. Sources matching
-    /// the target itself are always treated as no-op. `dropsAtLine`: the
-    /// line mode, which draws where the source would land and moves it
-    /// only on the drop. `rowMark`: which tab drags mark the line as
+    /// the target itself are always treated as no-op. `rowMark`: which tab drags mark the line as
     /// where the tab would go (`RowDropMark`). `project`: the sidebar
     /// project the line is part of, which a tab over the line marks whole.
     func reorderableDropTarget(
@@ -58,7 +50,6 @@ extension View {
         assignsOnDrop: Bool = false,
         rowMark: RowDropMark = .own,
         project: SidebarDropProject? = nil,
-        dropsAtLine: Bool = false,
         isNoOp: ((UUID, DropPosition) -> Bool)? = nil,
         onDrop: @escaping (String, UUID, DropPosition) -> Void
     ) -> some View {
@@ -69,7 +60,6 @@ extension View {
             assignsOnDrop: assignsOnDrop,
             rowMark: rowMark,
             project: project,
-            dropsAtLine: dropsAtLine,
             isNoOp: isNoOp,
             onDrop: onDrop
         ))
@@ -98,10 +88,8 @@ private struct ReorderableDropTarget: ViewModifier {
     let assignsOnDrop: Bool
     let rowMark: RowDropMark
     let project: SidebarDropProject?
-    let dropsAtLine: Bool
     let isNoOp: ((UUID, DropPosition) -> Bool)?
     let onDrop: (String, UUID, DropPosition) -> Void
-    @Environment(\.limpidAccent) private var accent
 
     /// Length of the row along `axis` — height for a vertical list,
     /// width for a horizontal strip. The delegate splits this at its
@@ -126,29 +114,12 @@ private struct ReorderableDropTarget: ViewModifier {
                 isTargeted: shouldShowBackgroundHighlight,
                 cornerRadius: LimpidLayout.Supervision.sessionRowCornerRadius
             ))
-            // The line mode's mark: where the source would land, on the
-            // edge it would land at, over the gap rather than in it.
-            .overlay(alignment: dragState.hoverPosition == .after ? .bottom : .top) {
-                // A project's drag alone: as any drag ends, its kind goes
-                // before its hover does.
-                if dropsAtLine, isHoveredHere, dragState.current == .project {
-                    Capsule()
-                        .fill(accent)
-                        .frame(height: LimpidLayout.Supervision.sidebarDropLineHeight)
-                        .padding(.horizontal, LimpidLayout.Supervision.sessionRowHorizontalInset)
-                        .alignmentGuide(.top) { $0.height / 2 }
-                        .alignmentGuide(.bottom) { $0.height / 2 }
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-                }
-            }
             .onDrop(of: [.text], delegate: UnifiedReorderDelegate(
                 targetID: targetID,
                 acceptedPrefixes: acceptedPrefixes,
                 axis: axis,
                 assignsOnDrop: assignsOnDrop,
                 project: project,
-                dropsAtLine: dropsAtLine,
                 isNoOp: isNoOp,
                 dragState: dragState,
                 session: session,
@@ -191,7 +162,7 @@ private struct ReorderableDropTarget: ViewModifier {
         guard let current = dragState.current else { return true }
         switch current {
         case .tab: return acceptedPrefixes.contains(DragPrefix.tab)
-        case .project: return acceptedPrefixes.contains(DragPrefix.project)
+        case .project: return false
         case .worktree: return acceptedPrefixes.contains(DragPrefix.worktree)
         case .pane: return acceptedPrefixes.contains(DragPrefix.pane)
         }
@@ -204,7 +175,6 @@ private struct UnifiedReorderDelegate: DropDelegate {
     let axis: Axis
     let assignsOnDrop: Bool
     let project: SidebarDropProject?
-    let dropsAtLine: Bool
     let isNoOp: ((UUID, DropPosition) -> Bool)?
     let dragState: LimpidDragState
     let session: WorkspaceSession
@@ -276,7 +246,7 @@ private struct UnifiedReorderDelegate: DropDelegate {
         // target (`reorderTab(src, before/after: src)`), corrupting the
         // order. Only cross-container assignment still needs `performDrop`
         // to commit, since `update` deliberately deferred its mutation.
-        let needsCommitOnDrop = isCommittedOnDrop
+        let needsCommitOnDrop = isAssignedOnDrop
         // A project the drag drew open stays open once the tab lands in
         // it; `end()` would fold it before the tab got there.
         if dragState.isCarryingToRow, let project {
@@ -340,21 +310,14 @@ private struct UnifiedReorderDelegate: DropDelegate {
         // releasing elsewhere — we can't roll back a "move tab into
         // worktree X" without rewriting the tab's container repeatedly,
         // which would thrash the active tab.
-        guard !isCommittedOnDrop else { return }
+        guard !isAssignedOnDrop else { return }
         applyLiveReorder(at: next)
-    }
-
-    /// True when nothing moves until the drop: a tab assigned to a row, or
-    /// a source dropped at a line, which a release elsewhere leaves where
-    /// it was.
-    private var isCommittedOnDrop: Bool {
-        isAssignedOnDrop || dropsAtLine
     }
 
     /// True when the in-flight drag assigns what it carries to this target
     /// on the drop: a tab or pane on a row that treats them as
-    /// container-assignment, or a pane on any target that takes one. Project
-    /// / worktree drags on the same row still flow through the live reorder
+    /// container-assignment, or a pane on any target that takes one. Worktree
+    /// drags on the same row still flow through the live reorder
     /// branch (so e.g. a worktree row is also a reorder target for other
     /// worktrees).
     private var isAssignedOnDrop: Bool {
@@ -371,8 +334,8 @@ private struct UnifiedReorderDelegate: DropDelegate {
               let sourceUUID = UUID(uuidString: raw)
         else { return }
         // Skip self-drop and adjacency no-ops — the caller's
-        // predicate already knows the data shape (project / worktree /
-        // tab) and detects "drop right where you already
+        // predicate already knows the data shape (worktree / tab) and
+        // detects "drop right where you already
         // are" without us reverse-engineering targetID strings.
         if let isNoOp, isNoOp(sourceUUID, position) {
             return
@@ -415,7 +378,6 @@ private struct UnifiedReorderDelegate: DropDelegate {
     private func livePrefix() -> String? {
         switch dragState.current {
         case .tab where acceptedPrefixes.contains(DragPrefix.tab): DragPrefix.tab
-        case .project where acceptedPrefixes.contains(DragPrefix.project): DragPrefix.project
         case .worktree where acceptedPrefixes.contains(DragPrefix.worktree): DragPrefix.worktree
         default: nil
         }

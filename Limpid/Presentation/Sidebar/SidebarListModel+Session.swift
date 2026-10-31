@@ -23,9 +23,7 @@ extension SidebarListModel {
     /// each row in the section `sections` places it in. A folded header
     /// builds no row: it counts them and shows what waits inside.
     /// `windowShowing` names the other window that shows a project, if one
-    /// does. While a header is dragged (`isDraggingProject`), every header
-    /// is drawn folded, so the headers stand together to be dropped among.
-    /// `openedByDrag` is drawn open whatever the arrangement says: the
+    /// does. `openedByDrag` is drawn open whatever the arrangement says: the
     /// folded projects a dragged tab rested on, open for the drag alone.
     @MainActor
     init(
@@ -34,7 +32,6 @@ extension SidebarListModel {
         sections: SidebarPresentedSections,
         windowShowing: (UUID) -> WindowID?,
         sources: Sources,
-        isDraggingProject: Bool = false,
         openedByDrag: Set<UUID> = []
     ) {
         let selection = session.selection(window)
@@ -61,7 +58,7 @@ extension SidebarListModel {
             let workingCount = listed.count { $0.section == .working }
             let isCurrent = id == shown
             let isInOtherWindow = !isCurrent && windowShowing(id) != nil
-            let isCollapsed = isDraggingProject || (!openedByDrag.contains(id) && arrangement.isCollapsed(
+            let isCollapsed = !openedByDrag.contains(id) && (arrangement.isCollapsed(
                 id,
                 isOpenByDefault: SidebarFoldDefault.isOpen(
                     isCurrent: isCurrent,

@@ -22,6 +22,10 @@ struct SessionSidebarView: View {
     @Environment(SettingsStore.self) private var settings
     @Environment(ToastCenter.self) private var toastCenter
     @Environment(LimpidDragState.self) private var dragState
+    @State private var projectDrag = SidebarProjectDrag(
+        headerHeight: LimpidLayout.Supervision.sidebarProjectHeaderHeight,
+        step: LimpidLayout.Supervision.sidebarFoldedHeaderStep
+    )
     @Environment(\.prStatusSyncer) private var prStatusSyncer
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.agentProjection) private var agentProjection
@@ -51,7 +55,7 @@ struct SessionSidebarView: View {
     /// a header, a fold line, or a row.
     @State private var keyboardLine: SidebarItemID?
     /// The line to bring into view next, as a header moves.
-    @State private var scrollRequest: ScrollRequest?
+    @State private var scrollRequest: SidebarScrollRequest?
 
     var body: some View {
         // Read once for every project, rather than once per header and row.
@@ -71,9 +75,6 @@ struct SessionSidebarView: View {
                 running: { attention.runningAgentCount(inProject: $0, session: session) },
                 locale: locale
             ),
-            // While a header is dragged, every project is drawn folded, so
-            // the headers stand together to be dropped among.
-            isDraggingProject: dragState.current == .project,
             openedByDrag: rowDrop.openedByDrag
         )
         let carriedOver = CarriedOverProject(projectID: rowDrop.carriedOverProjectID, in: model)
@@ -221,13 +222,10 @@ struct SessionSidebarView: View {
         )
     }
 
-    /// One line of the list: a header, with the gap that sets it apart
-    /// from the project before; a fold line; or a row.
+    /// One line under a header: a fold line or a row.
     @ViewBuilder
-    private func line(_ item: SidebarListModel.Item, in model: SidebarListModel, others: [UUID: WindowID], now: Date) -> some View {
+    private func line(_ item: SessionSidebarModel.Item, others: [UUID: WindowID], now: Date) -> some View {
         switch item {
-        case let .header(header):
-            headerView(header, in: model, others: others)
         case let .fold(fold):
             SidebarSectionFoldRow(
                 fold: fold,
@@ -255,12 +253,8 @@ struct SessionSidebarView: View {
             drag: SidebarProjectHeaderView.Drag(
                 dragState: dragState,
                 rowDrop: rowDrop,
-                isNoOp: { source, position in
-                    ProjectOrder.dropped(source, on: header.id, isAfter: position == .after, in: order) == order
-                },
-                onDrop: { source, position in
-                    arrange { $0.drop(source, on: header.id, isAfter: position == .after, among: projectIDs) }
-                }
+                hidesHeader: projectDrag.hidesHeader(header.id),
+                onMove: { moveProjectDrag(header.id, in: model, startY: $0, pointerY: $1) }
             )
         )
         // A folded project's requests have no row to stand beside: the
@@ -365,13 +359,6 @@ struct SessionSidebarView: View {
         project.flatMap { otherWindow(showing: $0.id, in: others) } != nil
     }
 
-    /// A request to bring a line into view, told apart from the one before
-    /// it even when it names the same line.
-    struct ScrollRequest: Equatable {
-        let id = UUID()
-        let line: SidebarItemID
-    }
-
     /// The session's projects, in the session's order: what the window's
     /// order lays out.
     private var projectIDs: [UUID] {
@@ -389,17 +376,24 @@ struct SessionSidebarView: View {
                 // the limits again.
                 TimelineView(.periodic(from: .now, by: 60)) { context in
                     let now = max(context.date, resetSync?.resetPassedAt ?? context.date)
-                    // One flat list of every line, headers included,
-                    // so a project of sixty rows is not one lazy unit
-                    // laid out whole.
-                    LazyVStack(spacing: LimpidLayout.Supervision.sessionRowSpacing) {
-                        ForEach(model.items) { item in
-                            line(item, in: model, others: others, now: now)
-                                // Behind the line, not the gap that sets a
-                                // header apart from the project before.
-                                .background { SidebarProjectDropPiece(line: item.id, carriedOver: carriedOver) }
-                                .padding(.top, model.isProjectStart(item) ? LimpidLayout.Supervision.sidebarProjectGap : 0)
-                                .id(item.id)
+                    // A section per project, so its header stays at the
+                    // top while its rows pass under it. The rows are the
+                    // lazy stack's own lines, so a project of sixty rows is
+                    // not one lazy unit laid out whole.
+                    LazyVStack(spacing: LimpidLayout.Supervision.sessionRowSpacing, pinnedViews: .sectionHeaders) {
+                        ForEach(model.groups) { group in
+                            SidebarProjectSection(
+                                group: group,
+                                isLast: group.id == model.groups.last?.id,
+                                drag: projectDrag,
+                                onLineCovered: setLineCovered
+                            ) {
+                                headerView(group.header, in: model, others: others)
+                                    .background { SidebarProjectDropPiece(line: .header(group.id), carriedOver: carriedOver) }
+                            } line: { item in
+                                line(item, others: others, now: now)
+                                    .background { SidebarProjectDropPiece(line: item.id, carriedOver: carriedOver) }
+                            }
                         }
                     }
                     // The lines are what the list reports its place by.
@@ -408,11 +402,18 @@ struct SessionSidebarView: View {
                     .padding(.bottom, LimpidLayout.Supervision.sidebarListInset)
                 }
             }
+            .modifier(SidebarProjectDragSurface(drag: projectDrag))
+            .task(id: projectDrag.dragID) {
+                await followProjectDrag()
+            }
             // The line the arrow keys reach stays in sight; the scratch
             // row is always in sight, in the foot bar.
             .onChange(of: keyboardLine) { _, line in
                 if let line, line != .row(.loose) {
+                    // The line first, which a lazy stack can find before it
+                    // is drawn; its anchor exists only once it is.
                     proxy.scrollTo(line)
+                    Task { @MainActor in proxy.scrollTo(KeyboardScrollAnchor(line: line)) }
                 }
             }
             // The lines in sight, kept beside the window: whether the
@@ -457,62 +458,6 @@ struct SessionSidebarView: View {
         )
     }
 
-    /// Changes the window's arrangement, without motion under Reduce
-    /// Motion.
-    private func arrange(_ change: (inout SidebarArrangement) -> Void) {
-        var next = window.selection.sidebarArrangement
-        change(&next)
-        guard next != window.selection.sidebarArrangement else { return }
-        withAnimation(LimpidMotion.reorderUnlessReduced) {
-            window.selection.sidebarArrangement = next
-        }
-    }
-
-    /// Opens or folds one header. The keys on a line it folds away go to
-    /// the header, so they are never on a line out of the list.
-    private func setCollapsed(_ isCollapsed: Bool, _ projectID: UUID) {
-        arrange { $0.setCollapsed(isCollapsed, projectID) }
-        if isCollapsed, let line = keyboardLine, line.projectID == projectID, line != .header(projectID) {
-            keyboardLine = .header(projectID)
-        }
-    }
-
-    /// Opens or folds every header (⌥-click, ⌥← ⌥→).
-    private func setAllCollapsed(_ isCollapsed: Bool) {
-        arrange { $0.setAllCollapsed(isCollapsed, among: projectIDs) }
-        if isCollapsed, let project = keyboardLine?.projectID, keyboardLine != .header(project) {
-            keyboardLine = .header(project)
-        }
-    }
-
-    /// Opens or folds one of a project's folded sections.
-    private func setFold(_ section: SidebarSection, of projectID: UUID, isOpen: Bool) {
-        arrange { $0.setOpen(isOpen, section, of: projectID) }
-    }
-
-    /// Meets every project the window's arrangement does not know yet, at
-    /// the bottom, opened or folded by the default rule
-    /// (`SidebarFoldDefault`), and lets go of those that are gone.
-    /// Another window's project is told from the session's windows
-    /// (`others`), which a launch has all restored before any sidebar is
-    /// drawn, so one is never met open for a window not listed yet. A
-    /// window whose sidebar is not on screen meets its projects when the
-    /// sidebar appears; until then they are listed by the same rule.
-    private func settleArrangement(sections: SidebarPresentedSections, others: [UUID: WindowID]) {
-        let shown = window.selection.shownProjectID
-        let settled = window.selection.sidebarArrangement.settled(projects: projectIDs) { id in
-            guard let project = session.project(id) else { return false }
-            return SidebarFoldDefault.isOpen(
-                isCurrent: id == shown,
-                isInOtherWindow: others[id] != nil,
-                workingCount: sections.ordered(project).count { $0.section == .working }
-            )
-        }
-        if settled != window.selection.sidebarArrangement {
-            window.selection.sidebarArrangement = settled
-        }
-    }
-
     /// The window selected `row`: a row out of sight is brought into view,
     /// centered, without motion. The person's choice has opened its
     /// header already (`WorkspaceSession.window(for:askedOf:intent:)`); a
@@ -521,7 +466,8 @@ struct SessionSidebarView: View {
         guard row != .loose, !window.selection.isChoosingProject else { return }
         // Once the list has laid the opened header's rows out.
         Task { @MainActor in
-            guard window.selection.activeContainerID == row, !window.sidebarVisibleLines.contains(.row(row)) else { return }
+            guard window.selection.activeContainerID == row,
+                  !window.sidebarVisibleLines.subtracting(window.sidebarCoveredLines).contains(.row(row)) else { return }
             var transaction = Transaction(animation: nil)
             transaction.disablesAnimations = true
             withTransaction(transaction) {
@@ -670,7 +616,7 @@ struct SessionSidebarView: View {
         guard case let .moveProject(offset) = route else { return false }
         if let projectID = SidebarKeyboardCursor.projectToMove(at: keyboardLine, shown: window.selection.shownProjectID) {
             arrange { $0.move(projectID, by: offset, among: projectIDs) }
-            scrollRequest = ScrollRequest(line: .header(projectID))
+            scrollRequest = SidebarScrollRequest(line: .header(projectID))
         }
         return true
     }
@@ -800,6 +746,135 @@ struct SessionSidebarView: View {
                 TabActions.closeAllTabs(session, registry: registry, in: row.id, agentProjection: agentProjection, from: window.id)
             } : nil
         )
+    }
+}
+
+/// A request to bring a line into view, told apart from the one before
+/// it even when it names the same line.
+private struct SidebarScrollRequest: Equatable {
+    let id = UUID()
+    let line: SidebarItemID
+}
+
+// MARK: - Arranging the projects
+
+private extension SessionSidebarView {
+    /// Changes the window's arrangement, without motion under Reduce
+    /// Motion.
+    func arrange(_ change: (inout SidebarArrangement) -> Void) {
+        var next = window.selection.sidebarArrangement
+        change(&next)
+        guard next != window.selection.sidebarArrangement else { return }
+        withAnimation(LimpidMotion.reorderUnlessReduced) {
+            window.selection.sidebarArrangement = next
+        }
+    }
+
+    /// Opens or folds one header. The keys on a line it folds away go to
+    /// the header, so they are never on a line out of the list.
+    func setCollapsed(_ isCollapsed: Bool, _ projectID: UUID) {
+        arrange { $0.setCollapsed(isCollapsed, projectID) }
+        if isCollapsed, let line = keyboardLine, line.projectID == projectID, line != .header(projectID) {
+            keyboardLine = .header(projectID)
+        }
+    }
+
+    /// Opens or folds every header (⌥-click, ⌥← ⌥→).
+    func setAllCollapsed(_ isCollapsed: Bool) {
+        arrange { $0.setAllCollapsed(isCollapsed, among: projectIDs) }
+        if isCollapsed, let project = keyboardLine?.projectID, keyboardLine != .header(project) {
+            keyboardLine = .header(project)
+        }
+    }
+
+    /// Opens or folds one of a project's folded sections.
+    func setFold(_ section: SidebarSection, of projectID: UUID, isOpen: Bool) {
+        arrange { $0.setOpen(isOpen, section, of: projectID) }
+    }
+
+    /// Meets every project the window's arrangement does not know yet, at
+    /// the bottom, opened or folded by the default rule
+    /// (`SidebarFoldDefault`), and lets go of those that are gone.
+    /// Another window's project is told from the session's windows
+    /// (`others`), which a launch has all restored before any sidebar is
+    /// drawn, so one is never met open for a window not listed yet. A
+    /// window whose sidebar is not on screen meets its projects when the
+    /// sidebar appears; until then they are listed by the same rule.
+    func settleArrangement(sections: SidebarPresentedSections, others: [UUID: WindowID]) {
+        let shown = window.selection.shownProjectID
+        let settled = window.selection.sidebarArrangement.settled(projects: projectIDs) { id in
+            guard let project = session.project(id) else { return false }
+            return SidebarFoldDefault.isOpen(
+                isCurrent: id == shown,
+                isInOtherWindow: others[id] != nil,
+                workingCount: sections.ordered(project).count { $0.section == .working }
+            )
+        }
+        if settled != window.selection.sidebarArrangement {
+            window.selection.sidebarArrangement = settled
+        }
+    }
+}
+
+// MARK: - Dragging a project's header
+
+private extension SessionSidebarView {
+    /// How fast a header resting at an edge goes past the others.
+    static let projectDragEdgeScrollPace: Duration = .milliseconds(100)
+
+    func setLineCovered(_ line: SidebarItemID, isCovered: Bool) {
+        if isCovered {
+            window.sidebarCoveredLines.insert(line)
+        } else {
+            window.sidebarCoveredLines.remove(line)
+        }
+    }
+
+    /// The pointer moved with `id` held: the drag begins, or goes on.
+    func moveProjectDrag(_ id: UUID, in model: SidebarListModel, startY: CGFloat, pointerY: CGFloat) {
+        let entries = model.headers.map {
+            SidebarProjectDrag.Entry(id: $0.id, name: $0.name, paletteIndex: $0.paletteIndex, isCollapsed: $0.isCollapsed)
+        }
+        if projectDrag.begin(id, entries: entries, startY: startY, pointerY: pointerY) {
+            // Holds the rows' sections, and tells the mouse-up.
+            dragState.begin(.project, sourceID: id.uuidString, onEnd: releaseProjectDrag)
+        } else {
+            projectDrag.move(pointerY: pointerY)
+        }
+    }
+
+    /// While a header is held: the headers gather once the layer has drawn
+    /// them at the list's places, then it scrolls at the edges.
+    func followProjectDrag() async {
+        guard projectDrag.dragID != nil else { return }
+        await Task.yield()
+        projectDrag.gather()
+        while !Task.isCancelled, projectDrag.phase == .carrying {
+            projectDrag.scrollAtEdge()
+            try? await Task.sleep(for: Self.projectDragEdgeScrollPace)
+        }
+    }
+
+    /// Writes the order under the layer, without motion as the layer hides it,
+    /// and brings the moved header into view, as the layer's own scroll did not
+    /// move the list.
+    func releaseProjectDrag() {
+        guard let id = projectDrag.sourceID else { return }
+        let order = projectDrag.release()
+        guard !order.isEmpty else { return }
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            window.selection.sidebarArrangement.setOrder(order, among: projectIDs)
+        }
+        scrollRequest = SidebarScrollRequest(line: .header(id))
+        let isReduced = LimpidMotion.reorderUnlessReduced == nil
+        Task { @MainActor in
+            await projectDrag.finishRelease(
+                travel: isReduced ? .zero : .seconds(LimpidMotion.reorderDuration),
+                fade: isReduced ? .zero : .seconds(LimpidMotion.dropIndicatorDuration)
+            )
+        }
     }
 }
 

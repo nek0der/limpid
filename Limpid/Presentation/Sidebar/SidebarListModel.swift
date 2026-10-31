@@ -1,5 +1,5 @@
 // SidebarListModel.swift
-// Limpid — every project under its own header in the sidebar: the header's model, and the one flat list the sidebar draws.
+// Limpid — every project under its own header in the sidebar: the header's model, and every line of the list the sidebar draws.
 
 import Foundation
 
@@ -64,8 +64,8 @@ enum SidebarFoldDefault {
 
 /// The sidebar's list: each project's header, in the window's order,
 /// with its rows under it while it is open, then the scratch row, drawn
-/// apart in the foot bar. One flat list of lines rather than a list per
-/// project, so a project of sixty rows is not one lazy unit drawn whole.
+/// apart in the foot bar. `items` lays every line out flat for the keys and
+/// lookups; the view draws `groups`, a section per project.
 struct SidebarListModel: Equatable {
     /// One line of the list, in the order the sidebar draws them.
     enum Item: Identifiable, Equatable {
@@ -126,13 +126,6 @@ struct SidebarListModel: Equatable {
     /// over the scratch row.
     var emptyState: EmptyState? {
         groups.isEmpty ? .noProjects : nil
-    }
-
-    /// Whether `item` is the header of a project after another, which a
-    /// gap sets apart from the project before it.
-    func isProjectStart(_ item: Item) -> Bool {
-        guard case .header = item else { return false }
-        return item.id != items.first?.id
     }
 
     /// The headers, in the window's order.
