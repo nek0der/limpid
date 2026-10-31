@@ -1,8 +1,8 @@
 Third-Party Notices
 ===================
 
-Limpid is licensed under the MIT License (see LICENSE). The distributed
-Limpid.app / DMG bundles, statically links, or embeds the third-party
+Weir is licensed under the MIT License (see LICENSE). The distributed
+Weir.app / DMG bundles, statically links, or embeds the third-party
 software listed below, under the terms of their respective licenses.
 
 The license texts of the primary components (Ghostty, Sparkle with the
@@ -18,10 +18,10 @@ shell-integration scripts (section 7).
 1. Ghostty (libghostty)
 ================================================================
 
-Statically linked into Limpid via GhosttyKit.xcframework.
+Statically linked into Weir via GhosttyKit.xcframework.
 Project: https://github.com/ghostty-org/ghostty
 
-Limpid/Core/Links/TerminalLinkPolicy.swift adapts the link-safety rules from
+Weir/Core/Links/TerminalLinkPolicy.swift adapts the link-safety rules from
 Ghostty's macOS app (macos/Sources/Helpers/UntrustedURL.swift) under the same
 license.
 
@@ -244,21 +244,21 @@ full texts.
 These are vendored and licensed by their respective authors; see
 https://github.com/ghostty-org/ghostty and each upstream above for the full
 texts. Section 8 reproduces the license text of each of them that the macOS
-build links into Limpid. zlib, stb and libintl are in GhosttyKit.xcframework
-but not in the app: Limpid uses the system's libz, and no object of stb or
+build links into Weir. zlib, stb and libintl are in GhosttyKit.xcframework
+but not in the app: Weir uses the system's libz, and no object of stb or
 libintl is linked.
 
 libintl is LGPL-2.1. Its objects are in GhosttyKit.xcframework, but no
 object of it is linked into the app. If a future build links it, this
 satisfies LGPL-2.1 §6(a): the complete corresponding source is published at
-https://github.com/nek0der/limpid (which pins https://github.com/nek0der/ghostty
-branch `limpid` as a submodule under `vendor/ghostty`); `make ghostty` invokes
+https://github.com/nek0der/weir (which pins https://github.com/nek0der/ghostty
+branch `weir` as a submodule under `vendor/ghostty`); `make ghostty` invokes
 `scripts/build-ghostty.sh` and is the entry point that produces the linker
 input `GhosttyKit.xcframework`, which can be relinked against a modified
 libintl object set. As a §6(b) fallback, the libintl object files are also
 available on written request via GitHub Discussions
-(https://github.com/nek0der/limpid/discussions); this offer is valid for at
-least three years from the date the corresponding Limpid build was distributed.
+(https://github.com/nek0der/weir/discussions); this offer is valid for at
+least three years from the date the corresponding Weir build was distributed.
 
 
 ================================================================
@@ -273,7 +273,7 @@ binary):
     Kitty's shell integration. Kitty is licensed under the GNU General Public
     License v3.0 (GPL-3.0); these files remain GPL-3.0. They are redistributed
     as separate, unlinked data files (mere aggregation), so they do not affect
-    the MIT license of Limpid's own code or the libghostty binary. The full
+    the MIT license of Weir's own code or the libghostty binary. The full
     text of the GPL-3.0 is reproduced in section 7.
     https://github.com/kovidgoyal/kitty
 
@@ -359,18 +359,18 @@ SOFTWARE.
 
 
 ================================================================
-6. Rust crates (liblimpid_rust_bridge.a)
+6. Rust crates (libweir_rust_bridge.a)
 ================================================================
 
-Statically linked into Limpid, its agent integration service and its hook
-helper through the limpid-rust-bridge staticlib built from rust/. The crates
+Statically linked into Weir, its agent integration service and its hook
+helper through the weir-rust-bridge staticlib built from rust/. The crates
 below are the bridge's normal dependency graph for aarch64-apple-darwin, at
 the versions Cargo.lock pins; build- and dev-only crates (such as cbindgen)
 are left out. The Rust standard library the staticlib carries with them is
 in section 9.
 
 Each crate is offered under the license in parentheses. Where that is a
-choice, Limpid elects the MIT License, and each crate's LICENSE-MIT file is
+choice, Weir elects the MIT License, and each crate's LICENSE-MIT file is
 reproduced as published in that version. A text a crate's license adds, such
 as Unicode data under the Unicode License v3, follows the MIT texts.
 
@@ -378,7 +378,7 @@ Crates marked "compile-time only" are procedural macros and their
 dependencies. They run inside the compiler and leave no code of their own in
 the binary, but the normal dependency graph reaches them, so they are listed.
 
-[The crates and their license texts are filled in from Cargo.lock when Limpid is built; the copy inside Limpid.app and on its disk image carries them.]
+[The crates and their license texts are filled in from Cargo.lock when Weir is built; the copy inside Weir.app and on its disk image carries them.]
 
 ================================================================
 7. GNU General Public License, version 3
@@ -1067,10 +1067,10 @@ Public License instead of this License.  But first, please read
 ================================================================
 
 The libraries, fonts and runtime below are the parts of
-GhosttyKit.xcframework that the macOS build of Limpid links or embeds, at the
+GhosttyKit.xcframework that the macOS build of Weir links or embeds, at the
 versions vendor/ghostty pins. Each license text is reproduced from the
 package ghostty builds from, unless its block says otherwise. Where a
-component offers a choice of licenses, its header names the one Limpid
+component offers a choice of licenses, its header names the one Weir
 elects.
 
 ----------------------------------------------------------------
@@ -5236,7 +5236,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 
 
 ================================================================
-9. Rust standard library (liblimpid_rust_bridge.a)
+9. Rust standard library (libweir_rust_bridge.a)
 ================================================================
 
 The bridge staticlib of section 6 also carries the Rust standard library
@@ -5252,7 +5252,7 @@ panic_abort ship with the toolchain but are not linked.
 The toolchain's COPYRIGHT-library file covers this code. The standard
 library is offered under Apache-2.0 OR MIT, and so is each registry crate
 below (memchr under Unlicense OR MIT, adler2 under 0BSD OR MIT OR
-Apache-2.0, miniz_oxide under MIT OR Zlib OR Apache-2.0); Limpid elects
+Apache-2.0, miniz_oxide under MIT OR Zlib OR Apache-2.0); Weir elects
 the MIT License throughout. The texts are the Rust repository's
 LICENSE-MIT and each crate's LICENSE-MIT as published in that version.
 core's Unicode tables are under the Unicode License v3, and
@@ -5963,7 +5963,7 @@ Notes
 
 This file covers software in the distributed application; build-time-only
 toolchains (Zig, Xcode, xcodegen, etc.) are not included. libghostty is built
-from our fork https://github.com/nek0der/ghostty (branch `limpid`); all changes
+from our fork https://github.com/nek0der/ghostty (branch `weir`); all changes
 there remain under ghostty's MIT license.
 
-Limpid — Copyright (c) 2026 nek0der — MIT License (see LICENSE).
+Weir — Copyright (c) 2026 nek0der — MIT License (see LICENSE).

@@ -141,87 +141,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
-name = "limpid-agent-core"
-version = "0.1.0"
-dependencies = [
- "limpid-agent-model",
- "limpid-provider-claude",
- "limpid-provider-codex",
- "serde",
- "serde_json",
- "uuid",
-]
-
-[[package]]
-name = "limpid-agent-hook"
-version = "0.1.0"
-dependencies = [
- "libc",
- "limpid-agent-core",
- "limpid-agent-model",
- "limpid-provider-claude",
- "limpid-provider-codex",
- "serde",
- "serde_json",
- "tempfile",
- "uuid",
-]
-
-[[package]]
-name = "limpid-agent-model"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror",
- "uuid",
-]
-
-[[package]]
-name = "limpid-agent-protocol"
-version = "0.1.0"
-dependencies = [
- "limpid-agent-core",
- "serde",
- "serde_json",
- "uuid",
-]
-
-[[package]]
-name = "limpid-provider-claude"
-version = "0.1.0"
-dependencies = [
- "limpid-agent-model",
- "serde_json",
- "uuid",
-]
-
-[[package]]
-name = "limpid-provider-codex"
-version = "0.1.0"
-dependencies = [
- "limpid-agent-model",
- "serde_json",
- "tempfile",
- "uuid",
-]
-
-[[package]]
-name = "limpid-rust-bridge"
-version = "0.1.0"
-dependencies = [
- "cbindgen",
- "limpid-agent-core",
- "limpid-agent-hook",
- "limpid-agent-model",
- "limpid-agent-protocol",
- "serde",
- "serde_json",
- "tempfile",
- "uuid",
-]
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -507,6 +426,87 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "81941cd78d0c92026c33e5e01312845a4cb1e9af3407f9134b100dd03144103e"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "weir-agent-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "uuid",
+ "weir-agent-model",
+ "weir-provider-claude",
+ "weir-provider-codex",
+]
+
+[[package]]
+name = "weir-agent-hook"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "uuid",
+ "weir-agent-core",
+ "weir-agent-model",
+ "weir-provider-claude",
+ "weir-provider-codex",
+]
+
+[[package]]
+name = "weir-agent-model"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
+name = "weir-agent-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "uuid",
+ "weir-agent-core",
+]
+
+[[package]]
+name = "weir-provider-claude"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "uuid",
+ "weir-agent-model",
+]
+
+[[package]]
+name = "weir-provider-codex"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "tempfile",
+ "uuid",
+ "weir-agent-model",
+]
+
+[[package]]
+name = "weir-rust-bridge"
+version = "0.1.0"
+dependencies = [
+ "cbindgen",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "uuid",
+ "weir-agent-core",
+ "weir-agent-hook",
+ "weir-agent-model",
+ "weir-agent-protocol",
 ]
 
 [[package]]

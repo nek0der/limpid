@@ -1,5 +1,5 @@
 // main.swift
-// Limpid — authenticated LaunchAgent host for the Rust approval broker.
+// Weir — authenticated LaunchAgent host for the Rust approval broker.
 
 import Foundation
 

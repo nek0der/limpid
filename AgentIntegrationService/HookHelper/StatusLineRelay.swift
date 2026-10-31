@@ -1,5 +1,5 @@
 // StatusLineRelay.swift
-// Limpid — the `statusline` subcommand: Claude Code's status line, which keeps the plan usage and runs the person's own.
+// Weir — the `statusline` subcommand: Claude Code's status line, which keeps the plan usage and runs the person's own.
 
 import Darwin
 import Foundation
@@ -47,7 +47,7 @@ enum StatusLineRelay {
             FileHandle.standardOutput.write(output)
             return true
         } catch {
-            logHookDiagnostic("Limpid status line settings: \(error)")
+            logHookDiagnostic("Weir status line settings: \(error)")
             return false
         }
     }
@@ -66,7 +66,7 @@ enum StatusLineRelay {
         do {
             input = try readBoundedStandardInput()
         } catch {
-            logHookDiagnostic("Limpid status line: \(error)")
+            logHookDiagnostic("Weir status line: \(error)")
             exit(0)
         }
         let command: String?
@@ -77,7 +77,7 @@ enum StatusLineRelay {
                 environment: ProcessInfo.processInfo.environment
             )
         } catch {
-            logHookDiagnostic("Limpid status line: \(error)")
+            logHookDiagnostic("Weir status line: \(error)")
             exit(0)
         }
         guard let command else { exit(0) }
@@ -92,10 +92,10 @@ enum StatusLineRelay {
     /// place: all of them, since `relay` runs nothing for an input past the
     /// helper's bound.
     private static func execStatusLine(_ command: String, input: Data) -> Never {
-        var template = Array((NSTemporaryDirectory() + "limpid-status-line.XXXXXX").utf8CString)
+        var template = Array((NSTemporaryDirectory() + "weir-status-line.XXXXXX").utf8CString)
         let descriptor = mkstemp(&template)
         guard descriptor >= 0 else {
-            logHookDiagnostic("Limpid status line: no temporary file (errno \(errno))")
+            logHookDiagnostic("Weir status line: no temporary file (errno \(errno))")
             exit(0)
         }
         unlink(template)
@@ -114,7 +114,7 @@ enum StatusLineRelay {
             return true
         }
         guard isWritten, lseek(descriptor, 0, SEEK_SET) == 0, dup2(descriptor, STDIN_FILENO) >= 0 else {
-            logHookDiagnostic("Limpid status line: could not hand the input on (errno \(errno))")
+            logHookDiagnostic("Weir status line: could not hand the input on (errno \(errno))")
             exit(0)
         }
         close(descriptor)
@@ -123,7 +123,7 @@ enum StatusLineRelay {
         }
         arguments.append(nil)
         execv("/bin/sh", &arguments)
-        logHookDiagnostic("Limpid status line: could not run /bin/sh (errno \(errno))")
+        logHookDiagnostic("Weir status line: could not run /bin/sh (errno \(errno))")
         exit(0)
     }
 }

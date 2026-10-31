@@ -1,5 +1,5 @@
 // AgentIntegrationApprovalWire.swift
-// Limpid — provider-neutral approval messages shared by the app and Hook Helper.
+// Weir — provider-neutral approval messages shared by the app and Hook Helper.
 
 import Foundation
 
@@ -16,10 +16,10 @@ struct AgentIntegrationApprovalSubmission {
     /// request that asks nothing.
     let questions: Any?
     let timeoutMilliseconds: Int
-    /// The agent run whose hook asked (`LIMPID_AGENT_RUN_ID`), so the app
+    /// The agent run whose hook asked (`WEIR_AGENT_RUN_ID`), so the app
     /// can tell this run's request from one of another run in the same
     /// conversation. Correlation only, like `sessionID`; `nil` outside a
-    /// Limpid run.
+    /// Weir run.
     var agentRunID: UUID?
 }
 

@@ -1,5 +1,5 @@
 // main.swift
-// Limpid — development requester that submits and waits through macOS XPC.
+// Weir — development requester that submits and waits through macOS XPC.
 
 import Foundation
 

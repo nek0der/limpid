@@ -1,8 +1,8 @@
 # libghostty fork maintenance
 
-Limpid renders terminals with `libghostty`, the library the ghostty project
+Weir renders terminals with `libghostty`, the library the ghostty project
 builds from its own source, consumed through its C ABI. `vendor/ghostty` is a
-submodule of our fork of that project (`nek0der/ghostty`, branch `limpid`),
+submodule of our fork of that project (`nek0der/ghostty`, branch `weir`),
 and that branch carries the patches we need on top of upstream. Upstream is
 `ghostty-org/ghostty`, which we track through a separate `upstream` remote in
 the submodule checkout ([Health](#health) shows how to add it to a fresh
@@ -11,7 +11,7 @@ and how we retire one.
 
 ## Why we carry a fork
 
-Limpid needs a small number of things the embedding API does not offer. For
+Weir needs a small number of things the embedding API does not offer. For
 each one, we can either work around it on our side or patch the fork.
 Upstream states that `libghostty` is not a stable API yet and describes the
 terminal core moving into a library of its own.
@@ -23,7 +23,7 @@ go.
 
 ## Patch inventory
 
-Every patch on the `limpid` branch appears here. Identify a patch by its
+Every patch on the `weir` branch appears here. Identify a patch by its
 commit subject rather than its hash, because rebasing rewrites the hash on
 every upstream bump.
 
@@ -37,7 +37,7 @@ every upstream bump.
 - **temporary** — we intend the change to reach upstream, or upstream is
   expected to provide an equivalent. The retirement condition names what we
   are waiting for.
-- **environment** — the change only makes sense for the way Limpid embeds the
+- **environment** — the change only makes sense for the way Weir embeds the
   library and cannot be generalized. It stays until the embedding changes.
 - **incompatible** — the change conflicts with an upstream decision. It stays
   until either side moves, and the entry records what the conflict is.
@@ -60,7 +60,7 @@ every upstream bump.
    whitespace-only, comment-only, and formatting changes entirely. Every
    touched line can conflict on the next rebase, so touch as few lines as the
    change allows.
-4. **Prefer a shape upstream could accept** over one that only serves Limpid.
+4. **Prefer a shape upstream could accept** over one that only serves Weir.
    A general extension point is easier to retire than a special case, because
    upstream can land the same shape. Name what the patch adds the way upstream
    would name it. A local prefix would have to be undone before the change
@@ -73,8 +73,8 @@ every upstream bump.
 
 ## Rebasing onto upstream
 
-Rebase the `limpid` branch onto upstream, then bump the submodule in its own
-Limpid commit. Two checks belong to every rebase, and neither is mechanical:
+Rebase the `weir` branch onto upstream, then bump the submodule in its own
+Weir commit. Two checks belong to every rebase, and neither is mechanical:
 
 - **Check each retirement condition.** Upstream may have landed the
   equivalent since the last bump. A patch that still applies cleanly is not
@@ -84,7 +84,7 @@ Limpid commit. Two checks belong to every rebase, and neither is mechanical:
   edits. The build still succeeds while the behavior changes. Exercise the
   patched path after a rebase instead of trusting a clean apply.
 
-Before rewriting the branch, tag the commit Limpid currently pins so its
+Before rewriting the branch, tag the commit Weir currently pins so its
 objects stay reachable, and push the tag:
 
 ```bash
@@ -92,8 +92,8 @@ git -C vendor/ghostty tag "pin/$(date +%F)" <pinned-sha>
 git -C vendor/ghostty push origin "pin/$(date +%F)"
 ```
 
-A gitlink in Limpid records a hash; it is not a ref in the fork and keeps
-nothing alive. Without the tag, the objects an older Limpid commit points at
+A gitlink in Weir records a hash; it is not a ref in the fork and keeps
+nothing alive. Without the tag, the objects an older Weir commit points at
 become unreachable the moment the branch moves, and a forge is free to collect
 them. An older release then cannot be checked out or rebuilt. Push the
 rewritten branch with `--force-with-lease`, never a bare `--force`.
@@ -120,12 +120,12 @@ embedding needs to change before patching the library again.
 
 ## Retiring a patch
 
-When a retirement condition is met, drop the commit from the `limpid` branch,
-move Limpid to the upstream equivalent in the same change, and remove the row
+When a retirement condition is met, drop the commit from the `weir` branch,
+move Weir to the upstream equivalent in the same change, and remove the row
 from the inventory. Record the retirement in the submodule bump's commit
 message so the reason is recoverable from history rather than only from this
 file.
 
-Keep the Limpid-side calls that reach a fork-only entry point behind a single
+Keep the Weir-side calls that reach a fork-only entry point behind a single
 wrapper. Retiring the patch then changes the call sites in one file, and the
 submodule bump and the inventory row stay separate, small edits.

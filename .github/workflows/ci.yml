@@ -36,8 +36,8 @@ jobs:
       # Windows runner compares cleanly because .gitattributes pins LF endings.
       - name: Check generated header
         run: |
-          cargo build --locked --package limpid-rust-bridge
-          git diff --exit-code -- rust/limpid-rust-bridge/include/limpid_rust_bridge.h
+          cargo build --locked --package weir-rust-bridge
+          git diff --exit-code -- rust/weir-rust-bridge/include/weir_rust_bridge.h
       - name: Run Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Run tests
@@ -146,7 +146,7 @@ jobs:
       - name: Name the restored build
         id: build-key
         env:
-          PREFIX: derived-data-v1-${{ runner.os }}-${{ steps.xcode.outputs.build }}-${{ steps.ghostty-src.outputs.sha }}-${{ hashFiles('rust/limpid-rust-bridge/include/**') }}
+          PREFIX: derived-data-v1-${{ runner.os }}-${{ steps.xcode.outputs.build }}-${{ steps.ghostty-src.outputs.sha }}-${{ hashFiles('rust/weir-rust-bridge/include/**') }}
         run: printf 'prefix=%s\n' "$PREFIX" >> "$GITHUB_OUTPUT"
 
       - name: Restore the last build of main
@@ -173,8 +173,8 @@ jobs:
           mkdir -p build
           build_for_testing() {
             xcodebuild \
-              -project Limpid.xcodeproj \
-              -scheme Limpid \
+              -project Weir.xcodeproj \
+              -scheme Weir \
               -configuration Debug \
               -destination 'platform=macOS' \
               -derivedDataPath build/DerivedData \
@@ -224,16 +224,16 @@ jobs:
 
       - name: Test with coverage
         env:
-          LIMPID_REQUIRE_TMUX_TESTS: "1"
+          WEIR_REQUIRE_TMUX_TESTS: "1"
         run: |
           set -o pipefail
           xcodebuild \
-            -project Limpid.xcodeproj \
-            -scheme Limpid \
+            -project Weir.xcodeproj \
+            -scheme Weir \
             -configuration Debug \
             -destination 'platform=macOS' \
             -derivedDataPath build/DerivedData \
-            -resultBundlePath build/Limpid.xcresult \
+            -resultBundlePath build/Weir.xcresult \
             -enableCodeCoverage YES \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
@@ -242,20 +242,20 @@ jobs:
 
       - name: Validate development service bundle
         run: |
-          APP_PATH="build/DerivedData/Build/Products/Debug/Limpid Dev.app"
+          APP_PATH="build/DerivedData/Build/Products/Debug/Weir Dev.app"
           SERVICE_PATH="$APP_PATH/Contents/MacOS/AgentIntegrationService"
-          SERVICE_PLIST="$APP_PATH/Contents/Library/LaunchAgents/dev.limpid.agent-integration-service.dev.plist"
+          SERVICE_PLIST="$APP_PATH/Contents/Library/LaunchAgents/com.nekoder.weir.agent-integration-service.dev.plist"
           test -x "$SERVICE_PATH"
           test -f "$SERVICE_PLIST"
-          test ! -e "$APP_PATH/Contents/Library/LaunchAgents/dev.limpid.agent-integration-service.plist"
+          test ! -e "$APP_PATH/Contents/Library/LaunchAgents/com.nekoder.weir.agent-integration-service.plist"
           plutil -lint "$SERVICE_PLIST"
 
       - name: Upload xcresult bundle
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: Limpid.xcresult
-          path: build/Limpid.xcresult
+          name: Weir.xcresult
+          path: build/Weir.xcresult
           retention-days: 14
 
       - name: Coverage summary
@@ -264,7 +264,7 @@ jobs:
           {
             echo "## Coverage report"
             echo '```'
-            xcrun xccov view --report --only-targets build/Limpid.xcresult || true
+            xcrun xccov view --report --only-targets build/Weir.xcresult || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -368,7 +368,7 @@ jobs:
       # The guardrail job has no build, so the notices check proves what the
       # app links only here, from the archive and its dSYM. It must not skip.
       - name: Check the archive against THIRD-PARTY-NOTICES
-        run: LIMPID_NOTICES_REQUIRE_BINARY=1 scripts/check-notices-coverage.sh
+        run: WEIR_NOTICES_REQUIRE_BINARY=1 scripts/check-notices-coverage.sh
 
   format:
     name: SwiftFormat

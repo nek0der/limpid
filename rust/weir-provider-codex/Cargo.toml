@@ -1,0 +1,18 @@
+[package]
+name = "weir-provider-codex"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+weir-agent-model = { path = "../weir-agent-model" }
+serde_json.workspace = true
+
+[dev-dependencies]
+weir-agent-model = { path = "../weir-agent-model", features = ["conformance"] }
+tempfile.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

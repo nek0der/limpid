@@ -1,4 +1,0 @@
-module LimpidRustBridge {
-  header "limpid_rust_bridge.h"
-  export *
-}

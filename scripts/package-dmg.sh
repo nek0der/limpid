@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# Package a signed Limpid.app into a notarized .dmg ready for distribution.
+# Package a signed Weir.app into a notarized .dmg ready for distribution.
 #
 # Prerequisites:
-#   - A Developer ID signed Release build of Limpid.app
+#   - A Developer ID signed Release build of Weir.app
 #   - create-dmg installed (brew install create-dmg)
-#   - App-specific password stored as keychain profile "limpid-notarize-local"
-#     (xcrun notarytool store-credentials limpid-notarize-local ...)
+#   - App-specific password stored as keychain profile "weir-notarize-local"
+#     (xcrun notarytool store-credentials weir-notarize-local ...)
 #
 # Usage:
 #   ./scripts/package-dmg.sh                     # auto-detect latest Release build
-#   ./scripts/package-dmg.sh /path/to/Limpid.app # use a specific .app
+#   ./scripts/package-dmg.sh /path/to/Weir.app # use a specific .app
 #
 # Output:
-#   dist/Limpid-<version>.dmg  (notarized and stapled)
+#   dist/Weir-<version>.dmg  (notarized and stapled)
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KEYCHAIN_PROFILE="limpid-notarize-local"
+KEYCHAIN_PROFILE="weir-notarize-local"
 DIST_DIR="${REPO_ROOT}/dist"
 
 # -- Locate the .app -----------------------------------------------------------
@@ -26,11 +26,11 @@ if [[ $# -ge 1 ]]; then
   APP_PATH="$1"
 else
   # Default: the latest DerivedData Release build
-  APP_PATH="$(ls -td "${HOME}"/Library/Developer/Xcode/DerivedData/Limpid-*/Build/Products/Release/Limpid.app 2>/dev/null | head -1)"
+  APP_PATH="$(ls -td "${HOME}"/Library/Developer/Xcode/DerivedData/Weir-*/Build/Products/Release/Weir.app 2>/dev/null | head -1)"
 fi
 
 if [[ -z "${APP_PATH:-}" || ! -d "${APP_PATH}" ]]; then
-  echo "✗ Limpid.app not found." >&2
+  echo "✗ Weir.app not found." >&2
   echo "  Expected: Release build under DerivedData, or pass the path as an argument." >&2
   exit 1
 fi
@@ -49,7 +49,7 @@ spctl_status="$(spctl --assess --type execute --verbose "${APP_PATH}" 2>&1 || tr
 if ! echo "${spctl_status}" | grep -q "accepted"; then
   echo "✗ App is not notarized or stapled." >&2
   echo "  spctl said: ${spctl_status}" >&2
-  echo "  Run notarization on Limpid.app first." >&2
+  echo "  Run notarization on Weir.app first." >&2
   exit 1
 fi
 echo "✓ App is notarized: $(echo "${spctl_status}" | head -1)"
@@ -62,7 +62,7 @@ echo "✓ Version: ${VERSION}"
 # -- Build the dmg -------------------------------------------------------------
 
 mkdir -p "${DIST_DIR}"
-DMG_PATH="${DIST_DIR}/Limpid-${VERSION}.dmg"
+DMG_PATH="${DIST_DIR}/Weir-${VERSION}.dmg"
 rm -f "${DMG_PATH}"
 
 echo "→ Creating dmg..."
@@ -81,12 +81,12 @@ cp -R "${APP_PATH}" "${DMG_STAGING}/"
 # Rust crate section, which the committed file leaves to a marker line.
 cp "${APP_PATH}/Contents/Resources/THIRD-PARTY-NOTICES" "${DMG_STAGING}/"
 create-dmg \
-  --volname "Limpid ${VERSION}" \
+  --volname "Weir ${VERSION}" \
   --window-size 540 380 \
   --icon-size 128 \
-  --icon "Limpid.app" 140 190 \
+  --icon "Weir.app" 140 190 \
   --app-drop-link 400 190 \
-  --hide-extension "Limpid.app" \
+  --hide-extension "Weir.app" \
   --no-internet-enable \
   --codesign "Developer ID Application" \
   "${DMG_PATH}" \

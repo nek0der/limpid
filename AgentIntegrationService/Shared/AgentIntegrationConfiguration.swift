@@ -1,5 +1,5 @@
 // AgentIntegrationConfiguration.swift
-// Limpid — identifiers and signing policy for the macOS integration service.
+// Weir — identifiers and signing policy for the macOS integration service.
 
 import Foundation
 import Security
@@ -10,27 +10,27 @@ enum AgentIntegrationConfiguration {
     static let maximumRecords = 128
 
     #if DEBUG
-        static let plistName = "dev.limpid.agent-integration-service.dev.plist"
-        static let launchAgentLabel = "dev.limpid.agent-integration-service.dev"
-        static let requesterMachService = "dev.limpid.agent-integration-service.dev.requester"
-        static let controllerMachService = "dev.limpid.agent-integration-service.dev.controller"
-        static let serviceIdentifier = "dev.limpid.AgentIntegrationService.dev"
+        static let plistName = "com.nekoder.weir.agent-integration-service.dev.plist"
+        static let launchAgentLabel = "com.nekoder.weir.agent-integration-service.dev"
+        static let requesterMachService = "com.nekoder.weir.agent-integration-service.dev.requester"
+        static let controllerMachService = "com.nekoder.weir.agent-integration-service.dev.controller"
+        static let serviceIdentifier = "com.nekoder.weir.AgentIntegrationService.dev"
         static let requesterIdentifiers = [
-            "dev.limpid.AgentIntegrationHookHelper.dev",
-            "dev.limpid.AgentIntegrationRequesterProbe.dev"
+            "com.nekoder.weir.AgentIntegrationHookHelper.dev",
+            "com.nekoder.weir.AgentIntegrationRequesterProbe.dev"
         ]
         static let controllerIdentifiers = [
-            "dev.limpid.Limpid.dev",
-            "dev.limpid.AgentIntegrationControllerProbe.dev"
+            "com.nekoder.Weir.dev",
+            "com.nekoder.weir.AgentIntegrationControllerProbe.dev"
         ]
     #else
-        static let plistName = "dev.limpid.agent-integration-service.plist"
-        static let launchAgentLabel = "dev.limpid.agent-integration-service"
-        static let requesterMachService = "dev.limpid.agent-integration-service.requester"
-        static let controllerMachService = "dev.limpid.agent-integration-service.controller"
-        static let serviceIdentifier = "dev.limpid.AgentIntegrationService"
-        static let requesterIdentifiers = ["dev.limpid.AgentIntegrationHookHelper"]
-        static let controllerIdentifiers = ["dev.limpid.Limpid"]
+        static let plistName = "com.nekoder.weir.agent-integration-service.plist"
+        static let launchAgentLabel = "com.nekoder.weir.agent-integration-service"
+        static let requesterMachService = "com.nekoder.weir.agent-integration-service.requester"
+        static let controllerMachService = "com.nekoder.weir.agent-integration-service.controller"
+        static let serviceIdentifier = "com.nekoder.weir.AgentIntegrationService"
+        static let requesterIdentifiers = ["com.nekoder.weir.AgentIntegrationHookHelper"]
+        static let controllerIdentifiers = ["com.nekoder.Weir"]
     #endif
 }
 

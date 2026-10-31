@@ -1,0 +1,24 @@
+[package]
+name = "weir-agent-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+weir-agent-model = { path = "../weir-agent-model" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+# A test about a real provider runs under that provider's own descriptor. A
+# dev-dependency only: the provider crates depend on the model alone, so there
+# is no cycle and the core itself stays free of them. The model's
+# `conformance` feature brings the minimal descriptor the other tests share.
+[dev-dependencies]
+weir-agent-model = { path = "../weir-agent-model", features = ["conformance"] }
+weir-provider-claude = { path = "../weir-provider-claude" }
+weir-provider-codex = { path = "../weir-provider-codex" }
+
+[lints]
+workspace = true

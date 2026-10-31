@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # scripts/screenshot.sh
-# Limpid — Regenerate the README hero shot from the demo session.
+# Weir — Regenerate the README hero shot from the demo session.
 # Run from the repo root. `make screenshot` builds Release and hands the
-# script that build through LIMPID_SCREENSHOT_APP. Run on its own, the script
-# takes the most recent Limpid.app under Xcode DerivedData (we don't rebuild
+# script that build through WEIR_SCREENSHOT_APP. Run on its own, the script
+# takes the most recent Weir.app under Xcode DerivedData (we don't rebuild
 # here so the script stays fast and decoupled from the toolchain).
 #
 # Usage:
@@ -17,7 +17,7 @@
 # One-time setup:
 #   System Settings → Privacy & Security → Screen Recording → add
 #   your terminal app (Terminal, Ghostty, etc.) and toggle
-#   on. ScreenCaptureKit needs that permission to expose and capture Limpid's
+#   on. ScreenCaptureKit needs that permission to expose and capture Weir's
 #   window at its native pixel scale. We deliberately avoid the
 #   Accessibility / System Events route so contributors only have to grant
 #   one permission.
@@ -57,25 +57,25 @@ find_latest_app() {
 
 # The app the caller built wins: DerivedData holds one folder per worktree, so
 # the newest app there may be another branch's build.
-APP_PATH="${LIMPID_SCREENSHOT_APP:-}"
+APP_PATH="${WEIR_SCREENSHOT_APP:-}"
 if [ -n "${APP_PATH}" ] && [ ! -d "${APP_PATH}" ]; then
-  echo "error: LIMPID_SCREENSHOT_APP is not an app: ${APP_PATH}" >&2
+  echo "error: WEIR_SCREENSHOT_APP is not an app: ${APP_PATH}" >&2
   exit 1
 fi
 if [ -z "${APP_PATH}" ]; then
-  APP_PATH="$(find_latest_app Release Limpid.app)"
+  APP_PATH="$(find_latest_app Release Weir.app)"
 fi
 if [ -z "${APP_PATH}" ]; then
-  APP_PATH="$(find_latest_app Debug 'Limpid Dev.app' Limpid.app)"
+  APP_PATH="$(find_latest_app Debug 'Weir Dev.app' Weir.app)"
 fi
 if [ -z "${APP_PATH}" ]; then
-  echo "error: no Limpid.app found under DerivedData." >&2
-  echo "       Build first: xcodebuild -project Limpid.xcodeproj -scheme Limpid -configuration Release build" >&2
+  echo "error: no Weir.app found under DerivedData." >&2
+  echo "       Build first: xcodebuild -project Weir.xcodeproj -scheme Weir -configuration Release build" >&2
   exit 1
 fi
 
 echo "Launching: ${APP_PATH}"
-echo "         LIMPID_DEMO=1 → using DemoFixture, persistence disabled"
+echo "         WEIR_DEMO=1 → using DemoFixture, persistence disabled"
 
 APP_EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${APP_PATH}/Contents/Info.plist")"
 APP_BINARY="${APP_PATH}/Contents/MacOS/${APP_EXECUTABLE}"
@@ -90,7 +90,7 @@ CAPTURE_HOME_PATH=""
 cleanup() {
   if [[ -n "${APP_PID}" ]] && kill -0 "${APP_PID}" 2>/dev/null; then
     # Demo persistence is disabled, so terminate this exact process without
-    # entering the user's quit-confirmation policy or touching another Limpid.
+    # entering the user's quit-confirmation policy or touching another Weir.
     kill -TERM "${APP_PID}" 2>/dev/null || true
     for _ in {1..20}; do
       kill -0 "${APP_PID}" 2>/dev/null || break
@@ -114,9 +114,9 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-APP_LOG="$(mktemp -t limpid-screenshot.XXXXXX)"
-CAPTURE_LOG="$(mktemp -t limpid-screenshot-capture.XXXXXX)"
-CAPTURE_PATH="$(mktemp -t limpid-screenshot-image.XXXXXX)"
+APP_LOG="$(mktemp -t weir-screenshot.XXXXXX)"
+CAPTURE_LOG="$(mktemp -t weir-screenshot-capture.XXXXXX)"
+CAPTURE_PATH="$(mktemp -t weir-screenshot-image.XXXXXX)"
 # A shell reports its directory by the physical path, and a pane header
 # abbreviates it to `~` only when that path sits under the home the app is
 # given. The temporary directory is the wrong place for that home: it lives
@@ -128,7 +128,7 @@ CAPTURE_PATH="$(mktemp -t limpid-screenshot-image.XXXXXX)"
 # Two steps, so a failed `mktemp` stops the script here: nested inside the
 # `cd`, its failure would leave `cd ""` in the current directory.
 mkdir -p build
-CAPTURE_HOME_PATH="$(mktemp -d "$(pwd -P)/build/limpid-screenshot-home.XXXXXX")"
+CAPTURE_HOME_PATH="$(mktemp -d "$(pwd -P)/build/weir-screenshot-home.XXXXXX")"
 CAPTURE_HOME="$(cd "${CAPTURE_HOME_PATH}" && pwd -P)"
 # Pane headers show each shell's working directory, and the demo shells start
 # wherever the app was launched from, so launched from here they would put
@@ -150,7 +150,7 @@ mkdir -p "${DEMO_SHELL_DIR}"
 # The subshell `exec`s the app, so `$!` is the app's own pid.
 (
   cd "${DEMO_SHELL_DIR}"
-  CFFIXED_USER_HOME="${CAPTURE_HOME}" LIMPID_DEMO=1 exec "${APP_BINARY}" \
+  CFFIXED_USER_HOME="${CAPTURE_HOME}" WEIR_DEMO=1 exec "${APP_BINARY}" \
     -AppleLanguages '(en-US)' \
     -AppleLocale en_US \
     -ApplePersistenceIgnoreState YES
@@ -327,7 +327,7 @@ SWIFT
 
 if [ "${CAPTURE_STATUS}" -ge 5 ] && [ "${CAPTURE_STATUS}" -le 7 ]; then
   echo "" >&2
-  echo "error: the Limpid window could not be captured at the hero's size (2880×1800)." >&2
+  echo "error: the Weir window could not be captured at the hero's size (2880×1800)." >&2
   echo "       $(cat "${CAPTURE_LOG}")" >&2
   echo "       The demo opens its 1440×900-point window at (16, 16) on the main" >&2
   echo "       display, which has to be a 2x (Retina) display at least 1456×956" >&2
@@ -337,7 +337,7 @@ if [ "${CAPTURE_STATUS}" -ge 5 ] && [ "${CAPTURE_STATUS}" -le 7 ]; then
   exit 1
 elif [ "${CAPTURE_STATUS}" -ne 0 ]; then
   echo "" >&2
-  echo "error: could not capture the launched Limpid window." >&2
+  echo "error: could not capture the launched Weir window." >&2
   echo "       Screen Recording permission may be missing for the calling terminal." >&2
   echo "" >&2
   echo "  Grant it once and rerun:" >&2

@@ -1,4 +1,4 @@
-# Limpid user guide
+# Weir user guide
 
 The README gives a short tour. This guide covers each part of the window in
 detail, then the workflow, the other features, and every default shortcut.
@@ -6,7 +6,7 @@ detail, then the workflow, the other features, and every default shortcut.
 ## Terms
 
 - **Turn.** One round of an agent's work: from the prompt you send until the
-  agent stops and waits for you again. Limpid snapshots the worktree at the
+  agent stops and waits for you again. Weir snapshots the worktree at the
   start and end of each turn.
 - **Viewed line.** How far you have reviewed a conversation. Turns before
   the line are viewed; turns after it are unviewed, and stay in Needs
@@ -40,13 +40,13 @@ reports (the 5-hour and weekly ones, as a rule), and when each resets. A dot
 on the icon says a window is at 80% or more; a larger red one says a window
 is used up. A click outside the panel or Escape closes it.
 
-- **Claude Code** reports its usage to its status line, so Limpid reads it
+- **Claude Code** reports its usage to its status line, so Weir reads it
   there: the values are the ones from the last reply of a Claude Code
-  session in a Limpid pane, and the panel says how old they are. Limpid runs
+  session in a Weir pane, and the panel says how old they are. Weir runs
   your own status line in its place with the same input, so what you see
   does not change. Without a status line of your own (`/statusline` sets one
-  up), Limpid leaves the slot empty and has nothing to show.
-- **Codex** is asked for its usage once when Limpid starts, and every
+  up), Weir leaves the slot empty and has nothing to show.
+- **Codex** is asked for its usage once when Weir starts, and every
   minute while the panel is open. It answers when you are signed in to Codex
   with ChatGPT. When your account has limit resets to spend, the panel says
   how many are left and when the first one lapses.
@@ -285,16 +285,16 @@ encoding.
 
 ## More
 
-- **Native approvals.** Limpid's approval service holds Claude Code and Codex
+- **Native approvals.** Weir's approval service holds Claude Code and Codex
   permission requests for the approval card. The release DMG has it. A build
   without a Team ID leaves every approval to the agent's own prompt; see
   [CONTRIBUTING.md](../CONTRIBUTING.md#native-approvals-in-a-debug-build).
 - **Worktrees.** Create, switch, and delete worktrees from **New Worktree**,
   the worktree menu, and the sidebar row. When an agent `cd`s into another
-  worktree, Limpid offers to move the tab there.
+  worktree, Weir offers to move the tab there.
 - **Pull request status.** A row with an open, draft, merged, or closed PR
   shows the PR's state, with its checks on the mark's corner: failing,
-  running, or passed. Hover for the title and checks. Limpid uses whatever
+  running, or passed. Hover for the title and checks. Weir uses whatever
   `gh` or `glab` is already signed in.
 - **Session restore.** Projects, worktrees, tabs, splits, and windows come
   back after a relaunch, with each pane's scrollback, and agent panes resume
@@ -306,9 +306,9 @@ encoding.
   project's worktrees with something open as cards, grouped by state (needs
   you, running, idle), with each terminal's last lines: the one view sorted
   by state, since the sidebar keeps your order. **Notification History**
-  (⇧⌘N) keeps the notifications Limpid sent. The menu bar icon shows the
+  (⇧⌘N) keeps the notifications Weir sent. The menu bar icon shows the
   attention state.
-- **Updates and languages.** Limpid checks for updates once a day through
+- **Updates and languages.** Weir checks for updates once a day through
   Sparkle and installs one when you choose to. The interface is in English and Japanese; choose one in
   **Settings → General → Display Language**.
 

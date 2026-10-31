@@ -1,0 +1,158 @@
+// AppState+SettingsConfigSync.swift
+// Weir — bridge `SettingsStore.settings` into libghostty's live
+// reload path. Lives outside `WeirApp.swift` so the host file stays
+// under the SwiftLint file-length warning band; the call site is
+// `AppState.init`'s `startSettingsConfigSync()`.
+
+import Foundation
+
+extension AppState {
+    /// Bridge `SettingsStore.settings` → libghostty live reload.
+    /// Observation tracking re-runs on every settings mutation; we
+    /// diff against `lastAppliedSettings` so dragging a slider that
+    /// settles back to the original value doesn't churn libghostty.
+    func startSettingsConfigSync() {
+        observeRepeatedly { [weak self] in
+            guard let self else { return }
+            _ = self.settingsStore.settings
+        } onChange: { [weak self] in
+            guard let self else { return }
+            let current = self.settingsStore.settings
+            guard current != self.lastAppliedSettings else { return }
+            // Apply UI-only updates (transparency resolver, color
+            // scheme) immediately — they're cheap and the Liquid Glass
+            // surfaces should track the user's intent without the debounce
+            // window. Defer the libghostty reload through the debounce
+            // so a slider drag collapses into one apply.
+            self.reduceTransparencyResolver.apply(
+                userEnabled: current.appearance.transparency.isOn
+            )
+            Self.applyColorScheme(current.appearance.colorScheme)
+            self.syncGhosttyColorScheme()
+            self.scheduleSettingsReload()
+        }
+    }
+
+    /// Re-arm a debounced libghostty reload that fires after a short
+    /// idle window. Reads the latest settings value at fire time so a
+    /// slider drag collapses into one apply.
+    func scheduleSettingsReload() {
+        settingsReloadDebounceTask?.cancel()
+        settingsReloadDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: PersistenceTiming.interactive)
+            guard !Task.isCancelled, let self,
+                  let ghosttyApp = self.ghosttyApp else { return }
+            let latest = self.settingsStore.settings
+            guard latest != self.lastAppliedSettings else { return }
+            self.lastAppliedSettings = latest
+            let resourcesDir = GhosttyApp.resolveResourcesDir()
+            let includeUserConfig = latest.advanced.ghosttyConfig.isOn
+            // Against what libghostty is actually handed, not against the
+            // settings document. Most of that document never reaches the
+            // terminal — the review instructions are a paragraph of prose — and
+            // reloading the whole configuration on every keystroke of one is
+            // work nothing asked for. Computed with the same user-config flag
+            // the reload uses, so the two cannot disagree.
+            let key = GhosttyConfigBridge.makeConfigString(
+                settings: latest,
+                resourcesDir: resourcesDir
+            ) + "\n# includeUserConfig=\(includeUserConfig)"
+            guard key != self.lastAppliedConfigKey else { return }
+            // Recorded only once applied, so a reload that kept the running
+            // config is tried again by the next change.
+            if let diagnostics = GhosttyConfigBridge.reloadConfig(
+                app: ghosttyApp, settings: latest,
+                resourcesDir: resourcesDir,
+                includeUserConfig: includeUserConfig,
+                surfaces: self.allSurfaceViews
+            ) {
+                self.lastAppliedConfigKey = key
+                self.settingsStore.ghosttyConfigDiagnostics = diagnostics
+            }
+            self.syncSecureInputPreference(from: ghosttyApp)
+        }
+    }
+
+    /// Reads the person's own Ghostty config again now, for Integrations'
+    /// "Reload" after the file was edited: the settings did not change, so
+    /// the debounced sync above would skip it.
+    func reloadGhosttyUserConfig() {
+        guard let ghosttyApp else { return }
+        let latest = settingsStore.settings
+        if let diagnostics = GhosttyConfigBridge.reloadConfig(
+            app: ghosttyApp,
+            settings: latest,
+            resourcesDir: GhosttyApp.resolveResourcesDir(),
+            includeUserConfig: latest.advanced.ghosttyConfig.isOn,
+            surfaces: allSurfaceViews
+        ) {
+            settingsStore.ghosttyConfigDiagnostics = diagnostics
+        }
+        syncSecureInputPreference(from: ghosttyApp)
+    }
+
+    func makeGhosttyEventCoordinator() -> GhosttyEventCoordinator {
+        GhosttyEventCoordinator(
+            ghosttyApp: ghosttyApp,
+            session: session,
+            registry: registry,
+            notificationManager: notificationManager,
+            bellFeaturesProvider: { [settingsStore] in
+                BellFeatures.forAction(settingsStore.settings.terminal.bellAction)
+            },
+            secureInputManager: registry.secureInputManager,
+            attention: attention,
+            claimsSurfaceExit: { [weak quickTerminal] view in
+                quickTerminal?.handleSurfaceExit(view) == true
+            },
+            commandWindow: { [windowRegistry] in
+                windowRegistry.backgroundCommandTarget.id
+            },
+            linkOpener: TerminalLinkOpener(
+                notify: { [toastCenter] message in
+                    toastCenter.showInFrontWindow(ToastItem(message: message, undo: nil))
+                },
+                fileApplication: { [settingsStore] in
+                    settingsStore.settings.advanced.fileApplication
+                },
+                locale: { [settingsStore] in
+                    settingsStore.appLocale
+                },
+                presentAlert: { alert, window, completion in
+                    WindowAlert.begin(alert, on: window, completion: completion)
+                }
+            ),
+            // What a pane runs in front changes as a command starts, which
+            // its title marks, and as it ends.
+            onTitleChanged: { [weak self] paneID in
+                self?.paneAgentsInFront.titleChanged(inPane: paneID)
+            },
+            onCommandFinished: { [weak self] paneID, exitCode, durationNs in
+                self?.paneAgentsInFront.commandFinished(inPane: paneID)
+                // A resume whose command came back to the shell failed: the
+                // bar says so at once, not at the deadline. One typed at
+                // launch becomes a stop the list did not have.
+                guard let self,
+                      stopLedger.resumeCommandFinished(inPane: paneID, exitCode: exitCode, durationNs: durationNs) != nil
+                else { return }
+                refreshAttentionQueue()
+                refreshStopResumeOffers()
+            },
+            programStatus: programStatus
+        )
+    }
+
+    func syncSecureInputPreference(from app: GhosttyApp?) {
+        registry.secureInputManager.setAutomaticEnabled(
+            app?.isAutomaticSecureInputEnabled ?? true
+        )
+    }
+
+    func syncGhosttyColorScheme() {
+        guard let ghosttyApp else { return }
+        let colorScheme = GhosttyApp.currentColorScheme(
+            preference: settingsStore.settings.appearance.colorScheme
+        )
+        ghosttyApp.setColorScheme(colorScheme, surfaces: allSurfaceViews)
+    }
+}

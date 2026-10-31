@@ -1,10 +1,10 @@
-# gitleaks configuration for Limpid.
+# gitleaks configuration for Weir.
 # Extends the full default ruleset; the only carve-out is the Sparkle EdDSA
 # *public* key (SUPublicEDKey), which ships in the app bundle by design —
 # clients use it to verify update signatures, so it is not a secret. The
 # matching private key lives only in the SPARKLE_PRIVATE_KEY repo secret and is
 # never committed.
-title = "Limpid"
+title = "Weir"
 
 [extend]
 useDefault = true

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Limpid — self-test for `generate-crate-notices.py`.
+# Weir — self-test for `generate-crate-notices.py`.
 #
 # The generator writes the Rust crate section of the THIRD-PARTY-NOTICES that
 # ships, with no human reading it on each Dependabot bump. This feeds it
@@ -54,7 +54,7 @@ def crate(name, version, license, files, authors=("Ann <ann@example.com>",), pro
 
 def metadata(packages, edges):
     bridge = {
-        "id": "bridge", "name": "limpid-rust-bridge", "version": "0.1.0", "license": None,
+        "id": "bridge", "name": "weir-rust-bridge", "version": "0.1.0", "license": None,
         "repository": None, "authors": [], "source": None,
         "manifest_path": "/dev/null", "targets": [{"kind": ["staticlib"]}],
     }
@@ -69,8 +69,8 @@ def metadata(packages, edges):
 
 
 MARKER = (
-    "[The crates and their license texts are filled in from Cargo.lock when Limpid"
-    " is built; the copy inside Limpid.app and on its disk image carries them.]"
+    "[The crates and their license texts are filled in from Cargo.lock when Weir"
+    " is built; the copy inside Weir.app and on its disk image carries them.]"
 )
 
 

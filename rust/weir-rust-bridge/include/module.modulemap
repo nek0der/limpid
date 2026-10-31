@@ -1,0 +1,4 @@
+module WeirRustBridge {
+  header "weir_rust_bridge.h"
+  export *
+}

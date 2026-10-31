@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Limpid — self-test for `regenerate-project-if-stale.sh`.
+# Weir — self-test for `regenerate-project-if-stale.sh`.
 #
 # The script is what makes `make build` regenerate the Xcode project after a
 # file is added, removed, or renamed, or project.yml is edited. If it stopped

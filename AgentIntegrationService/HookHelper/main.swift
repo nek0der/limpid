@@ -1,5 +1,5 @@
 // main.swift
-// Limpid — signed PermissionRequest bridge to the authenticated approval
+// Weir — signed PermissionRequest bridge to the authenticated approval
 // service, and the process every lifecycle hook runs in.
 //
 // Separate subcommands: `permission-request <provider>`
@@ -21,12 +21,12 @@ import Foundation
 private let approvalWaitSeconds = 580
 private let inputReadChunkBytes = 64 * 1024
 
-/// Diagnostics go where `LIMPID_HOOK_LOG` points, as the Rust runtime's own
+/// Diagnostics go where `WEIR_HOOK_LOG` points, as the Rust runtime's own
 /// lines do, so one file collects both sides of a failed hook. The providers
 /// discard the stderr of a hook that exits 0, which is why stderr alone is
 /// not enough. The value `1` keeps the old meaning of "print to stderr".
 func logHookDiagnostic(_ message: String) {
-    guard let target = ProcessInfo.processInfo.environment["LIMPID_HOOK_LOG"], !target.isEmpty else {
+    guard let target = ProcessInfo.processInfo.environment["WEIR_HOOK_LOG"], !target.isEmpty else {
         return
     }
     let line = Data((message + "\n").utf8)
@@ -64,13 +64,13 @@ func readBoundedStandardInput() throws -> Data {
 /// Runs a lifecycle or worktree hook and exits the process with the
 /// runtime's status. Only a successful worktree intercept exits non-zero;
 /// every failure is logged by the runtime and exits zero so the agent is
-/// never blocked by Limpid.
+/// never blocked by Weir.
 func runLifecycleHook(provider: String, kind: RustProviderBridge.HookKind) -> Never {
     let input: Data
     do {
         input = try readBoundedStandardInput()
     } catch {
-        logHookDiagnostic("Limpid hook helper: \(error)")
+        logHookDiagnostic("Weir hook helper: \(error)")
         exit(0)
     }
     do {
@@ -92,7 +92,7 @@ func runLifecycleHook(provider: String, kind: RustProviderBridge.HookKind) -> Ne
         }
         exit(outcome.exitCode)
     } catch {
-        logHookDiagnostic("Limpid hook helper: \(error)")
+        logHookDiagnostic("Weir hook helper: \(error)")
         exit(0)
     }
 }
@@ -125,7 +125,7 @@ func run(input: Data) throws -> Data? {
     else { throw AgentIntegrationError.invalidResponse }
 
     let hello = try AgentIntegrationApprovalWire.object(from: client.exchange(
-        AgentIntegrationApprovalWire.hello(clientVersion: "limpid-hook-helper-v1")
+        AgentIntegrationApprovalWire.hello(clientVersion: "weir-hook-helper-v1")
     ))
     let epoch = try AgentIntegrationApprovalWire.epoch(from: hello)
     let requestID = UUID()
@@ -145,7 +145,7 @@ func run(input: Data) throws -> Data? {
                 timeoutMilliseconds: timeoutMilliseconds,
                 // The shim that started the agent minted it; the hook that
                 // started us inherited it.
-                agentRunID: ProcessInfo.processInfo.environment["LIMPID_AGENT_RUN_ID"].flatMap(UUID.init(uuidString:))
+                agentRunID: ProcessInfo.processInfo.environment["WEIR_AGENT_RUN_ID"].flatMap(UUID.init(uuidString:))
             )
         )
     ))
@@ -200,7 +200,7 @@ func run(input: Data) throws -> Data? {
 
 func publishCodexLifecycleFallback(input: Data) {
     guard CommandLine.arguments.last == "codex" else { return }
-    // Codex calls this helper instead of `limpid-hook` for a permission
+    // Codex calls this helper instead of `weir-hook` for a permission
     // request, so the lifecycle record is written here, in-process.
     _ = try? RustProviderBridge.runHook(
         provider: "codex",
@@ -251,7 +251,7 @@ do {
 } catch {
     // No output delegates to the provider's native permission flow. Never
     // convert an integration or decoding failure into an approval decision.
-    logHookDiagnostic("Limpid approval helper: \(error)")
+    logHookDiagnostic("Weir approval helper: \(error)")
     if let input {
         publishCodexLifecycleFallback(input: input)
     }

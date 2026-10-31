@@ -1,0 +1,626 @@
+// GhosttyApp.swift
+// Weir — owns the libghostty `ghostty_app_t` handle and the runtime
+// callbacks that bridge libghostty into the Weir app.
+
+import AppKit
+import Foundation
+import GhosttyKit
+import OSLog
+
+private let log = Logger.weir("ghostty.app")
+
+/// Owns the libghostty `ghostty_app_t` handle and the underlying configuration.
+///
+/// All access happens on the main actor. The app is freed in `deinit`.
+@MainActor
+final class GhosttyApp {
+    nonisolated(unsafe) let handle: ghostty_app_t
+
+    /// NotificationCenter owns this non-Sendable token until teardown. The
+    /// observer is installed and invoked on MainActor; `nonisolated(unsafe)`
+    /// only permits `deinit` to remove it before freeing the app handle.
+    private nonisolated(unsafe) var keyboardSelectionObserver: (any NSObjectProtocol)?
+
+    /// The finalized config handle retained for libghostty soft reloads.
+    /// `nonisolated(unsafe)` only lets the nonisolated deinit free the last
+    /// handle; replacement remains confined to MainActor.
+    private nonisolated(unsafe) var config: ghostty_config_t
+
+    /// Scheme already applied to the app and inherited by new surfaces.
+    private(set) var colorScheme: ghostty_color_scheme_e
+
+    /// Diagnostics copied from the user's finalized startup configuration.
+    let userConfigDiagnostics: [String]
+
+    /// Effective libghostty preference controlling automatic password-prompt
+    /// protection. Refreshed alongside the live config so the Carbon boundary
+    /// honors an advanced user's explicit opt-out.
+    private(set) var isAutomaticSecureInputEnabled: Bool
+
+    /// Effective libghostty preference for the native scroll indicator.
+    /// Read from the finalized config so Advanced `scrollbar=never` remains
+    /// authoritative even though the view itself belongs to Weir.
+    private(set) var isScrollbarEnabled: Bool
+
+    init(settings: WeirSettings = .default) throws {
+        // Initialize global ghostty state (argv) once per process.
+        _ = GhosttyApp.bootstrap
+        let userConfigDiagnostics: [String] = if settings.advanced.ghosttyConfig.isOn {
+            GhosttyConfigBridge.configDiagnostics() ?? []
+        } else {
+            []
+        }
+
+        // Layer 2 (Opt-in): user's ~/.config/ghostty/config. Off by
+        // default — Weir Settings is the single source of truth in
+        // the common case. Advanced users can enable it for terminal
+        // preferences outside our UI. Weir still clears personal
+        // keybinds because the menu bar owns application shortcuts.
+        //
+        // Layer 3 + 4: Weir settings serialized via
+        // `GhosttyConfigBridge`, with forced overrides appended
+        // last so the Liquid Glass toolbar stays intact regardless
+        // of what user config tried to set. When that layer cannot be
+        // written there is no config to start from: terminals without
+        // the forced overrides would draw opaque cells and paste a
+        // review's lines without confirmation, so the launch fails the
+        // way any other config failure does.
+        let resourcesDir = GhosttyApp.resolveResourcesDir()
+        let colorScheme = GhosttyApp.currentColorScheme(preference: settings.appearance.colorScheme)
+        let path = GhosttyConfigBridge.writeConfigFile(
+            settings: settings,
+            resourcesDir: resourcesDir
+        )
+        guard let cfg = GhosttyConfigBridge.makeConfig(
+            path: path,
+            includeUserConfig: settings.advanced.ghosttyConfig.isOn
+        ) else { throw Error.configInitFailed }
+        let isAutomaticSecureInputEnabled = Self.configBool(
+            cfg,
+            key: "macos-auto-secure-input",
+            defaultValue: true
+        )
+        let isScrollbarEnabled = Self.scrollbarEnabled(in: cfg)
+
+        // Build runtime config with callbacks. `userdata` carries an
+        // unretained pointer back to this `GhosttyApp` instance so the
+        // wakeup callback can call `ghostty_app_tick(handle)` — without
+        // that, libghostty's internal event queue never drains and any
+        // surface created after the queue saturates stalls in startup.
+        let selfPointer = Unmanaged.passUnretained(GhosttyApp.placeholder).toOpaque()
+        var runtime = ghostty_runtime_config_s(
+            userdata: selfPointer,
+            supports_selection_clipboard: false,
+            wakeup_cb: GhosttyApp.wakeupCallback,
+            action_cb: GhosttyApp.actionCallback,
+            read_clipboard_cb: GhosttyApp.readClipboardCallback,
+            confirm_read_clipboard_cb: GhosttyApp.confirmReadClipboardCallback,
+            write_clipboard_cb: GhosttyApp.writeClipboardCallback,
+            close_surface_cb: GhosttyApp.closeSurfaceCallback
+        )
+
+        guard let app = ghostty_app_new(&runtime, cfg) else {
+            ghostty_config_free(cfg)
+            throw Error.appInitFailed
+        }
+
+        self.handle = app
+        self.config = cfg
+        self.userConfigDiagnostics = userConfigDiagnostics
+        self.isAutomaticSecureInputEnabled = isAutomaticSecureInputEnabled
+        self.isScrollbarEnabled = isScrollbarEnabled
+        self.colorScheme = colorScheme
+
+        // Register *this* instance for future wakeup callbacks. We pass
+        // a placeholder pointer at runtime-config build time because
+        // `self` isn't fully initialized yet, then swap it in after
+        // `ghostty_app_new` succeeds via the shared box. The
+        // precondition catches the day we start opening a second
+        // window with its own GhosttyApp — the C callbacks all key
+        // off this single box, so two live instances would silently
+        // route every wakeup to one of them.
+        precondition(GhosttyApp.placeholder.target == nil, "GhosttyApp must be a singleton; second instance detected")
+        GhosttyApp.placeholder.target = self
+
+        ghostty_app_set_color_scheme(handle, colorScheme)
+        ghostty_app_update_config(handle, config)
+
+        keyboardSelectionObserver = NotificationCenter.default.addObserver(
+            forName: NSTextInputContext.keyboardSelectionDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                GhosttyFFI.keyboardDidChange(for: self.handle)
+            }
+        }
+
+        log.notice("ghostty app created")
+    }
+
+    /// Shared mutable box used to thread the live `GhosttyApp` reference
+    /// through libghostty's C runtime callbacks. Updated once per process
+    /// (we only ever create one `GhosttyApp`).
+    @MainActor
+    final class WeakBox {
+        weak var target: GhosttyApp?
+    }
+
+    static let placeholder = WeakBox()
+
+    nonisolated deinit {
+        if let keyboardSelectionObserver {
+            NotificationCenter.default.removeObserver(keyboardSelectionObserver)
+        }
+        ghostty_app_free(handle)
+        ghostty_config_free(config)
+    }
+
+    func refreshRuntimePreferences(from config: ghostty_config_t) {
+        isAutomaticSecureInputEnabled = Self.configBool(
+            config,
+            key: "macos-auto-secure-input",
+            defaultValue: true
+        )
+        isScrollbarEnabled = Self.scrollbarEnabled(in: config)
+    }
+
+    /// Take ownership of the finalized config after applying it. Keeping the
+    /// current handle lets libghostty's later soft-reload callbacks reapply the
+    /// same layered settings under a new conditional state.
+    func replaceConfig(with newConfig: ghostty_config_t, surfaces: [SurfaceView]) {
+        refreshRuntimePreferences(from: newConfig)
+        ghostty_app_update_config(handle, newConfig)
+        for view in surfaces {
+            view.isScrollbarEnabled = isScrollbarEnabled
+            guard let surface = view.surface else { continue }
+            ghostty_surface_update_config(surface, newConfig)
+        }
+        let oldConfig = config
+        config = newConfig
+        ghostty_config_free(oldConfig)
+    }
+
+    func softReload(surface: ghostty_surface_t?) {
+        if let surface {
+            ghostty_surface_update_config(surface, config)
+        } else {
+            ghostty_app_update_config(handle, config)
+        }
+    }
+
+    func setColorScheme(_ resolved: ghostty_color_scheme_e, surfaces: [SurfaceView]) {
+        guard resolved != colorScheme else { return }
+        colorScheme = resolved
+        for view in surfaces {
+            guard let surface = view.surface else { continue }
+            ghostty_surface_set_color_scheme(surface, resolved)
+        }
+        ghostty_app_set_color_scheme(handle, resolved)
+    }
+
+    func applyColorScheme(to surface: ghostty_surface_t) {
+        ghostty_surface_set_color_scheme(surface, colorScheme)
+    }
+
+    private static func configBool(
+        _ config: ghostty_config_t,
+        key: String,
+        defaultValue: Bool
+    ) -> Bool {
+        var value = defaultValue
+        let didRead = key.withCString { pointer in
+            ghostty_config_get(config, &value, pointer, UInt(key.utf8.count))
+        }
+        return didRead ? value : defaultValue
+    }
+
+    private static func configString(
+        _ config: ghostty_config_t,
+        key: String,
+        defaultValue: String
+    ) -> String {
+        var value: UnsafePointer<CChar>?
+        let didRead = key.withCString { pointer in
+            ghostty_config_get(config, &value, pointer, UInt(key.utf8.count))
+        }
+        guard didRead, let value else { return defaultValue }
+        return String(cString: value)
+    }
+
+    static func scrollbarEnabled(in config: ghostty_config_t) -> Bool {
+        configString(config, key: "scrollbar", defaultValue: "system") != "never"
+    }
+
+    // MARK: - Resources dir
+
+    /// Locate ghostty's `share/ghostty` directory. Order:
+    ///   1. App bundle Resources (release builds copy it in).
+    ///   2. `WEIR_GHOSTTY_RESOURCES` env override (sole dev escape
+    ///      hatch — the older list of `~/<x>/weir/...` guesses was
+    ///      removed to keep maintainer-specific paths out of shipped
+    ///      `strings`).
+    ///   3. Walk-up from the executable to find
+    ///      `vendor/ghostty/zig-out/share/ghostty` (works for dev
+    ///      builds running out of DerivedData).
+    ///   4. nil — ghostty falls back to its built-in defaults (no
+    ///      title hooks, no terminfo).
+    static func resolveResourcesDir() -> String? {
+        let fm = FileManager.default
+        if let bundled = Bundle.main.resourcePath {
+            let candidate = (bundled as NSString).appendingPathComponent("ghostty")
+            if fm.fileExists(atPath: (candidate as NSString).appendingPathComponent("shell-integration")) {
+                return candidate
+            }
+        }
+        // Dev build via Xcode DerivedData: the bundle lives miles away
+        // from the source tree, so the bundle-relative walk-up below
+        // misses the repo. `WEIR_GHOSTTY_RESOURCES` is the supported
+        // dev escape hatch — we deliberately don't enumerate
+        // `~/<something>/weir` paths because every candidate gets
+        // baked into the shipped binary's `strings` output, leaking
+        // the maintainer's local directory layout.
+        if let envOverride = ProcessInfo.processInfo.environment["WEIR_GHOSTTY_RESOURCES"],
+           fm.fileExists(atPath: (envOverride as NSString).appendingPathComponent("shell-integration"))
+        {
+            return envOverride
+        }
+        // Walk up from the executable to find the repo root (dev build).
+        let exec = Bundle.main.bundleURL
+        var cursor = exec
+        for _ in 0..<8 {
+            cursor = cursor.deletingLastPathComponent()
+            let dev = cursor
+                .appendingPathComponent("vendor/ghostty/zig-out/share/ghostty", isDirectory: true)
+            if fm.fileExists(atPath: dev.appendingPathComponent("shell-integration").path) {
+                return dev.path
+            }
+        }
+        return nil
+    }
+
+    /// Resolve the appearance libghostty should render under, given
+    /// the user's `ColorSchemePreference`. `.light` / `.dark` win
+    /// directly; `.system` reads `AppleInterfaceStyle` from
+    /// `NSGlobalDomain` rather than `NSApp.effectiveAppearance` so
+    /// this is safe to call from `GhosttyApp.init` before
+    /// NSApplication has finished its appearance graph.
+    static func currentColorScheme(
+        preference: ColorSchemePreference
+    ) -> ghostty_color_scheme_e {
+        resolvedColorScheme(
+            preference: preference,
+            systemIsDark: SystemAppearance.isSystemDark()
+        )
+    }
+
+    static func resolvedColorScheme(
+        preference: ColorSchemePreference,
+        systemIsDark: Bool
+    ) -> ghostty_color_scheme_e {
+        switch preference {
+        case .light: GHOSTTY_COLOR_SCHEME_LIGHT
+        case .dark: GHOSTTY_COLOR_SCHEME_DARK
+        case .system:
+            systemIsDark ? GHOSTTY_COLOR_SCHEME_DARK : GHOSTTY_COLOR_SCHEME_LIGHT
+        }
+    }
+
+    // MARK: - One-time global bootstrap
+
+    /// Call `ghostty_init(argc, argv)` exactly once per process before any
+    /// other libghostty API. libghostty stashes argv globally and sets up
+    /// its allocator + state. Using a lazy `static let` guarantees a
+    /// single execution even across concurrent first-touchers.
+    private static let bootstrap: Void = {
+        // Resolve before libghostty reads the environment. A Weir launched
+        // from another Weir pane inherits the parent's bundle path; keeping
+        // that value would pair this binary with another build's scripts and
+        // terminfo. `resolveResourcesDir` prefers this process's Bundle and
+        // only falls back to the explicit environment override when the
+        // bundle has no Ghostty resources (the supported source-run case).
+        if let dir = GhosttyApp.resolveResourcesDir() {
+            setenv("GHOSTTY_RESOURCES_DIR", dir, 1)
+        } else {
+            unsetenv("GHOSTTY_RESOURCES_DIR")
+        }
+        let args = CommandLine.unsafeArgv
+        let rc = ghostty_init(UInt(CommandLine.argc), args)
+        if rc != 0 {
+            log.fault("ghostty_init returned \(rc, privacy: .public)")
+        }
+    }()
+
+    // MARK: - Runtime callbacks
+
+    /// Wake up the run loop. libghostty calls this from a worker thread
+    /// when its internal event queue has work pending. Hop to the main
+    /// actor and drain the queue with `ghostty_app_tick`. Without this,
+    /// surface initialization piles up and shells never reach their
+    /// first prompt.
+    private static let wakeupCallback: ghostty_runtime_wakeup_cb = { userdata in
+        guard let userdata else { return }
+        nonisolated(unsafe) let ud = userdata
+        DispatchQueue.main.async {
+            let box = Unmanaged<WeakBox>.fromOpaque(ud).takeUnretainedValue()
+            if let app = box.target {
+                ghostty_app_tick(app.handle)
+            }
+        }
+    }
+
+    /// libghostty asks for an action (split, tab, fullscreen, etc.).
+    /// libghostty fires this callback from the same thread that drains
+    /// the app's event loop — which we drive from MainActor via
+    /// `ghostty_app_tick`. `MainActor.assumeIsolated` therefore *asserts*
+    /// (it would trap if libghostty ever called from a worker), not
+    /// "hops"; the synchronous path is required because the callback
+    /// returns `Bool` to libghostty to signal whether the action was
+    /// handled.
+    private static let actionCallback: ghostty_runtime_action_cb = { app, target, action in
+        guard let app else { return false }
+        nonisolated(unsafe) let safeApp = app
+        let safeTarget = target
+        let safeAction = action
+        return MainActor.assumeIsolated {
+            GhosttyActionRouter.handle(app: safeApp, target: safeTarget, action: safeAction)
+        }
+    }
+
+    /// libghostty wants to read the clipboard. `userdata` here is the
+    /// *surface's* userdata (see ghostty source apprt/embedded.zig:
+    /// `self.app.opts.read_clipboard(self.userdata, ...)`): the view's
+    /// `SurfaceUserdataToken`, retained until the surface is freed, so this
+    /// frame may reach its request tracker.
+    ///
+    /// libghostty allows us to complete the request asynchronously via
+    /// `ghostty_surface_complete_clipboard_request`, so we hop to
+    /// MainActor before touching `NSPasteboard` (which is main-thread-
+    /// only) and before looking the view up (the Swift view may have
+    /// deinited between this fire and the hop).
+    /// The MIME types the read asked us to serve and the "list the
+    /// available types" flag are ignored: we only ever serve
+    /// `text/plain` from `NSPasteboard`, which is what the paste and
+    /// OSC 52 requesters ask for.
+    private static let readClipboardCallback: ghostty_runtime_read_clipboard_cb = { userdata, clipboard, state, _, _, isListing in
+        // macOS has no primary selection. Reporting it as unsupported
+        // lets libghostty answer the program immediately instead of
+        // waiting on a completion that would never arrive.
+        guard clipboard != GHOSTTY_CLIPBOARD_PRIMARY else {
+            return GHOSTTY_CLIPBOARD_READ_UNSUPPORTED
+        }
+        guard let userdata, let state else { return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE }
+        nonisolated(unsafe) let ud = userdata
+        let request = ClipboardRequestState(pointer: state)
+        // Answering READ_STARTED makes the state ours to complete or deny.
+        // Tracked in this frame, so a pane that closes before the hop below
+        // runs still denies it at teardown. A surface already torn down
+        // cannot keep it; answering unavailable lets libghostty free it.
+        guard SurfaceView.clipboardRequests(forUserdata: ud).track(request) else {
+            return GHOSTTY_CLIPBOARD_READ_UNAVAILABLE
+        }
+        // Taken here rather than after the hop. This callback runs inline on
+        // whichever thread asked, and review asks from the main thread inside
+        // its own paste action — so the text it staged cannot be claimed by a
+        // completion that was already queued. A listing request — what a
+        // clipboard read becomes when the program asked to be told the
+        // available types rather than handed the text — answers with MIME
+        // types and never carries the text, so it must not consume the stage
+        // either.
+        let staged: (text: String, receipt: ReviewPasteReceipt?)? = if !isListing, Thread.isMainThread {
+            MainActor.assumeIsolated {
+                guard let view = SurfaceView.liveView(forUserdata: ud),
+                      let text = view.takeStagedPaste()
+                else { return nil }
+                // Taken with the text it belongs to: the two are one delivery,
+                // and a receipt left on the surface outlives its own paste.
+                return (text, view.takeReviewPasteReceipt())
+            }
+        } else {
+            nil
+        }
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                // Everything below is a way out, and the pane can die under
+                // any of them: the text and its receipt came off the surface
+                // in the frame above. Unless something claims this delivery it
+                // settles itself as refused, which is what stops the insert
+                // waiting on it from marking comments over a paste that never
+                // happened.
+                let delivery = ReviewPasteDelivery(receipt: staged?.receipt)
+                defer { delivery.failIfUnsettled() }
+                // A pane that is gone leaves the request tracked, and its
+                // teardown denies it while the surface is still live.
+                guard let view = SurfaceView.liveView(forUserdata: ud),
+                      let surface = view.surface,
+                      view.clipboardRequests.claim(request)
+                else { return }
+                // Every paste reaches the terminal through this read: ⌘V,
+                // Edit > Paste, a review insert, and a middle click. So this
+                // is the one place that records it as unsent input at an
+                // agent's prompt, which keeps the prompt cache panel from
+                // typing a command after it. A program's OSC 52 read comes
+                // here too and marks the pane without pasting anything; that
+                // only disables those commands until the next submit, which
+                // is the safe way to be wrong.
+                view.noteClipboardRead(isListing: isListing)
+                // Parked for the length of the call below. A paste that needs
+                // confirming raises the sheet from inside it, and the callback
+                // that raises it cannot reach back to the surface: it hops to
+                // the main queue before it enqueues, and by then this read has
+                // finished and taken its receipt.
+                ClipboardConfirmationCoordinator.inFlightReviewDelivery = delivery
+                GhosttyFFI.completeClipboardRequest(
+                    surface: surface,
+                    // Review stages the text it delivers on the surface so a
+                    // paste can carry it without going through the user's
+                    // clipboard. Anything else reads the pasteboard as before.
+                    text: staged?.text ?? NSPasteboard.general.string(forType: .string) ?? "",
+                    state: request.pointer,
+                    confirmed: false
+                )
+                ClipboardConfirmationCoordinator.inFlightReviewDelivery = nil
+                // Whatever is left belongs to a paste that completed outright:
+                // it has no answer left to wait for, and the insert waiting
+                // on it may mark its comments. A paste that raised the sheet
+                // was claimed inside the call above.
+                delivery.landed()
+            }
+        }
+        return GHOSTTY_CLIPBOARD_READ_STARTED
+    }
+
+    /// libghostty asks to confirm a clipboard request — fires when
+    /// `clipboard-read = ask` (the libghostty default for OSC 52
+    /// reads) or for paste-protection triggers. Hands the request to
+    /// `ClipboardConfirmationCoordinator` so the user decides via a
+    /// sheet; without that any escape sequence the shell receives
+    /// could silently read or overwrite the system clipboard. Same
+    /// MainActor hop + liveness check as `readClipboardCallback` to
+    /// avoid touching a freed `SurfaceView`.
+    private static let confirmReadClipboardCallback: ghostty_runtime_confirm_read_clipboard_cb = { userdata, confirm, state, request in
+        // libghostty always passes the request it wants confirmed; without
+        // one there is nothing we could answer.
+        guard let userdata, let confirm, let state else { return }
+        nonisolated(unsafe) let ud = userdata
+        let tracked = ClipboardRequestState(pointer: state)
+        // Tracked in this frame, as in the read above, so a pane that closes
+        // before the hop runs still denies it at teardown. Teardown that has
+        // already run is freeing the surface, so there is nothing safe left
+        // to answer on. We do not expect to get here, since callbacks and
+        // teardown both run on the main thread and teardown frees the
+        // surface in the same job; leaking the state is the safe way to be
+        // wrong, where answering could touch a freed surface.
+        guard SurfaceView.clipboardRequests(forUserdata: ud).track(tracked) else {
+            log.fault("clipboard confirmation arrived after its surface was torn down")
+            return
+        }
+        let rawRequest = request
+        // Materialize the payload into an owned Swift `String` here,
+        // synchronously inside the callback frame, NOT after the main
+        // hop. libghostty calls us from inside its own
+        // `completeClipboardRequest`, which is itself nested in the
+        // `withCString` closures `GhosttyFFI.completeClipboardRequest`
+        // builds the completion payload from. The confirmation payload
+        // aliases those buffers and only stays valid while they are on
+        // the stack. Deferring the copy into the
+        // `DispatchQueue.main.async` block read freed heap — paste
+        // protection (the whole reason this callback exists) fires the
+        // path on every user paste. Mirrors the sibling
+        // `writeClipboardCallback`, which already copies up front.
+        let contents = GhosttyFFI.clipboardText(from: confirm)
+        // Taken in this frame and for the same reason as `contents`: we are
+        // running inside the clipboard read that parked it, and the hop below
+        // outlives that read. Off the main thread there is nothing to take —
+        // a review paste is always started from it.
+        let receipt: ReviewPasteReceipt? = Thread.isMainThread
+            ? MainActor.assumeIsolated { ClipboardConfirmationCoordinator.takeInFlightReviewReceipt() }
+            : nil
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                // Same hop, same hazard as the read above: the receipt is
+                // already out of its parking slot, and a pane that dies here
+                // would leave the comments marked over nothing. Every way out
+                // reports unless the sheet takes it.
+                let delivery = ReviewPasteDelivery(receipt: receipt)
+                defer { delivery.failIfUnsettled() }
+                // A pane that is gone leaves the request tracked, and its
+                // teardown denies it while the surface is still live.
+                guard let view = SurfaceView.liveView(forUserdata: ud) else { return }
+                guard let coordinator = ClipboardConfirmationCoordinator.shared,
+                      let kind = ClipboardConfirmationKind(rawRequest)
+                else {
+                    // Coordinator not wired up (should not happen
+                    // after AppState init) or a request type we don't
+                    // prompt for — the OSC 5522 clipboard reads and
+                    // writes libghostty gained in 1.4 land here.
+                    // Deny rather than allow: fail closed.
+                    ClipboardRequestAnswerer.libghostty.refuse(tracked, on: view)
+                    return
+                }
+                coordinator.enqueue(
+                    .libghostty(kind, tracked),
+                    contents: contents,
+                    target: view,
+                    receipt: delivery.handedOn()
+                )
+            }
+        }
+    }
+
+    /// libghostty wants to write to the clipboard. Take the first
+    /// text/plain entry (or fall back to the first entry). Materialize
+    /// the text on whatever thread the callback fired on (C strings
+    /// don't need an actor), then hop to MainActor before touching
+    /// `NSPasteboard`, which is main-thread-only per AppKit. Same
+    /// MainActor-hop pattern as `readClipboardCallback` /
+    /// `confirmReadClipboardCallback`.
+    ///
+    /// `confirm == true` signals `clipboard-write = ask` policy: we
+    /// must NOT write to the pasteboard directly. Route through the
+    /// confirmation coordinator and only commit on Allow. Falling back
+    /// to the unconditional write would defeat the user's policy and
+    /// let any OSC 52 sequence land bytes in the system pasteboard.
+    /// `confirm == false` is the historical "trust" path — write
+    /// straight to `NSPasteboard`.
+    private static let writeClipboardCallback: ghostty_runtime_write_clipboard_cb = { userdata, _, contents, count, confirm in
+        guard let contents, let text = GhosttyFFI.clipboardWriteText(contents, count: count) else { return }
+        if !confirm {
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    NSPasteboard.general.declareTypes([.string], owner: nil)
+                    NSPasteboard.general.setString(text, forType: .string)
+                }
+            }
+            return
+        }
+        // confirm == true — enqueue against the coordinator. libghostty
+        // does not allocate a request state for the write path (only
+        // confirm_read_clipboard_cb does), so the request is an
+        // `.osc52Write`: allow() writes to NSPasteboard directly, and a
+        // refusal just drops the text.
+        guard let userdata else { return }
+        nonisolated(unsafe) let ud = userdata
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                guard let view = SurfaceView.liveView(forUserdata: ud) else { return }
+                ClipboardConfirmationCoordinator.shared?.enqueue(
+                    .osc52Write,
+                    contents: text,
+                    target: view
+                )
+            }
+        }
+    }
+
+    /// libghostty wants to close a surface — typically because the
+    /// child shell process exited. `userdata` is the *surface's*
+    /// userdata (the view's `SurfaceUserdataToken`), and
+    /// `processAlive` distinguishes shell exits from forced closes.
+    /// Hop to MainActor and broadcast so `GhosttyEventCoordinator`
+    /// can remove the pane from the SplitTree.
+    private static let closeSurfaceCallback: ghostty_runtime_close_surface_cb = { userdata, processAlive in
+        guard let userdata else { return }
+        nonisolated(unsafe) let ud = userdata
+        let alive = processAlive
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                // The SurfaceView may have deinited between this
+                // callback firing on libghostty's thread and the hop
+                // landing on MainActor. `liveView(forUserdata:)`
+                // returns nil when the weak entry is gone, so we
+                // dereference into freed memory exactly never.
+                guard let view = SurfaceView.liveView(forUserdata: ud) else { return }
+                GhosttyActionRouter.emit(.closeSurface(view, processAlive: alive))
+            }
+        }
+    }
+
+    // MARK: - Errors
+
+    enum Error: Swift.Error {
+        case configInitFailed
+        case appInitFailed
+    }
+}

@@ -1,12 +1,12 @@
 // RustProviderBridge.swift
-// Limpid — ownership-safe Swift wrapper around the provider translation C ABI.
+// Weir — ownership-safe Swift wrapper around the provider translation C ABI.
 //
 // Lives outside `Shared/` because the probe executables compile `Shared/`
 // without linking the Rust bridge; only the Hook Helper and the app do.
 
 import Dispatch
 import Foundation
-import LimpidRustBridge
+import WeirRustBridge
 
 enum RustProviderBridge {
     /// Translates a provider hook payload into the neutral approval request,
@@ -14,7 +14,7 @@ enum RustProviderBridge {
     /// the payload is valid but is not a permission request.
     static func approvalRequest(provider: String, payload: Data) throws -> Data? {
         try call(provider: provider, input: payload, notApproval: true) { pointers in
-            limpid_provider_approval_request_v1(
+            weir_provider_approval_request_v1(
                 pointers.provider, pointers.providerCount,
                 pointers.input, pointers.inputCount,
                 pointers.out, pointers.outCount
@@ -28,7 +28,7 @@ enum RustProviderBridge {
         try requestJSON.withUnsafeBytes { requestBuffer -> Data? in
             let requestPointer = requestBuffer.bindMemory(to: UInt8.self).baseAddress
             return try call(provider: provider, input: decisionJSON, notApproval: false) { pointers in
-                limpid_provider_approval_output_v2(
+                weir_provider_approval_output_v2(
                     pointers.provider, pointers.providerCount,
                     requestPointer, requestBuffer.count,
                     pointers.input, pointers.inputCount,
@@ -45,12 +45,12 @@ enum RustProviderBridge {
     static func processNames(provider: String) throws -> Set<String> {
         var out: UnsafeMutablePointer<UInt8>?
         var outCount = 0
-        let status = limpid_projection_providers_v1(&out, &outCount)
+        let status = weir_projection_providers_v1(&out, &outCount)
         guard let out else { throw AgentIntegrationError.rustFailure(status) }
         // The bytes belong to us until the matching free, whatever the status
         // turned out to be.
-        defer { limpid_approval_bytes_free_v1(out, outCount) }
-        guard status == Int32(LIMPID_PROJECTION_OK.rawValue) else {
+        defer { weir_approval_bytes_free_v1(out, outCount) }
+        guard status == Int32(WEIR_PROJECTION_OK.rawValue) else {
             throw AgentIntegrationError.rustFailure(status)
         }
         let body = Data(bytes: out, count: outCount)
@@ -67,11 +67,11 @@ enum RustProviderBridge {
         case lifecycle
         case worktree
 
-        /// The `LIMPID_HOOK_KIND_*` constant the C ABI expects.
+        /// The `WEIR_HOOK_KIND_*` constant the C ABI expects.
         var abiValue: UInt32 {
             switch self {
-            case .lifecycle: UInt32(LIMPID_HOOK_KIND_LIFECYCLE)
-            case .worktree: UInt32(LIMPID_HOOK_KIND_WORKTREE)
+            case .lifecycle: UInt32(WEIR_HOOK_KIND_LIFECYCLE)
+            case .worktree: UInt32(WEIR_HOOK_KIND_WORKTREE)
             }
         }
     }
@@ -96,11 +96,11 @@ enum RustProviderBridge {
         observationClock: () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }
     ) throws -> HookOutcome {
         var environment = environment
-        environment["LIMPID_HOOK_OBSERVED_ORDER"] = String(observationClock())
+        environment["WEIR_HOOK_OBSERVED_ORDER"] = String(observationClock())
         let environmentJSON = try JSONSerialization.data(withJSONObject: environment)
         let body = try environmentJSON.withUnsafeBytes { environmentBuffer in
             try call(provider: provider, input: payload, notApproval: false) { pointers in
-                limpid_hook_run_v1(
+                weir_hook_run_v1(
                     pointers.provider, pointers.providerCount,
                     kind.abiValue,
                     pointers.input, pointers.inputCount,
@@ -129,7 +129,7 @@ enum RustProviderBridge {
     }
 
     /// Runs one translation call and takes ownership of its output buffer.
-    /// `notApproval` says whether `LIMPID_PROVIDER_NOT_APPROVAL` is a valid
+    /// `notApproval` says whether `WEIR_PROVIDER_NOT_APPROVAL` is a valid
     /// outcome for this call (it is only for request translation).
     private static func call(
         provider: String,
@@ -161,17 +161,17 @@ enum RustProviderBridge {
         if let out {
             // The bytes belong to us until the matching free, whatever the
             // status turned out to be.
-            defer { limpid_approval_bytes_free_v1(out, outCount) }
-            guard status == Int32(LIMPID_PROVIDER_OK.rawValue) else {
+            defer { weir_approval_bytes_free_v1(out, outCount) }
+            guard status == Int32(WEIR_PROVIDER_OK.rawValue) else {
                 throw AgentIntegrationError.rustFailure(status)
             }
             return Data(bytes: out, count: outCount)
         }
         switch status {
-        case Int32(LIMPID_PROVIDER_OK.rawValue):
+        case Int32(WEIR_PROVIDER_OK.rawValue):
             // Success with an empty body: delegate.
             return nil
-        case Int32(LIMPID_PROVIDER_NOT_APPROVAL.rawValue) where notApproval:
+        case Int32(WEIR_PROVIDER_NOT_APPROVAL.rawValue) where notApproval:
             return nil
         default:
             throw AgentIntegrationError.rustFailure(status)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Limpid — run xcodegen when the Xcode project is missing or its inputs changed.
+# Weir — run xcodegen when the Xcode project is missing or its inputs changed.
 #
 # xcodegen expands each `path:` in project.yml into the files present when it
 # runs, and the generated project is not tracked. Adding, removing, or renaming

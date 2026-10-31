@@ -1,7 +1,7 @@
 # Hook fixtures
 
 Recorded provider hook payloads. They are the input of the conformance tests
-that every provider crate runs (see `limpid_agent_model::conformance`), and
+that every provider crate runs (see `weir_agent_model::conformance`), and
 the reference for what each agent actually sends, as opposed to what its
 documentation says.
 
@@ -40,7 +40,7 @@ either side fails that side's tests against the shared file.
 `<schema-date>` is the year and month the payloads were recorded, for example
 `2026-09`. When a provider changes its hook schema, record a new dated
 directory and keep the old one: both must keep passing, because users update
-the agent and Limpid at different times.
+the agent and Weir at different times.
 
 `expected.json` holds one array per payload file, in file order. An empty
 inner array means the payload produces no event. `approval.expected.json`
@@ -68,7 +68,7 @@ Each provider crate has a `tests/conformance.rs` of this shape, and takes the
 model crate as a dev-dependency with its `conformance` feature enabled:
 
 ```rust
-use limpid_agent_model::conformance::{run_approval, run_negative, run_normalize};
+use weir_agent_model::conformance::{run_approval, run_negative, run_normalize};
 use std::path::Path;
 
 fn fixtures(segment: &str) -> std::path::PathBuf {
@@ -77,7 +77,7 @@ fn fixtures(segment: &str) -> std::path::PathBuf {
 
 #[test]
 fn payloads_normalize_as_recorded() {
-    let failures = run_normalize(&limpid_provider_claude::ClaudeAdapter, &fixtures("claude"));
+    let failures = run_normalize(&weir_provider_claude::ClaudeAdapter, &fixtures("claude"));
     assert!(failures.is_empty(), "{}", failures.iter().map(ToString::to_string).collect::<Vec<_>>().join("\n"));
 }
 ```
@@ -87,7 +87,7 @@ fn payloads_normalize_as_recorded() {
 ## Recording
 
 `scripts/record-hook-fixtures.sh` launches one agent session under the Debug
-build's shim with `LIMPID_HOOK_RECORD_DIR` set, inside a detached tmux session
+build's shim with `WEIR_HOOK_RECORD_DIR` set, inside a detached tmux session
 that is then driven with `tmux send-keys`. The Hook Helper's hook runtime,
 the only receiver, saves every payload it receives, byte for byte, before
 doing anything else with it.
@@ -101,7 +101,7 @@ tmux send-keys -t rec-claude-session-basic '/exit' Enter
 Notes that shaped the recorded cases:
 
 - Claude's `PermissionRequest` normally goes to the approval helper, not to
-  `limpid-hook`. To capture it, the case passes a user `--settings` value that
+  `weir-hook`. To capture it, the case passes a user `--settings` value that
   adds a second `PermissionRequest` hook pointing at the recorder; the shim
   merges user settings with its own.
 - Codex only runs hooks whose trust hash is in `~/.codex/config.toml`, which
@@ -111,7 +111,7 @@ Notes that shaped the recorded cases:
 - Codex's `PermissionRequest` reaches the recorder through the approval
   helper's lifecycle fallback, which runs only when the helper cannot reach
   the approval service. Record it with the Debug service unregistered
-  (`LIMPID_AGENT_SERVICE_CONTROL=unregister` on a Debug launch) so the native
+  (`WEIR_AGENT_SERVICE_CONTROL=unregister` on a Debug launch) so the native
   Codex prompt appears and the payload is captured.
 - The recording sessions run outside tmux from the agent's point of view;
   `TMUX` and `TMUX_PANE` are removed so the payloads have the ordinary
@@ -124,7 +124,7 @@ Cases that could not be recorded as planned:
   that fails never reaches `Stop` with an error; the transport retries or the
   session reports the failure without a hook. Codex's `Failed` therefore
   comes from the rollout instead: the helper's watcher reports the turn's
-  `task_complete` with an `error` (`LimpidTurnFailed`), which the adapter's
+  `task_complete` with an `error` (`WeirTurnFailed`), which the adapter's
   tests and the hook runtime's replay tests cover.
 - `claude/stop-failure` carries the error under `error`, the only key the
   adapter reads; the shell receiver of earlier builds expected `error_type`.

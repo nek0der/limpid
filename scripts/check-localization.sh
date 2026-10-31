@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Limpid — fail when a string in the catalog has no finished Japanese translation.
+# Weir — fail when a string in the catalog has no finished Japanese translation.
 #
 # Every user-visible string ships in English and Japanese; an English-only
 # entry is incomplete, but nothing caught it except a reviewer's eye. Xcode
@@ -10,12 +10,12 @@
 # `translated`.
 #
 # Usage: scripts/check-localization.sh [CATALOG]
-# Default catalog: Limpid/Resources/Localizable.xcstrings
+# Default catalog: Weir/Resources/Localizable.xcstrings
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CATALOG="${1:-${REPO_ROOT}/Limpid/Resources/Localizable.xcstrings}"
+CATALOG="${1:-${REPO_ROOT}/Weir/Resources/Localizable.xcstrings}"
 
 # -I keeps the interpreter from importing anything from the working directory
 # or the user's site-packages; the check needs only the standard library.

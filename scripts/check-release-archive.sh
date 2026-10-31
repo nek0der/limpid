@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Limpid — assert that an .xcarchive is one `exportArchive` can distribute.
+# Weir — assert that an .xcarchive is one `exportArchive` can distribute.
 #
 # The release workflow is the only place that runs `archive` and
 # `exportArchive`, and it runs them after the tag exists. The v0.1.5 release
@@ -11,23 +11,23 @@
 # Developer ID certificate and stay release-time only.
 #
 # Usage:
-#   scripts/check-release-archive.sh path/to/Limpid.xcarchive
+#   scripts/check-release-archive.sh path/to/Weir.xcarchive
 #
 # Exits 0 when every check passes, 1 otherwise (each failure is printed).
 
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
-  echo "usage: $0 path/to/Limpid.xcarchive" >&2
+  echo "usage: $0 path/to/Weir.xcarchive" >&2
   exit 2
 fi
 
 ARCHIVE="$1"
-APP_RELATIVE="Applications/Limpid.app"
+APP_RELATIVE="Applications/Weir.app"
 APP="$ARCHIVE/Products/$APP_RELATIVE"
 SERVICE_PLIST_DIR="$APP/Contents/Library/LaunchAgents"
-SERVICE_PLIST="$SERVICE_PLIST_DIR/dev.limpid.agent-integration-service.plist"
-DEV_SERVICE_PLIST="$SERVICE_PLIST_DIR/dev.limpid.agent-integration-service.dev.plist"
+SERVICE_PLIST="$SERVICE_PLIST_DIR/com.nekoder.weir.agent-integration-service.plist"
+DEV_SERVICE_PLIST="$SERVICE_PLIST_DIR/com.nekoder.weir.agent-integration-service.dev.plist"
 
 failures=0
 fail() {

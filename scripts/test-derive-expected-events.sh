@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Limpid — self-test for `derive-expected-events.py`.
+# Weir — self-test for `derive-expected-events.py`.
 #
 # The script derives the fixture goldens by mirroring the Rust adapters, and
 # the recorded cases only cover the inputs that happened to be recorded. This

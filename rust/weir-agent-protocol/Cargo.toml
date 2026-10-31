@@ -1,0 +1,15 @@
+[package]
+name = "weir-agent-protocol"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+weir-agent-core = { path = "../weir-agent-core" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[lints]
+workspace = true

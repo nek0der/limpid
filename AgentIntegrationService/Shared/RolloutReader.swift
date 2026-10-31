@@ -1,5 +1,5 @@
 // RolloutReader.swift
-// Limpid — reads the lines a Codex rollout gains and the failure a turn ends in, and builds the report the helper's watcher makes of them.
+// Weir — reads the lines a Codex rollout gains and the failure a turn ends in, and builds the report the helper's watcher makes of them.
 
 import Foundation
 
@@ -179,16 +179,16 @@ enum CodexUsageLimitMessage {
 /// compares both with the run record under its lock (`applies_to`).
 enum CodexTurnFailureReport {
     /// This is the event the Codex adapter reads the rollout for.
-    static let eventName = "LimpidTurnFailed"
+    static let eventName = "WeirTurnFailed"
     /// This key holds the kind of failure the watcher read, for when the
     /// rollout cannot be read again.
-    static let errorKindKey = "limpid_error_kind"
+    static let errorKindKey = "weir_error_kind"
     /// This key holds, for a usage limit, the reset read from Codex's
     /// message, in Unix seconds, for when the rollout's rate limits gave
     /// none.
-    static let messageResetKey = "limpid_message_resets_at"
+    static let messageResetKey = "weir_message_resets_at"
     /// This key holds when the turn failed, in Unix seconds.
-    static let failedAtKey = "limpid_failed_at"
+    static let failedAtKey = "weir_failed_at"
 
     /// Builds the payload for `line` in `rollout`, which session `sessionID`
     /// writes. A line with no time of its own was written no later than the

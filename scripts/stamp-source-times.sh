@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # stamp-source-times.sh
-# Limpid — give each source file a modification time derived from its content.
+# Weir — give each source file a modification time derived from its content.
 #
 # A fresh checkout dates every file at the moment of the checkout, so Xcode
 # treats a restored DerivedData as out of date and compiles everything. With
@@ -34,7 +34,7 @@ perl -MDigest::SHA -MFile::Find -e '
             }
             return;
         }
-        return if $path =~ m{^rust/} && $path !~ m{^rust/limpid-rust-bridge/include/};
+        return if $path =~ m{^rust/} && $path !~ m{^rust/weir-rust-bridge/include/};
         my $time = $base;
         # The submodule is large and changes only with its pinned commit, which
         # the cache keys already name.

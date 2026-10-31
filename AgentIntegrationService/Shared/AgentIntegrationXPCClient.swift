@@ -1,5 +1,5 @@
 // AgentIntegrationXPCClient.swift
-// Limpid — authenticated client for one role-specific integration endpoint.
+// Weir — authenticated client for one role-specific integration endpoint.
 
 import Foundation
 

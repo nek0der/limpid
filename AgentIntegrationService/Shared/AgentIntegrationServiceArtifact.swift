@@ -1,5 +1,5 @@
 // AgentIntegrationServiceArtifact.swift
-// Limpid — content identity for the bundled approval service and launch agent.
+// Weir — content identity for the bundled approval service and launch agent.
 
 import CryptoKit
 import Foundation

@@ -1,0 +1,201 @@
+// GhosttyFFI.swift
+// Weir — Swift-friendly wrapper around libghostty's C ABI, where new
+// calls to `ghostty_*` symbols go.
+
+import Foundation
+import GhosttyKit
+
+/// Thin wrapper around libghostty's C ABI.
+///
+/// New C API access goes here: extend this enum with a Swift-friendly
+/// signature rather than calling `ghostty_*` symbols from upper layers.
+/// The surface, the app, and their callbacks (`SurfaceView`, `GhosttyApp`,
+/// `GhosttyActionRouter`, and the rest) still call them directly, from
+/// before this wrapper; they move here as they are rewritten.
+enum GhosttyFFI {
+    /// Returns the modifiers AppKit should use to translate a physical key
+    /// into text. The original modifiers still belong on the key event sent
+    /// back to libghostty; this filtered value only controls text translation
+    /// and `consumed_mods`.
+    static func keyTranslationMods(
+        for surface: ghostty_surface_t,
+        original: ghostty_input_mods_e
+    ) -> ghostty_input_mods_e {
+        ghostty_surface_key_translation_mods(surface, original)
+    }
+
+    /// Reloads libghostty's keyboard map after macOS selects another input
+    /// source. Surfaces consult that map when `macos-option-as-alt` is unset.
+    static func keyboardDidChange(for app: ghostty_app_t) {
+        ghostty_app_keyboard_changed(app)
+    }
+
+    /// Copies configuration diagnostics while the config handle still owns
+    /// their C strings. The returned Swift strings remain valid after the
+    /// caller updates libghostty or frees the handle.
+    static func configDiagnostics(_ config: ghostty_config_t) -> [String] {
+        let count = ghostty_config_diagnostics_count(config)
+        return (0..<count).compactMap { index in
+            let diagnostic = ghostty_config_get_diagnostic(config, index)
+            guard let message = diagnostic.message else { return nil }
+            return String(cString: message)
+        }
+    }
+
+    /// Returns the embedded libghostty version string (e.g. "1.3.1").
+    static func version() -> String {
+        let info = ghostty_info()
+        guard let cstr = info.version else { return "unknown" }
+        let bytes = UnsafeBufferPointer(start: cstr, count: Int(info.version_len))
+        let data = Data(bytes.map { UInt8(bitPattern: $0) })
+        return String(bytes: data, encoding: .utf8) ?? "unknown"
+    }
+
+    /// The pty device the surface's shell is attached to
+    /// (`/dev/ttys016`), or `nil` when libghostty cannot report one.
+    ///
+    /// This is what lets us ask tmux which session a pane is showing:
+    /// tmux names its clients by tty, so the two meet here. libghostty
+    /// hands back a copy it allocated, so the caller frees it — the
+    /// `defer` is unconditional because `ghostty_string_free` returns
+    /// early on the null pointer an unavailable name comes back as.
+    static func surfaceTTYName(_ surface: ghostty_surface_t) -> String? {
+        let name = ghostty_surface_tty_name(surface)
+        defer { ghostty_string_free(name) }
+        guard let ptr = name.ptr, name.len > 0 else { return nil }
+        // Failable rather than `String(decoding:)`: a device path that
+        // is not valid UTF-8 is not a tty we can hand to tmux, and
+        // replacement characters would only push the failure further on.
+        let bytes = UnsafeRawBufferPointer(start: ptr, count: Int(name.len))
+        guard let value = String(bytes: bytes, encoding: .utf8), !value.isEmpty else {
+            return nil
+        }
+        return value
+    }
+
+    /// Ask libghostty to perform one textual binding action. The action
+    /// buffer is borrowed only for this call.
+    @discardableResult
+    static func performBindingAction(_ action: String, on surface: ghostty_surface_t) -> Bool {
+        action.withCString { pointer in
+            ghostty_surface_binding_action(surface, pointer, UInt(action.utf8.count))
+        }
+    }
+
+    /// Complete a clipboard read request with a single `text/plain`
+    /// representation.
+    ///
+    /// libghostty takes the payload by pointer and borrows it only for
+    /// the duration of the call, so the MIME string, the data, and both
+    /// structs stay on the stack until it returns.
+    static func completeClipboardRequest(
+        surface: ghostty_surface_t,
+        text: String,
+        state: UnsafeMutableRawPointer?,
+        confirmed: Bool
+    ) {
+        "text/plain".withCString { mime in
+            text.withCString { data in
+                var content = ghostty_clipboard_content_s(
+                    mime: mime,
+                    data: data,
+                    len: text.utf8.count
+                )
+                withUnsafePointer(to: &content) { contents in
+                    var payload = ghostty_clipboard_complete_s(
+                        contents: contents,
+                        contents_len: 1,
+                        available: nil,
+                        available_len: 0,
+                        confirmed: confirmed,
+                        remember: false
+                    )
+                    withUnsafePointer(to: &payload) { ptr in
+                        ghostty_surface_complete_clipboard_request(surface, ptr, state)
+                    }
+                }
+            }
+        }
+    }
+
+    /// The text a clipboard write carries: its `text/plain` representation,
+    /// else its first. `nil` when there is none. Read by each entry's `len`:
+    /// the bytes are not NUL-terminated (`ghostty_clipboard_content_s`), and
+    /// a NUL inside them is part of what was copied.
+    static func clipboardWriteText(
+        _ contents: UnsafePointer<ghostty_clipboard_content_s>,
+        count: Int
+    ) -> String? {
+        guard count > 0 else { return nil }
+        let entries = UnsafeBufferPointer(start: contents, count: count)
+        let plain = entries.first { entry in
+            entry.data != nil && entry.mime.map { String(cString: $0) == "text/plain" } == true
+        }
+        let entry = plain ?? entries[0]
+        guard let data = entry.data else { return nil }
+        let bytes = UnsafeRawBufferPointer(start: data, count: entry.len)
+        return String(bytes: bytes, encoding: .utf8)
+    }
+
+    /// The first text-like representation carried by a clipboard
+    /// confirmation payload, or an empty string when it holds none.
+    ///
+    /// The payload is only valid for the duration of the callback that
+    /// received it, so this has to run synchronously inside that frame.
+    /// See `GhosttyApp.confirmReadClipboardCallback` for what deferring
+    /// it costs.
+    static func clipboardText(
+        from confirm: UnsafePointer<ghostty_clipboard_confirm_s>
+    ) -> String {
+        let payload = confirm.pointee
+        guard let contents = payload.contents else { return "" }
+        for index in 0..<payload.contents_len {
+            let content = contents[index]
+            guard let mime = content.mime, let data = content.data,
+                  String(cString: mime).hasPrefix("text/")
+            else { continue }
+            let bytes = UnsafeRawBufferPointer(start: data, count: content.len)
+            return String(bytes: bytes, encoding: .utf8) ?? ""
+        }
+        return ""
+    }
+
+    /// Pid of the process in the foreground of a surface's pty, or
+    /// `nil` when libghostty has none to report.
+    ///
+    /// A pane showing tmux has the tmux client in the foreground —
+    /// the client owns the pty and everything the session runs sits
+    /// behind it — so this answers "is this pane inside tmux" for a
+    /// session the user started by hand as well as one we host.
+    static func surfaceForegroundPID(_ surface: ghostty_surface_t) -> pid_t? {
+        let pid = ghostty_surface_foreground_pid(surface)
+        guard pid > 0, pid <= UInt64(pid_t.max) else { return nil }
+        return pid_t(pid)
+    }
+
+    /// Width of one terminal cell in device pixels, or `nil` while the
+    /// surface has no font metrics yet.
+    static func surfaceCellWidthPixels(_ surface: ghostty_surface_t) -> UInt32? {
+        let width = ghostty_surface_size(surface).cell_width_px
+        return width > 0 ? width : nil
+    }
+
+    /// The surface's grid in cells, or `nil` before it has a size and font
+    /// metrics to lay one out with.
+    static func surfaceGridSize(_ surface: ghostty_surface_t) -> TerminalGridSize? {
+        let size = ghostty_surface_size(surface)
+        guard size.columns > 0, size.rows > 0 else { return nil }
+        return TerminalGridSize(columns: Int(size.columns), rows: Int(size.rows))
+    }
+
+    /// Build mode libghostty was compiled with.
+    static func buildMode() -> String {
+        switch ghostty_info().build_mode {
+        case GHOSTTY_BUILD_MODE_DEBUG: "debug"
+        case GHOSTTY_BUILD_MODE_RELEASE_SAFE: "release-safe"
+        case GHOSTTY_BUILD_MODE_RELEASE_FAST: "release-fast"
+        case GHOSTTY_BUILD_MODE_RELEASE_SMALL: "release-small"
+        default: "unknown"
+        }
+    }
+}

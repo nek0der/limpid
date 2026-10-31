@@ -1,12 +1,12 @@
 // AgentQuestionTurnCompletion.swift
-// Limpid — turn-scoped completion for Claude question requests.
+// Weir — turn-scoped completion for Claude question requests.
 
 import CryptoKit
 import Darwin
 import Foundation
 
 struct AgentQuestionTurnCompletion {
-    static let operationIDPrefix = "limpid-question-turn:"
+    static let operationIDPrefix = "weir-question-turn:"
 
     private let url: URL
     private let sessionID: String
@@ -110,7 +110,7 @@ struct AgentQuestionTurnCompletion {
         _ object: [String: Any], environment: [String: String]
     ) -> Identity? {
         guard let sessionID = object["session_id"] as? String, !sessionID.isEmpty,
-              let directory = environment["LIMPID_AGENT_STATES_DIR"], directory.hasPrefix("/")
+              let directory = environment["WEIR_AGENT_STATES_DIR"], directory.hasPrefix("/")
         else { return nil }
         let agentID = object["agent_id"] as? String
         if object["agent_id"] != nil, agentID?.isEmpty != false {

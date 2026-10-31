@@ -1,0 +1,138 @@
+//! What the platform needs to know about Claude Code.
+
+use crate::PROVIDER_ID;
+use std::collections::BTreeSet;
+use std::sync::OnceLock;
+use weir_agent_model::{
+    Capability, InstallRecipe, ProviderDescriptor, ProviderId, RecipePlaceholder, RecipeVariable,
+    SettingsFragment,
+};
+
+/// The settings document the shim hands to `claude --settings`, with the
+/// hook command placeholders the platform substitutes.
+///
+/// Owned here rather than in the platform's resource tree: this crate knows
+/// the shape, and reaching across for it would point the dependency the wrong way.
+/// The shim reads it from beside itself at run time, so the application's
+/// build copies this file into the bundle.
+const SETTINGS_TEMPLATE: &str = include_str!("../resources/settings.template.json");
+
+pub(crate) fn descriptor() -> &'static ProviderDescriptor {
+    static DESCRIPTOR: OnceLock<ProviderDescriptor> = OnceLock::new();
+    DESCRIPTOR.get_or_init(|| ProviderDescriptor {
+        id: ProviderId::new(PROVIDER_ID).expect("static id is valid"),
+        display_name: "Claude Code".to_owned(),
+        capabilities: BTreeSet::from([
+            Capability::SessionEndDropsSession,
+            Capability::Resume,
+            Capability::CwdEvents,
+            Capability::WorktreeEvents,
+            Capability::ApprovalHook,
+            Capability::Subagents,
+            Capability::TurnSnapshot,
+            // Estimated from the transcript on Stop; see `cache`.
+            Capability::CacheWindow,
+            // No hook reports an Esc, a Ctrl+C, or a "No" at Claude Code's
+            // own prompt; its status report going idle does.
+            Capability::ProgramStatusIdleStopsTurn,
+        ]),
+        // The Claude receiver historically ran a slow sweep; Codex needs a
+        // faster one because it emits no Stop when killed mid-turn.
+        pid_sweep_interval_ms: 30_000,
+        // Keep the names used before providers were distinguished so existing
+        // on-disk records remain readable without a migration.
+        state_directory: "agent-states".to_owned(),
+        session_directory: "sessions".to_owned(),
+        cwd_events_directory: Some("cwd-events".to_owned()),
+        process_names: vec!["claude".to_owned(), "claude.exe".to_owned()],
+        // The reasons Claude reports when the user ended the session rather
+        // than the process going away under it. A signal, or a reason this
+        // build does not know, keeps the hint so the next launch can resume.
+        session_end_drop_reasons: ["clear", "logout", "exit", "prompt_input_exit", "quit"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
+        // No agent of Claude's own is known to work in its configuration
+        // directory.
+        internal_agent_directories: Vec::new(),
+        // Claude Code reports OSC 7501 once the terminal answers its support
+        // query, which libghostty does.
+        program_status_app: Some("claude-code".to_owned()),
+    })
+}
+
+pub(crate) fn install_recipe() -> InstallRecipe {
+    InstallRecipe {
+        environment: vec![
+            RecipeVariable {
+                name: "WEIR_AGENT_STATES_DIR".to_owned(),
+                value: RecipePlaceholder::StateDirectory,
+            },
+            RecipeVariable {
+                name: "WEIR_SESSIONS_DIR".to_owned(),
+                value: RecipePlaceholder::SessionDirectory,
+            },
+            RecipeVariable {
+                name: "WEIR_CWD_EVENTS_DIR".to_owned(),
+                value: RecipePlaceholder::CwdEventsDirectory,
+            },
+            RecipeVariable {
+                name: "WEIR_CLAUDE_HOOK_NAMESPACE".to_owned(),
+                value: RecipePlaceholder::BundleId,
+            },
+            RecipeVariable {
+                name: "WEIR_USAGE_DIR".to_owned(),
+                value: RecipePlaceholder::UsageDirectory,
+            },
+        ],
+        settings_fragments: vec![SettingsFragment {
+            target: "claude.settings".to_owned(),
+            body: SETTINGS_TEMPLATE.to_owned(),
+        }],
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn descriptor_declares_the_claude_capabilities_and_legacy_directories() {
+        let descriptor = descriptor();
+        assert_eq!(descriptor.id.as_str(), "claude");
+        assert!(descriptor.has(Capability::CwdEvents));
+        assert!(!descriptor.has(Capability::ResumeDefersToOtherLiveSession));
+        assert!(descriptor.has(Capability::CacheWindow));
+        assert_eq!(descriptor.state_directory, "agent-states");
+        assert_eq!(
+            descriptor.cwd_events_directory.as_deref(),
+            Some("cwd-events")
+        );
+        assert_eq!(descriptor.pid_sweep_interval_ms, 30_000);
+    }
+
+    #[test]
+    fn recipe_carries_the_hook_template() {
+        let recipe = install_recipe();
+        let template: serde_json::Value =
+            serde_json::from_str(&recipe.settings_fragments[0].body).expect("template is JSON");
+        assert!(template["hooks"]["PermissionRequest"].is_array());
+        // The end snapshot stages and writes a tree like the start one, so a
+        // large repository with a cold index needs the same 600 s the start
+        // has, not Claude's 60 s default.
+        for event in ["UserPromptSubmit", "Stop", "StopFailure"] {
+            assert_eq!(
+                template["hooks"][event][0]["hooks"][0]["timeout"], 600,
+                "{event}"
+            );
+        }
+        // Named by placeholder rather than by token text: a typo in a token
+        // compiles, installs, and leaves the agent reporting to nothing.
+        let state = recipe
+            .environment
+            .iter()
+            .find(|variable| variable.value == RecipePlaceholder::StateDirectory)
+            .expect("a state directory variable");
+        assert_eq!(state.name, "WEIR_AGENT_STATES_DIR");
+    }
+}

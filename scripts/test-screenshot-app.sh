@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # scripts/test-screenshot-app.sh
-# Limpid — self-test for the app `screenshot.sh` launches.
+# Weir — self-test for the app `screenshot.sh` launches.
 #
 # `make screenshot` hands the script the app this project just built. Were the
-# script to search DerivedData anyway, it would take the newest Limpid.app of
+# script to search DerivedData anyway, it would take the newest Weir.app of
 # any worktree and put another branch's build in the hero. This runs the script
 # against a throwaway home whose DerivedData holds a newer app than the one
 # handed over, with apps that have no executable, so nothing is ever launched:
@@ -22,8 +22,8 @@ SCRIPT="${REPO_ROOT}/scripts/screenshot.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-HANDED="$TMP/project/Build/Products/Release/Limpid.app"
-NEWER="$TMP/home/Library/Developer/Xcode/DerivedData/Other-abc/Build/Products/Release/Limpid.app"
+HANDED="$TMP/project/Build/Products/Release/Weir.app"
+NEWER="$TMP/home/Library/Developer/Xcode/DerivedData/Other-abc/Build/Products/Release/Weir.app"
 mkdir -p "$HANDED" "$NEWER" "$TMP/cwd"
 touch -t 202001010000 "$HANDED"
 
@@ -48,7 +48,7 @@ check() {
 }
 
 check "the app handed over wins over a newer one in DerivedData" \
-  "$HANDED" "$(launched LIMPID_SCREENSHOT_APP="$HANDED")"
+  "$HANDED" "$(launched WEIR_SCREENSHOT_APP="$HANDED")"
 check "without one, the newest Release app in DerivedData is used" \
   "$NEWER" "$(launched)"
 
