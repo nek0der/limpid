@@ -150,6 +150,28 @@ pub struct FailureReport {
     pub message_reset_key: &'static str,
 }
 
+/// Where a question for the person stands in the turn that asked it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum QuestionTurnPhase {
+    /// The provider asked the question.
+    Asked,
+    /// The turn or subagent that could have asked it ended.
+    Ended,
+}
+
+/// The turn a question belongs to, as a hook payload names it. A subagent is
+/// named by its agent id alone, because it can outlive the root prompt.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct QuestionTurn {
+    pub phase: QuestionTurnPhase,
+    pub session_id: String,
+    pub prompt_id: Option<String>,
+    pub agent_id: Option<String>,
+    /// The variable that names the provider's state directory.
+    pub state_directory_variable: String,
+}
+
 /// A provider is one implementation of this trait plus recorded fixtures.
 pub trait ProviderAdapter: Send + Sync {
     /// Identity, capabilities, timing, and directory names.
@@ -167,6 +189,17 @@ pub trait ProviderAdapter: Send + Sync {
         _watch: &FailureWatch<'_>,
     ) -> Option<FailureReport> {
         None
+    }
+
+    /// The question turn `input` names, for a provider whose question stays
+    /// open after the person answers at its terminal; `None` for any other
+    /// payload.
+    ///
+    /// # Errors
+    ///
+    /// A payload that is too large or is not a JSON object.
+    fn question_turn(&self, _input: &[u8]) -> Result<Option<QuestionTurn>, NormalizeError> {
+        Ok(None)
     }
 
     /// The environment variable that moves the provider's configuration

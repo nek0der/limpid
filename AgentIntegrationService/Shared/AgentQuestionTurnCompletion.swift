@@ -5,6 +5,30 @@ import CryptoKit
 import Darwin
 import Foundation
 
+/// The turn a question belongs to, as the provider's crate reads it from a
+/// hook payload. `RustProviderBridge.questionTurn` builds it; this file stays
+/// free of the bridge because the probes compile it without one.
+struct AgentQuestionTurn: Decodable {
+    enum Phase: String, Decodable {
+        case asked
+        case ended
+    }
+
+    let phase: Phase
+    let sessionID: String
+    let promptID: String?
+    let agentID: String?
+    let stateDirectoryVariable: String
+
+    private enum CodingKeys: String, CodingKey {
+        case phase
+        case sessionID = "session_id"
+        case promptID = "prompt_id"
+        case agentID = "agent_id"
+        case stateDirectoryVariable = "state_directory_variable"
+    }
+}
+
 struct AgentQuestionTurnCompletion {
     static let operationIDPrefix = "weir-question-turn:"
 
@@ -35,13 +59,11 @@ struct AgentQuestionTurnCompletion {
     }
 
     init?(
-        payload: Data, environment: [String: String],
+        turn: AgentQuestionTurn, environment: [String: String],
         requestedAt: UInt64? = nil, bootSessionID: String? = nil
     ) {
-        guard let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
-              object["hook_event_name"] as? String == "PermissionRequest",
-              object["tool_name"] as? String == "AskUserQuestion",
-              let identity = Self.identity(object, environment: environment),
+        guard turn.phase == .asked,
+              let identity = Self.identity(turn, environment: environment),
               let requestedAt = requestedAt ?? Self.processStartedAt(),
               let bootSessionID = bootSessionID ?? Self.currentBootSessionID()
         else { return nil }
@@ -68,14 +90,11 @@ struct AgentQuestionTurnCompletion {
     }
 
     static func record(
-        payload: Data, environment: [String: String],
+        turn: AgentQuestionTurn, environment: [String: String],
         completedAt: UInt64 = mach_absolute_time(), bootSessionID: String? = nil
     ) throws {
-        guard let object = try JSONSerialization.jsonObject(with: payload) as? [String: Any],
-              let event = object["hook_event_name"] as? String,
-              ["Stop", "StopFailure", "SubagentStop"].contains(event),
-              let identity = identity(object, environment: environment),
-              event != "SubagentStop" || identity.agentID != nil,
+        guard turn.phase == .ended,
+              let identity = identity(turn, environment: environment),
               let bootSessionID = bootSessionID ?? currentBootSessionID()
         else { return }
         let directory = identity.url.deletingLastPathComponent()
@@ -107,15 +126,11 @@ struct AgentQuestionTurnCompletion {
     }
 
     private static func identity(
-        _ object: [String: Any], environment: [String: String]
+        _ turn: AgentQuestionTurn, environment: [String: String]
     ) -> Identity? {
-        guard let sessionID = object["session_id"] as? String, !sessionID.isEmpty,
-              let directory = environment["WEIR_AGENT_STATES_DIR"], directory.hasPrefix("/")
-        else { return nil }
-        let agentID = object["agent_id"] as? String
-        if object["agent_id"] != nil, agentID?.isEmpty != false {
-            return nil
-        }
+        guard let directory = environment[turn.stateDirectoryVariable], directory.hasPrefix("/") else { return nil }
+        let sessionID = turn.sessionID
+        let agentID = turn.agentID
         // Background children can outlive a root prompt. Their agent ID
         // identifies completion even when the shared prompt ID has changed.
         let promptID: String?
@@ -124,7 +139,7 @@ struct AgentQuestionTurnCompletion {
             promptID = nil
             scope = "agent:\(agentID.utf8.count):\(agentID)"
         } else {
-            guard let rootPromptID = object["prompt_id"] as? String, !rootPromptID.isEmpty else { return nil }
+            guard let rootPromptID = turn.promptID else { return nil }
             promptID = rootPromptID
             scope = "prompt:\(rootPromptID.utf8.count):\(rootPromptID)"
         }

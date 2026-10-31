@@ -19,8 +19,8 @@ use std::path::{Path, PathBuf};
 use weir_agent_model::{
     AgentEvent, ApprovalDecision, ApprovalRequest, CommandRun, DeniedAction, EventId, HookContext,
     InstallRecipe, ListDirectory, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter,
-    ProviderDescriptor, ProviderOutput, RawHookInput, SessionSettings, StatusLineAdapter,
-    TurnReading, TurnUsage, WorktreeIntent, parse_object,
+    ProviderDescriptor, ProviderOutput, QuestionTurn, RawHookInput, SessionSettings,
+    StatusLineAdapter, TurnReading, TurnUsage, WorktreeIntent, parse_object,
 };
 
 /// The Claude Code provider.
@@ -39,6 +39,10 @@ impl ProviderAdapter for ClaudeAdapter {
 
     fn install_recipe(&self) -> InstallRecipe {
         descriptor::install_recipe()
+    }
+
+    fn question_turn(&self, input: &[u8]) -> Result<Option<QuestionTurn>, NormalizeError> {
+        approval::question_turn(input)
     }
 
     /// Claude Code reads its settings from the folder `CLAUDE_CONFIG_DIR`

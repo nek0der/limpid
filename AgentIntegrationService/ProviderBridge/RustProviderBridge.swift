@@ -114,6 +114,19 @@ enum RustProviderBridge {
         )
     }
 
+    /// The question turn `payload` names, or `nil` when it names none.
+    static func questionTurn(provider: String, payload: Data) throws -> AgentQuestionTurn? {
+        let body = try call(provider: provider, input: payload, notApproval: false) { pointers in
+            weir_provider_question_turn_v1(
+                pointers.provider, pointers.providerCount,
+                pointers.input, pointers.inputCount,
+                pointers.out, pointers.outCount
+            )
+        }
+        guard let body else { throw AgentIntegrationError.invalidResponse }
+        return try JSONDecoder().decode(AgentQuestionTurn?.self, from: body)
+    }
+
     /// Which hook entry point `runHook` invokes.
     enum HookKind {
         case lifecycle
@@ -228,5 +241,27 @@ enum RustProviderBridge {
         default:
             throw AgentIntegrationError.rustFailure(status)
         }
+    }
+}
+
+extension AgentQuestionTurnCompletion {
+    /// The completion of the question Claude asks in `payload`.
+    init?(
+        payload: Data, environment: [String: String],
+        requestedAt: UInt64? = nil, bootSessionID: String? = nil
+    ) {
+        guard let turn = try? RustProviderBridge.questionTurn(provider: "claude", payload: payload) else {
+            return nil
+        }
+        self.init(turn: turn, environment: environment, requestedAt: requestedAt, bootSessionID: bootSessionID)
+    }
+
+    /// Records that the turn Claude ends in `payload` has ended.
+    static func record(
+        payload: Data, environment: [String: String],
+        completedAt: UInt64 = mach_absolute_time(), bootSessionID: String? = nil
+    ) throws {
+        guard let turn = try RustProviderBridge.questionTurn(provider: "claude", payload: payload) else { return }
+        try record(turn: turn, environment: environment, completedAt: completedAt, bootSessionID: bootSessionID)
     }
 }

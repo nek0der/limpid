@@ -359,6 +359,45 @@ pub unsafe extern "C" fn weir_provider_turn_failure_report_v1(
     status.unwrap_or_else(|code| code)
 }
 
+/// Reports the question turn a hook payload names as JSON, or `null` when it
+/// names none. On success, ownership of `*out` transfers to the caller, which
+/// must release it with `weir_approval_bytes_free_v1`.
+///
+/// # Safety
+///
+/// Same contract as `weir_provider_approval_request_v1`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn weir_provider_question_turn_v1(
+    provider: *const u8,
+    provider_len: usize,
+    input: *const u8,
+    input_len: usize,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        return PROVIDER_NULL_POINTER;
+    }
+    // SAFETY: The caller guarantees both output pointers are writable.
+    unsafe {
+        ptr::write(out, ptr::null_mut());
+        ptr::write(out_len, 0);
+    }
+    let status = provider_boundary(|| {
+        let adapter = unsafe { resolve_adapter(provider, provider_len) }?;
+        let input = unsafe { input_bytes(input, input_len) }?;
+        let turn = adapter
+            .question_turn(input)
+            .map_err(|error| normalize_status(&error))?;
+        let body = serde_json::to_vec(&turn).map_err(|_| PROVIDER_INTERNAL)?;
+        // SAFETY: The caller guarantees both output pointers are writable, and
+        // the bytes are owned by the caller until it frees them.
+        unsafe { transfer(body, out, out_len) };
+        Ok(PROVIDER_OK)
+    });
+    status.unwrap_or_else(|code| code)
+}
+
 unsafe fn resolve_adapter<'a>(
     provider: *const u8,
     provider_len: usize,
