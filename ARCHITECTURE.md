@@ -128,14 +128,15 @@ A static module has no resources, so its strings live in the app's catalog.
 
 Design and review, not a checker, keep the type dependencies beyond that.
 
-The files those rules let through predate them. Each leaves its list on a
-stated condition:
-
-| Rule | File | Leaves when |
-|---|---|---|
-| `core_names_ui_type` | `Core/CommandPalette/CommandPaletteCatalog.swift` (`ContainerSymbol`) | the symbol moves below UI, or the catalog takes a Core value the palette maps |
-| `core_names_ui_type` | `Core/Models/WorkspaceSession.swift`, `WorkspaceSession+Worktree.swift` (`DropPosition`) | the drop position moves below UI, or the moves take a Core value |
-| none (kept by review) | Core naming UI's `SurfaceView`: `GhosttyActionRouter`, `GhosttyEventCoordinator`, `SurfaceRegistry`, `GhosttyApp`, `SecureInputManager`, `ClipboardConfirmationCoordinator`, `GhosttyConfigBridge`, `WeirNotificationDelegate` | each reaches the terminal through `SurfaceViewProviding` or a port App implements, as the scrollback capture does (`ScrollbackWriting`, `App/SurfaceRegistry+Scrollback.swift`) |
+One dependency predates these rules, and review rather than a rule keeps it
+from growing. Core names UI's `SurfaceView` in `GhosttyActionRouter`,
+`GhosttyEventCoordinator`, `SurfaceRegistry`, `GhosttyApp`,
+`SecureInputManager`, `ClipboardConfirmationCoordinator`,
+`GhosttyConfigBridge`, and `WeirNotificationDelegate`. Each file leaves this
+list once its code no longer names `SurfaceView`, which takes a port that exposes
+no UI type, the way the scrollback capture does (`ScrollbackWriting`,
+`App/SurfaceRegistry+Scrollback.swift`). `SurfaceViewProviding` does not count,
+because it hands out `SurfaceView` itself.
 
 One edge goes up rather than down: UI views read `AppState`, the composition
 root, for the app's stores. The actions of the changes panel, the review tab,

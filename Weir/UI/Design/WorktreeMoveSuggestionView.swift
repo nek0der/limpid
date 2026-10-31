@@ -60,7 +60,7 @@ private struct WorktreeMoveSuggestionCapsule: View {
 
     var body: some View {
         HStack(spacing: WeirLayout.Supervision.spaceL) {
-            Image(systemName: "arrow.triangle.branch")
+            Image(systemName: ContainerSymbol.worktree)
                 .font(.supervision(.title, weight: .semibold))
                 .foregroundStyle(accent)
                 .symbolRenderingMode(.hierarchical)

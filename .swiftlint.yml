@@ -181,17 +181,10 @@ custom_rules:
 
   # Core is below UI too, so it never names the window's sizes, tokens, or
   # glyphs: a Core type that needs one takes the value from its caller.
-  # The excluded files predate the rule (main's palette catalog and sidebar drop); each leaves
-  # the list when `ContainerSymbol` and `DropPosition` move below UI or the
-  # callers take a Core value in their place. Do not add a file here.
   core_names_ui_type:
     name: "Core names a UI type"
-    regex: '\b(?:WeirLayout|SupervisionTokens|StateGlyph|ContainerSymbol|DropPosition)\b'
+    regex: '\b(?:WeirLayout|SupervisionTokens|StateGlyph)\b'
     included: 'Weir/Core/'
-    excluded:
-      - 'Weir/Core/CommandPalette/CommandPaletteCatalog\.swift$'
-      - 'Weir/Core/Models/WorkspaceSession\.swift$'
-      - 'Weir/Core/Models/WorkspaceSession\+Worktree\.swift$'
     excluded_match_kinds:
       - comment
       - comment.mark

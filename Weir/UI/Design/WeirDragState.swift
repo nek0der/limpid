@@ -164,7 +164,7 @@ final class WeirDragState {
     /// `end()` from the mouse-up monitor wipes the indicator regardless
     /// of how SwiftUI's drop lifecycle terminated.
     var hoverTargetID: String?
-    var hoverPosition: ReorderableDropPosition?
+    var hoverPosition: DropPosition?
 
     /// Last (target, position) pair the live-reorder pipeline applied.
     /// Compared inside `UnifiedReorderDelegate.update` to dedupe
@@ -172,7 +172,7 @@ final class WeirDragState {
     /// the mouse-move rate, but we only want to mutate the model on
     /// actual transitions.
     var lastLiveTarget: String?
-    var lastLivePosition: ReorderableDropPosition?
+    var lastLivePosition: DropPosition?
 
     /// Snapshot taken at drag-start so a drag that ends outside any
     /// drop target (or releases on a no-op) returns the order arrays
