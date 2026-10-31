@@ -120,6 +120,7 @@ open Weir.xcodeproj
 - Code comments must be in English.
 - Code style: see [`AGENTS.md`](AGENTS.md) §3 for the conventions a linter can't enforce (comments explain *why*, file banners, naming).
 - `release-please` generates `CHANGELOG.md` from commit messages, so don't edit it by hand.
+- The release pull request skips the builds, tests, and Swift lint, because `main` already ran them. Its `Main CI passed` check holds the merge, which creates the tag, until the CI run for the latest commit on `main` has passed. To run everything on it anyway, dispatch the CI workflow on its branch from the Actions tab, and read the results there: they do not appear among the pull request's checks.
 
 ### Before opening the PR
 
