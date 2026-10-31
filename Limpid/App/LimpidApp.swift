@@ -280,6 +280,7 @@ final class AppState {
     /// type for its own contract.
     let prStatusStore = PRStatusStore()
     private(set) var prStatusSyncer: PRStatusSyncer?
+    private var turnEndPRRefresh: TurnEndPRRefresh?
     /// Set when the on-disk snapshot couldn't be restored at boot.
     /// A version mismatch or decode failure normally just dropped the
     /// file silently; surfacing it as an alert lets the user notice
@@ -464,13 +465,7 @@ final class AppState {
         )
         self.gitSync = GitSyncCoordinator(session: session)
 
-        let prStatusSyncer = PRStatusSyncer(
-            session: session,
-            store: prStatusStore,
-            source: Self.prStatusSource
-        )
-        prStatusSyncer.start()
-        self.prStatusSyncer = prStatusSyncer
+        (prStatusSyncer, turnEndPRRefresh) = Self.makePRStatusSync(session: session, store: prStatusStore, attention: attention)
 
         store.scheduleSave(session.makeSnapshot())
 

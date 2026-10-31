@@ -118,6 +118,18 @@ struct PRStatusSyncerLookupTests {
         #expect(await lookups.peakRunningCount == 1)
     }
 
+    @Test("a turn's end looks the row up without re-reading the forge")
+    func aTurnsEnd_looksTheRowUp() async throws {
+        syncer.turnEnded(in: container)
+        try await waitForLookups(1)
+        await lookups.answer(Self.answer(number: 7))
+        for _ in 0..<2000 where store.info(for: container) == nil {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(store.info(for: container)?.number == 7)
+        #expect(await lookups.invalidationCount == 0)
+    }
+
     @Test("two refreshes while a lookup runs ask for one more lookup, not two")
     func refresh_twiceDuringLookup_coalescesToOneFollowUp() async throws {
         checkOut("a")
