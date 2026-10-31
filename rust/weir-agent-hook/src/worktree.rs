@@ -208,9 +208,15 @@ fn placement(value: &Value) -> Option<Placement> {
 }
 
 impl ProjectRules {
-    /// Mirrors `Project.resolvedWorktreeURL(branchLeaf:)`.
+    /// Mirrors `Project.resolvedWorktreeURL(branchLeaf:)` given
+    /// `BranchNameSuggester.folderLeaf(of:)`. The two sides check the result
+    /// against `rust/fixtures/contract/shared-values.json`. The whole branch
+    /// names the folder, so `feature/alpha` and `fix/alpha` get one each.
     fn worktree_path(&self, branch: &str) -> Option<PathBuf> {
-        let leaf = branch.rsplit('/').next().filter(|leaf| !leaf.is_empty())?;
+        if branch.is_empty() {
+            return None;
+        }
+        let leaf = branch.replace('/', "-");
         match &self.placement {
             Placement::SiblingPrefixed => {
                 let name = self.root.file_name()?.to_string_lossy();
@@ -347,6 +353,51 @@ fn escapes_worktree(cwd: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The app's `SharedValuesContractTests` check `resolvedWorktreeURL`
+    /// against the same file, so the hook and the sheet agree on the folder.
+    #[test]
+    fn the_worktree_folders_are_the_ones_the_app_makes() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../fixtures/contract/shared-values.json");
+        let shared: Value =
+            serde_json::from_slice(&std::fs::read(path).expect("the shared values file"))
+                .expect("the shared values decode");
+        let folders = &shared["worktreeFolders"];
+        let text = |value: &Value| value.as_str().expect("a string").to_owned();
+        let rules = |placement| ProjectRules {
+            root: PathBuf::from(text(&folders["projectRoot"])),
+            placement,
+            bootstrap: Vec::new(),
+        };
+        let custom_parent = PathBuf::from(text(&folders["customParent"]));
+        let cases = folders["cases"].as_array().expect("the cases");
+        assert!(!cases.is_empty());
+        for case in cases {
+            let branch = text(&case["branch"]);
+            for (placement, key) in [
+                (Placement::SiblingPrefixed, "siblingPrefixed"),
+                (Placement::InsideHidden, "insideHidden"),
+                (Placement::Custom(custom_parent.clone()), "custom"),
+            ] {
+                assert_eq!(
+                    rules(placement).worktree_path(&branch),
+                    Some(PathBuf::from(text(&case[key]))),
+                    "{branch} {key}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn an_empty_branch_has_no_worktree_folder() {
+        let rules = ProjectRules {
+            root: PathBuf::from("/projects/repo"),
+            placement: Placement::InsideHidden,
+            bootstrap: Vec::new(),
+        };
+        assert_eq!(rules.worktree_path(""), None);
+    }
 
     #[test]
     fn a_step_cwd_may_not_leave_the_worktree() {

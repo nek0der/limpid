@@ -45,7 +45,10 @@ enum BranchNameSuggester {
     }
 
     /// The folder name a branch's worktree gets: `/` would make nested
-    /// folders.
+    /// folders. The worktree hook uses the same rule for a worktree an agent
+    /// asks for (`worktree_path` in `rust/weir-agent-hook/src/worktree.rs`);
+    /// the two sides check it against
+    /// `rust/fixtures/contract/shared-values.json`.
     static func folderLeaf(of branch: String) -> String {
         branch.replacingOccurrences(of: "/", with: "-")
     }
