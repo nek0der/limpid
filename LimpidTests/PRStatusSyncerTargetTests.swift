@@ -16,6 +16,29 @@ import Testing
 @Suite("PRStatusSyncer targets")
 struct PRStatusSyncerTargetTests {
 
+    /// A row one wake short of its interval still goes on that wake, and a
+    /// finished request's row does not, however long it has waited.
+    @Test func aRowIsDue_withHalfAWakeForgiven() {
+        let now = Date()
+        let open = PRInfoFixture.make(checks: .success)
+        #expect(PRStatusSyncer.isDue(info: open, lastFetch: nil, now: now))
+        #expect(PRStatusSyncer.isDue(info: open, lastFetch: now.addingTimeInterval(-85), now: now))
+        #expect(!PRStatusSyncer.isDue(info: open, lastFetch: now.addingTimeInterval(-30), now: now))
+        #expect(!PRStatusSyncer.isDue(info: PRInfoFixture.make(state: .merged), lastFetch: .distantPast, now: now))
+    }
+
+    /// A request that can still change is asked for sooner than a row with
+    /// none, and a finished one is left to the turn ends and app focus.
+    @Test func theRecurringInterval_followsWhatTheRequestCanStillDo() throws {
+        let running = try #require(PRStatusSyncer.recurringInterval(for: PRInfoFixture.make(checks: .pending)))
+        let open = try #require(PRStatusSyncer.recurringInterval(for: PRInfoFixture.make(checks: .success)))
+        let none = try #require(PRStatusSyncer.recurringInterval(for: nil))
+        #expect(running < open)
+        #expect(open < none)
+        #expect(PRStatusSyncer.recurringInterval(for: PRInfoFixture.make(state: .merged)) == nil)
+        #expect(PRStatusSyncer.recurringInterval(for: PRInfoFixture.make(state: .closed, checks: .pending)) == nil)
+    }
+
     /// `GitSyncCoordinator` keeps a project's main checkout out of
     /// `project.worktrees` because the Project row already stands for
     /// it. That checkout still has a branch, so leaving it out here

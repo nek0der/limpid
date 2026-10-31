@@ -463,7 +463,7 @@ conversation again as its surface mounts (`AgentResumeCommandBuilder`).
 | `Limpid/Core/QuickTerminal/QuickTerminalHotKeyCenter.swift` | Keeps the quick terminal's global hotkey registered to match the setting, the keyboard layout, and the Settings recorders |
 | `Limpid/UI/SurfaceView.swift` | The `NSView` subclass that owns the libghostty surface and its Metal layer |
 | `Limpid/UI/Pane/PaneHostView.swift` | The `NSViewRepresentable` that bridges `SurfaceRegistry` and `SplitTree` |
-| `Limpid/Core/Git/PRStatusSyncer.swift` | Schedules forge CLI lookups per sidebar row and writes them into `PRStatusStore` (no setting; whatever `gh` / `glab` can read) |
+| `Limpid/Core/Git/PRStatusSyncer.swift` | Schedules forge CLI lookups per sidebar row, at each row's own interval and as an agent's turn ends there (`TurnEndPRRefresh`), and writes them into `PRStatusStore` (no setting; whatever `gh` / `glab` can read) |
 | `Limpid/Core/Review/ReviewSession.swift` | One view's review: its scope, list and open diff, and the comment lifecycle (written → inserted → resolved) |
 | `Limpid/Core/Review/ReviewDraftWriter.swift` | The draft one worktree's reviews share: comments, read marks, and the file it restores from |
 | `Limpid/Core/Review/ReviewGitCommand.swift` | Every Git read the review makes, and the patch bytes both the change poll and the diff hash |

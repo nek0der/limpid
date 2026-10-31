@@ -5,8 +5,9 @@
 //   - `gh` / `glab` are optional dependencies; a failure here must
 //     never poison local `git` sync.
 //   - Pull-request state moves on the forge's clock, not the local
-//     repo's, so the cadence is time-driven rather than
-//     mutation-driven.
+//     repo's, so the cadence is time-driven rather than mutation-driven,
+//     with a lookup when an agent's turn ends (`TurnEndPRRefresh`), which
+//     is often what moved it.
 //   - It has no setting: pull requests show wherever `gh`
 //     or `glab` can read them, and a CLI that is absent or signed out is
 //     found out by the lookup itself.
@@ -62,34 +63,26 @@ final class PRStatusSyncer {
     /// asks no CLI.
     let pullRequests: (any PullRequestReading)?
 
-    /// Cadence while nothing is in flight. Long on purpose: a merged
-    /// or approved request does not change on a schedule the user
-    /// cares about, and every tick costs one CLI spawn per row.
-    /// Coming back to the app refetches anyway (see `observeFocus`),
-    /// so this is a backstop for a window left in the foreground.
-    private let idleInterval: Duration = .seconds(PRStatusSyncer.refreshIntervalMinutes * 60)
-
-    /// Cadence while any tracked request still has checks running.
-    /// The idle cadence above is useless for watching CI: a run that
-    /// finishes in a couple of minutes would still be reported as
-    /// "running" well after it stopped. Polling faster only while
-    /// something is actually pending gives the fast feedback without
-    /// paying for it the rest of the time, and needs no setting for
-    /// the user to reason about.
+    /// How long a row waits between recurring lookups, from what its last
+    /// one found; `nil` for a row the recurring lookups leave alone. Every
+    /// lookup costs one CLI spawn, so only what can still change soon is
+    /// asked often:
     ///
-    /// Shorter than `perContainerMinInterval`, which is why that floor
-    /// is not applied to the recurring tick — see `tick`.
-    private let activeInterval: Duration = PRStatusSyncer.pollGranularity
-
-    /// The idle cadence, in minutes.
-    static let refreshIntervalMinutes = 5
-
-    /// Whichever cadence the current state calls for.
-    private var currentInterval: Duration {
-        let hasRunningChecks = store?.perContainer.values
-            .contains { $0.checks?.conclusion == .pending } ?? false
-        return hasRunningChecks ? activeInterval : idleInterval
+    /// - Checks running: a run that finishes in a couple of minutes should
+    ///   not read as running well after it stopped.
+    /// - An open request: it is what a merge moves to Ready to Clean Up.
+    /// - No request: one may be opened, which matters less soon.
+    /// - A merged or closed request: nothing is left to wait for. Coming back
+    ///   to the app and a turn's end still look it up, which is how a reopened
+    ///   one is found.
+    static func recurringInterval(for info: PRInfo?) -> TimeInterval? {
+        guard let info else { return noRequestInterval }
+        guard info.state == .open else { return nil }
+        return info.checks?.conclusion == .pending ? pollInterval : openRequestInterval
     }
+
+    private static let openRequestInterval: TimeInterval = 90
+    private static let noRequestInterval: TimeInterval = 300
 
     /// Per-container floor between focus-driven fetches, so rapid app
     /// switching cannot issue one CLI call per row per switch.
@@ -142,10 +135,10 @@ final class PRStatusSyncer {
 
     private var recurringTask: Task<Void, Never>?
 
-    /// How often the recurring task wakes to reconsider. Equal to the
-    /// active cadence, which is the shortest interval it ever has to
-    /// honor — waking more often would decide nothing sooner.
-    private static let pollGranularity: Duration = .seconds(45)
+    /// How often the recurring task wakes to reconsider, the shortest
+    /// `recurringInterval`: waking more often would decide nothing sooner.
+    private static let pollInterval: TimeInterval = 45
+    private static let pollGranularity: Duration = .seconds(pollInterval)
 
     /// AppKit observer token. Held with `nonisolated(unsafe)` so the
     /// nonisolated `deinit` can remove it; every mutation site
@@ -234,36 +227,21 @@ final class PRStatusSyncer {
         }
     }
 
-    /// Wake on a fixed granularity and tick once enough of it has
-    /// accumulated, rather than sleeping for the whole interval.
-    ///
-    /// A single long sleep can't answer a cadence change that happens
-    /// while it is under way: a focus tick that finds a run in flight
-    /// wants the fast rhythm now, not when the idle sleep it already
-    /// committed to expires. Canceling and re-arming the task would
-    /// shorten it, but cancellation reaches whatever `tick` that task
-    /// is running, and a canceled `runTool` gives no answer — so the
-    /// tick would leave the very rows it was refreshing as they were.
-    /// Waking often and deciding cheaply has
-    /// no such edge: nothing is interrupted, and a wake that does not
-    /// tick costs one comparison.
+    /// Wake on a fixed granularity and let each row decide whether it is
+    /// due (`isDue`), rather than sleeping for one interval: rows differ, and
+    /// a row's interval moves as its request does. A wake looks up only the
+    /// rows that are due, so waking often costs no CLI.
     private func scheduleRecurring() {
         recurringTask?.cancel()
         recurringTask = Task { [weak self] in
-            var waited: Duration = .zero
             while !Task.isCancelled {
                 try? await Task.sleep(for: Self.pollGranularity)
                 // `self` is only reached after the sleep so the task
                 // does not hold the syncer alive across it.
                 guard !Task.isCancelled, let self else { return }
-                waited += Self.pollGranularity
-                // Every wake rather than on the cadence: a request shown for
-                // a branch the checkout has left is wrong, not just old.
+                // A request shown for a branch the checkout has left is
+                // wrong, not just old.
                 await recheckLeftBranches()
-                // Re-read every wake: the cadence moves in both
-                // directions as runs start and finish.
-                guard waited >= currentInterval else { continue }
-                waited = .zero
                 await tick(reason: .recurring)
             }
         }
@@ -287,11 +265,13 @@ final class PRStatusSyncer {
             // sets: alt-tabbing back. The others pace themselves —
             // `.recurring` *is* the pace, and `.initial` runs once.
             //
-            // Flooring `.recurring` would also put the active cadence
-            // out of reach: 45s rounds against a 60s floor refetch
-            // every 90s, watching a CI run at half the rate this file
-            // claims.
+            // Flooring `.recurring` would also slow a row with checks
+            // running: 45s rounds against a 60s floor refetch every 90s,
+            // watching a CI run at half the rate `recurringInterval` gives.
             if reason == .focus, !shouldFetch(container: target.container, now: now) {
+                continue
+            }
+            if reason == .recurring, !isDue(target.container, now: now) {
                 continue
             }
             // The other worktrees on their own, slower pace, whatever woke
@@ -458,6 +438,16 @@ final class PRStatusSyncer {
         await requestLookup(container, invalidatesForges: true)
     }
 
+    /// An agent's turn ended in `container`: looked up at once, as a turn is
+    /// often what opened or merged the request. Turns come at a person's pace,
+    /// and the floor would miss a merge right after an earlier lookup. The
+    /// forge is not re-read, as nothing says it changed.
+    func turnEnded(in container: ContainerID) {
+        Task { [weak self] in
+            await self?.requestLookup(container, invalidatesForges: false)
+        }
+    }
+
     // MARK: - Lookup
 
     /// Look `container`'s request up, or, while a lookup for it is running,
@@ -547,7 +537,7 @@ final class PRStatusSyncer {
     /// since.
     ///
     /// A checkout switched to another branch keeps its row and so its
-    /// stored request, and the next tick can be five minutes away; until
+    /// stored request, and its next lookup can be minutes away; until
     /// then the row would show the previous branch's request, number, and
     /// CI. Checked on every wake, since it compares maps and runs the CLI
     /// only for the rows whose branch moved, once per move.
@@ -566,6 +556,20 @@ final class PRStatusSyncer {
             await requestLookup(container, invalidatesForges: false)
             guard !Task.isCancelled else { return }
         }
+    }
+
+    /// Whether a recurring wake looks `container` up. A lookup a turn's end or
+    /// the app's focus started can fall just short of a wake, so half a wake is
+    /// forgiven: without it, the row would wait a whole wake more for a few
+    /// seconds' difference.
+    private func isDue(_ container: ContainerID, now: Date) -> Bool {
+        Self.isDue(info: store?.info(for: container), lastFetch: lastFetchAt[container], now: now)
+    }
+
+    static func isDue(info: PRInfo?, lastFetch: Date?, now: Date) -> Bool {
+        guard let interval = recurringInterval(for: info) else { return false }
+        guard let lastFetch else { return true }
+        return now.timeIntervalSince(lastFetch) >= interval - pollInterval / 2
     }
 
     private func shouldFetch(container: ContainerID, now: Date) -> Bool {

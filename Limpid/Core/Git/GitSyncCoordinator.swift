@@ -5,8 +5,8 @@
 // Lifecycle:
 //   - Watches `WorkspaceSession.projects` (via `observeRepeatedly`) and
 //     installs/removes a per-Project sync as projects come and go.
-//   - Each per-Project sync runs an initial fetch, then watches the
-//     repo's `.git` directory via FSEvents to re-fetch on demand.
+//   - Each per-Project sync runs an initial fetch, then re-fetches on
+//     demand (`ProjectSync.start` lists the triggers).
 //   - When `git worktree list` reports a worktree set that differs
 //     from what's stored, we reconcile: keep user-pinned items
 //     untouched, add new git-detected worktrees, drop ones that no
