@@ -49,11 +49,11 @@ struct StateGlyphTests {
     // MARK: - What the environment says
 
     /// The glyph draws what its environment asks for: Reduce Motion stops
-    /// the arc, Increase Contrast reaches the face, and a lit row's ink
-    /// stands in for the accent.
+    /// the arc, Increase Contrast reaches the face, and an override stands
+    /// in for the accent.
     @Test func theEnvironment_reachesTheFace() {
         func face(reduceMotion: Bool = false, contrast: ColorSchemeContrast = .standard, ink: Color? = nil) -> StateGlyphFace {
-            StateGlyph(kind: .unread, inkOnAccentFill: ink)
+            StateGlyph(kind: .unread, unreadInkOverride: ink)
                 .face(isReduceMotionOn: reduceMotion, contrast: contrast, accent: .purple)
         }
         #expect(face().isTurning)
@@ -63,7 +63,7 @@ struct StateGlyphTests {
         #expect(face(ink: .white).unreadInk == .white)
     }
 
-    /// Without a lit row the unread glyph is drawn in the accent the
+    /// Without an override the unread glyph is drawn in the accent the
     /// environment carries, moved to an icon's contrast as the focus ring's
     /// is, for every accent in light and dark.
     @Test(arguments: AccentColor.allCases)

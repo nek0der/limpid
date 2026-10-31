@@ -6,7 +6,7 @@ import SwiftUI
 /// A button that rewrites the person's files: "Restore Code", "Restore
 /// Code to Before This Turn…", and the review's hunk discard. One
 /// look for all of them, so the person learns it once: the window's
-/// bordered button with its title in the stop color,
+/// bordered button with its title in `PopoverInk.stoppedText`,
 /// filled on hover like every other bordered button. Not filled at rest,
 /// so it never reads as the bar's primary button.
 struct SupervisionDestructiveButtonStyle: ButtonStyle {

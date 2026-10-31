@@ -281,17 +281,16 @@ struct SupervisionMenuBarContent: View {
             menuWindow.window = window
             applySystemAppearance(to: window)
         })
-        // The system's menu: its material ground, its accent under
-        // the row the keys or the pointer are on, and the system's labels
-        // for the words (`PopoverSurface.systemMenu`).
+        // The system's menu: its material ground, a fill in its labels' ink
+        // under the row the keys or the pointer are on, and the system's
+        // labels for the words (`PopoverSurface.systemMenu`).
         .environment(\.popoverSurface, .systemMenu)
-        // The primary button takes the person's accent from the settings,
-        // and the unread glyph the same accent: the extra's window is not
-        // under the main windows' environment that carries it. Only
-        // `\.weirAccent`, not `weirAccentPropagated`'s tint: the menu
-        // keeps the system's controls and its own accent highlight.
+        // The primary button and the focus ring take the person's accent
+        // from the settings: the extra's window is not under the main
+        // windows' environment that carries them. Not
+        // `weirAccentPropagated`'s tint: the menu keeps the system's
+        // controls and its own accent highlight.
         .environment(state.settingsStore)
-        .environment(\.weirAccent, WeirColor.accent(for: state.settingsStore.settings.appearance.accentColor))
         // SwiftUI resolves every color here, the tokens' dynamic `NSColor`s
         // included, against its own color scheme, which the extra's hosting
         // view takes from the app's pinned appearance rather than from the
@@ -381,9 +380,11 @@ struct SupervisionMenuBarContent: View {
 
 /// One item: the list's row, and under it, outside the row's fill, the
 /// command in full, why the menu does not answer it, and the buttons that
-/// settle it in place, left-aligned on one line with only the primary
-/// blue and a refusal red. The row's fill marks only what opening the
-/// row goes to; VoiceOver reaches each button under it as its own element.
+/// settle it in place, left-aligned on one line with only the primary in
+/// color, and Answer… at that line's end: every control of the item on one
+/// line, in the order Tab goes through them, and every row's fill and time
+/// as wide as the others'. The row's fill marks only what opening the row
+/// goes to; VoiceOver reaches each button under it as its own element.
 private struct MenuBarRow: View {
     let item: MenuBarModel.Item
     let now: Date
@@ -404,10 +405,8 @@ private struct MenuBarRow: View {
                 row: item.row,
                 now: now,
                 isSelected: isSelected,
-                isActionSelected: item.row.action.map { selectedControl == .rowAction($0) } ?? false,
                 openHint: hint,
-                onOpen: open,
-                onAction: { item.row.action.map { press(.rowAction($0)) } }
+                onOpen: open
             )
             if hasInPlace {
                 inPlace
@@ -421,7 +420,7 @@ private struct MenuBarRow: View {
     }
 
     private var hasInPlace: Bool {
-        item.command != nil || item.note != nil || !item.actions.isEmpty
+        item.command != nil || item.note != nil || !item.actions.isEmpty || item.row.action != nil
     }
 
     /// In line with the row's words, past its state glyph.
@@ -446,10 +445,14 @@ private struct MenuBarRow: View {
                     .foregroundStyle(ink.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if !item.actions.isEmpty {
+            if !item.actions.isEmpty || item.row.action != nil {
                 HStack(spacing: WeirLayout.Supervision.spaceS) {
                     ForEach(Array(item.actions.enumerated()), id: \.offset) { _, action in
                         button(action)
+                    }
+                    Spacer(minLength: 0)
+                    if let action = item.row.action {
+                        rowActionButton(action)
                     }
                 }
             }
@@ -475,6 +478,16 @@ private struct MenuBarRow: View {
         .supervisionFocusRing(isFocused: selectedControl == .inPlace(action), cornerRadius: WeirLayout.Supervision.buttonCornerRadius)
         // The control Return presses, said as the ring shows it.
         .accessibilityAddTraits(selectedControl == .inPlace(action) ? .isSelected : [])
+    }
+
+    private func rowActionButton(_ action: NeedsAttentionListModel.RowAction) -> some View {
+        Button(NeedsAttentionRowView.title(action)) { press(.rowAction(action)) }
+            .buttonStyle(.supervisionSecondary)
+            .supervisionFocusRing(
+                isFocused: selectedControl == .rowAction(action),
+                cornerRadius: WeirLayout.Supervision.buttonCornerRadius
+            )
+            .accessibilityAddTraits(selectedControl == .rowAction(action) ? .isSelected : [])
     }
 
     private var hint: LocalizedStringResource {
