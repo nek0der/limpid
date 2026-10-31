@@ -891,16 +891,14 @@ extension SessionSidebarModelTests {
         #expect(!SessionSidebarModel.offersRemoveFromWorking(selectedRow, worktree: madeWorktree, hasTabs: false))
     }
 
-    /// The folder's row is named as any row is, so its tag says it is the
-    /// repository, whatever its second line says; its tooltip and VoiceOver
-    /// say so in words. Its line at rest states its Git facts, as any
-    /// row's does.
+    /// The folder's row is named as any row is, and its tooltip and VoiceOver
+    /// say in words that it is the repository. Its line at rest
+    /// states its Git facts, as any row's does.
     @Test func theFoldersRow_saysItIsTheRepository() throws {
         let (session, project) = Self.project()
         let folder = try #require(Self.model(session, project).rows.first { $0.isMainFolder })
 
         #expect(folder.factText == "Idle")
-        #expect(SessionRowFactText.repositoryTag.resolved(in: Self.japanese) == "リポジトリ")
         #expect(SessionRowFactText.tooltip(for: folder, now: .now, locale: Self.english) == "main · Repository folder")
         let spoken = SessionRowFactText.spokenLabel(for: folder, projectName: "limpid", now: .now, locale: Self.english)
         #expect(spoken == "Shell, main, limpid, Repository folder, Idle", "\(spoken); a shell says Shell once")

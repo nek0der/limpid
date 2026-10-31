@@ -48,24 +48,4 @@ struct ProjectOrderTests {
         #expect(ProjectOrder.movedToTop(Self.c, in: [Self.a, Self.b, Self.c]) == [Self.c, Self.a, Self.b])
         #expect(ProjectOrder.movedToTop(Self.a, in: [Self.a, Self.b]) == [Self.a, Self.b])
     }
-
-    /// A header dropped lands at the line: before the header under the
-    /// pointer, or after it.
-    @Test func aDroppedHeader_landsBeforeOrAfterTheOneItWasDroppedOn() {
-        let order = [Self.a, Self.b, Self.c, Self.d]
-        #expect(ProjectOrder.dropped(Self.d, on: Self.b, isAfter: false, in: order) == [Self.a, Self.d, Self.b, Self.c])
-        #expect(ProjectOrder.dropped(Self.a, on: Self.c, isAfter: true, in: order) == [Self.b, Self.c, Self.a, Self.d])
-        #expect(ProjectOrder.dropped(Self.a, on: Self.d, isAfter: true, in: order) == [Self.b, Self.c, Self.d, Self.a])
-        #expect(ProjectOrder.dropped(Self.c, on: Self.a, isAfter: false, in: order) == [Self.c, Self.a, Self.b, Self.d])
-    }
-
-    /// Dropped where it is already, a header moves nothing: the drop line is
-    /// not drawn there.
-    @Test func aHeaderDroppedWhereItIs_movesNothing() {
-        let order = [Self.a, Self.b, Self.c]
-        #expect(ProjectOrder.dropped(Self.b, on: Self.b, isAfter: true, in: order) == order)
-        #expect(ProjectOrder.dropped(Self.b, on: Self.c, isAfter: false, in: order) == order)
-        #expect(ProjectOrder.dropped(Self.b, on: Self.a, isAfter: true, in: order) == order)
-        #expect(ProjectOrder.dropped(Self.b, on: UUID(), isAfter: true, in: order) == order, "on a header the order does not hold")
-    }
 }

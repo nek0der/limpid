@@ -15,10 +15,10 @@ import SwiftUI
 ///
 /// Pressing anywhere on it opens or folds it, ⌥ held for every header; it
 /// never switches the window's project, which a row does. It is dragged
-/// to reorder the projects, and a dragged header drops at a line. A dragged
-/// tab dropped on it goes to the project's repository row; one that rests
-/// on it while it is folded opens it for the drag
-/// (`LimpidMotion.springOpenDelay`), as its ring fills.
+/// to reorder the projects, on a layer over the list
+/// (`SidebarProjectReorderLayer`). A dragged tab dropped on it goes to the
+/// project's repository row; one that rests on it while it is folded opens it
+/// for the drag (`LimpidMotion.springOpenDelay`), as its ring fills.
 struct SidebarProjectHeaderView: View {
     let header: SidebarProjectHeader
     /// The arrow keys are on this header while the sidebar has the keyboard.
@@ -26,52 +26,46 @@ struct SidebarProjectHeaderView: View {
     let actions: SidebarProjectActions
     /// Opens or folds the header; `true` for every header (⌥-click).
     let onToggle: (_ isAll: Bool) -> Void
-    /// What dragging the header carries, and where a dragged one lands.
+    /// What dragging the header does.
     let drag: Drag
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.limpidAccent) private var accent
     @State private var isHovering = false
 
-    /// The drag of the header, and the drop of another on it.
+    /// The drag of the header.
     struct Drag {
         let dragState: LimpidDragState
         /// What a tab or pane dropped on the header does.
         let rowDrop: SidebarRowDrop
-        /// Whether dropping `source` at `position` of this header would
-        /// leave the order as it is.
-        let isNoOp: (_ source: UUID, _ position: DropPosition) -> Bool
-        /// Drops `source` at `position` of this header.
-        let onDrop: (_ source: UUID, _ position: DropPosition) -> Void
+        /// This window drags this header: another window showing the list
+        /// draws no layer, so it keeps its own.
+        let hidesHeader: Bool
+        /// Pressed at this height in the list, with the pointer now at this one.
+        let onMove: (_ startY: CGFloat, _ pointerY: CGFloat) -> Void
     }
 
     private typealias Layout = LimpidLayout.Supervision
 
     var body: some View {
         content
-            .opacity(drag.dragState.currentSourceID == header.id.uuidString ? Layout.draggedItemOpacity : 1)
-            .limpidDraggable(kind: .project, prefix: DragPrefix.project, id: header.id.uuidString, dragState: drag.dragState)
+            // The reorder layer draws it while it is held.
+            .opacity(drag.hidesHeader ? 0 : 1)
+            .gesture(
+                DragGesture(minimumDistance: Layout.sidebarHeaderDragThreshold, coordinateSpace: .named(SidebarProjectDragSurface.space))
+                    .onChanged { drag.onMove($0.startLocation.y, $0.location.y) }
+                    .onEnded { _ in drag.dragState.end() }
+            )
             .reorderableDropTarget(
                 targetID: targetID,
-                acceptedPrefixes: [DragPrefix.project, DragPrefix.tab, DragPrefix.pane],
+                acceptedPrefixes: [DragPrefix.tab, DragPrefix.pane],
                 // A tab dropped here lands on the repository row, which is
                 // marked in its place.
                 assignsOnDrop: true,
                 rowMark: .none,
                 project: project,
-                dropsAtLine: true,
-                isNoOp: { source, position in
-                    drag.dragState.isCarryingToRow
-                        ? drag.rowDrop.refuses(source, on: repositoryRow)
-                        : drag.isNoOp(source, position)
-                },
-                onDrop: { prefix, source, position in
-                    if prefix == DragPrefix.project {
-                        drag.onDrop(source, position)
-                    } else {
-                        drag.rowDrop.drop(prefix: prefix, source, on: repositoryRow)
-                    }
-                }
+                isNoOp: { source, _ in drag.rowDrop.refuses(source, on: repositoryRow) },
+                onDrop: { prefix, source, _ in drag.rowDrop.drop(prefix: prefix, source, on: repositoryRow) }
             )
             // The wait before a folded header opens under a resting tab;
             // the tab moving off it, or the drag ending, cancels it.

@@ -23,7 +23,8 @@ enum LimpidMotion {
 
     /// Reordering rows in the sidebar via menu Move Up/Down or drop
     /// commit — deliberate enough that the user sees the row settle.
-    static let reorder: Animation = paced(.easeInOut(duration: 0.2))
+    static let reorderDuration: TimeInterval = 0.2 * pace
+    static let reorder: Animation = .easeInOut(duration: reorderDuration)
     /// Live drag follow-along: rows yielding their slot as the cursor
     /// moves over them. Needs to feel attached to the pointer, so
     /// snappier curve + shorter duration than `reorder`.
@@ -96,7 +97,8 @@ enum LimpidMotion {
     /// Same curve at `dropExited`, the drop-update slot move, and the
     /// `LimpidDragState.end()` safety-net restore so the
     /// safety-net path and the real exit stay in lockstep.
-    static let dropIndicator: Animation = paced(.easeInOut(duration: 0.12))
+    static let dropIndicatorDuration: TimeInterval = 0.12 * pace
+    static let dropIndicator: Animation = .easeInOut(duration: dropIndicatorDuration)
 
     /// How long a dragged tab or pane rests on a folded project's header before the
     /// header opens under it: long enough that a tab passing over the

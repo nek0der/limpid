@@ -9,13 +9,14 @@
 //
 // In addition, a global `LimpidDragState` holds the kind of drag in flight
 // (worktree / tab / project / pane) so each drop target can declare the kinds it
-// `accepts`. Unaccepted kinds return `.forbidden` and the insertion-line
-// indicator is suppressed.
+// `accepts`. Unaccepted kinds return `.forbidden` and take no drop mark. A
+// dragged project has no drop target: it is here for the sections' hold and
+// the mouse-up.
 
 import OSLog
 import SwiftUI
 
-/// Module-internal so the four sidebar `.draggable` sites can log
+/// Module-internal so the sidebar's `.draggable` sites can log
 /// drag-start events through a single category (`sidebar.drag`) —
 /// surfaces in `log show --predicate 'subsystem == "dev.limpid"'`
 /// so the user can confirm a drag session actually starts.
@@ -25,7 +26,6 @@ let limpidDragLog = Logger.limpid("sidebar.drag")
 /// carries.
 enum DragPrefix {
     static let tab = "tab:"
-    static let project = "project:"
     static let worktree = "worktree:"
     static let pane = "pane:"
 }
@@ -33,7 +33,7 @@ enum DragPrefix {
 // MARK: - SidebarDragPayload (Transferable)
 
 /// Transferable payload used by every sidebar draggable row (tab,
-/// project, worktree). macOS 26 regressed the legacy
+/// worktree). macOS 26 regressed the legacy
 /// `.onDrag { NSItemProvider(object: NSString) }` path — drags
 /// silently never start. `.draggable(Transferable)` is the
 /// supported route. We keep the existing "`<prefix>:<uuid>`" wire
@@ -107,9 +107,9 @@ extension View {
 
 /// Drag preview for the shared `.draggable` rows. A tab shows a chip with
 /// its name, since it can move to a different container and the person has
-/// to see what they carry; project / worktree only reorder in place and
-/// keep the transparent rect, non-empty only because macOS 26 won't start
-/// a drag from an invisible snapshot.
+/// to see what they carry; a worktree only reorders in place and keeps the
+/// transparent rect, non-empty only because macOS 26 won't start a drag from
+/// an invisible snapshot.
 @MainActor @ViewBuilder
 private func limpidDragPreview(tabTitle: String?) -> some View {
     if let tabTitle {
@@ -125,11 +125,10 @@ private func limpidDragPreview(tabTitle: String?) -> some View {
 /// @Observable singleton that tracks the current in-flight drag kind.
 ///
 /// SwiftUI's `.onDrop` may skip `dropExited` when a drop is forbidden or
-/// rejected, leaving stale insertion-line indicators. `begin()` installs
-/// global/local `NSEvent` mouse-up monitors and `watchForRelease`, which
-/// covers the release they never see, so every drag reaches `end()` and
-/// resets `current` to nil. Views observe `current` via `onChange` to clear
-/// their indicators.
+/// rejected, leaving a stale drop mark. `begin()` installs global/local
+/// `NSEvent` mouse-up monitors and `watchForRelease`, which covers the
+/// release they never see, so every drag reaches `end()` and resets `current`
+/// to nil. Views observe `current` via `onChange` to clear their marks.
 @MainActor
 @Observable
 final class LimpidDragState {
@@ -151,9 +150,8 @@ final class LimpidDragState {
 
     /// Identifier of the in-flight payload. Lets drop targets skip the
     /// "would be a no-op" cases (dropping a row right before itself,
-    /// dragging the bottom item to "end of list", etc.) so the insertion
-    /// indicator only appears where releasing the mouse actually moves
-    /// the item. Lives on the @MainActor instance so we don't need a
+    /// dragging the bottom item to "end of list", etc.) so the drop mark
+    /// only appears where releasing the mouse actually moves the item. Lives on the @MainActor instance so we don't need a
     /// `nonisolated(unsafe)` escape — drop targets reach it through
     /// the same `@Environment(LimpidDragState.self)` they use for
     /// `current` / `hoverTargetID`.
@@ -161,7 +159,7 @@ final class LimpidDragState {
 
     /// Which drop target currently has the cursor over it. Each row in
     /// a reorderable list registers itself with a unique string here so
-    /// only the hovered row paints the insertion line — and so a single
+    /// only the hovered row paints the drop mark — and so a single
     /// `end()` from the mouse-up monitor wipes the indicator regardless
     /// of how SwiftUI's drop lifecycle terminated.
     var hoverTargetID: String?
@@ -219,6 +217,8 @@ final class LimpidDragState {
     /// never puts out the light of the next.
     private var cancelLandingFade: (@MainActor () -> Void)?
 
+    /// Runs as the drag ends (`begin`).
+    private var onEnd: (() -> Void)?
     private var globalMonitor: Any?
     private var localMonitor: Any?
     /// Ends a drag that AppKit let go of without telling us
@@ -239,12 +239,15 @@ final class LimpidDragState {
         self.timer = timer
     }
 
-    func begin(_ kind: Kind, sourceID: String? = nil) {
+    /// `onEnd` runs as the drag ends, however it does. A view watching
+    /// `current` could miss a drag that began and ended between two updates.
+    func begin(_ kind: Kind, sourceID: String? = nil, onEnd: (() -> Void)? = nil) {
         current = kind
         currentSourceID = sourceID
         // A drop that never landed, whose payload could not be read, holds
         // nothing open past the next drag.
         keptOpenProject = nil
+        self.onEnd = onEnd
         installMouseUpMonitor()
         watchForRelease()
     }
@@ -286,6 +289,9 @@ final class LimpidDragState {
             carriedOverProject = nil
         }
         removeMouseUpMonitor()
+        let onEnd = onEnd
+        self.onEnd = nil
+        onEnd?()
     }
 
     // MARK: - A tab over the sidebar's projects

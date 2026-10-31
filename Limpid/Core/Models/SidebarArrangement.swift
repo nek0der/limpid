@@ -178,10 +178,13 @@ struct SidebarArrangement: Codable, Equatable, Sendable {
         projectOrder = ProjectOrder.movedToTop(projectID, in: ordered(projects))
     }
 
-    /// Moves `projectID`'s header to where it was dropped on `target`'s:
-    /// before it, or after it (`isAfter`).
-    mutating func drop(_ projectID: UUID, on target: UUID, isAfter: Bool, among projects: [UUID]) {
-        projectOrder = ProjectOrder.dropped(projectID, on: target, isAfter: isAfter, in: ordered(projects))
+    /// Writes the order a drag made. A project that came or went while it
+    /// ran is met as `ordered` meets any: gone from the order, or at its end.
+    mutating func setOrder(_ order: [UUID], among projects: [UUID]) {
+        let present = Set(projects)
+        let kept = order.filter(present.contains)
+        let listed = Set(kept)
+        projectOrder = kept + projects.filter { !listed.contains($0) }
     }
 
     /// Folds (`true`) or opens every header of `projects`: ⌥-click.

@@ -77,36 +77,42 @@ struct SessionRowView: View {
                 .padding(.top, LimpidLayout.Supervision.spaceHairline)
             VStack(alignment: .leading, spacing: Layout.sessionRowLineSpacing) {
                 HStack(spacing: Layout.sessionRowColumnSpacing) {
-                    InlineRenameField(
-                        name: row.name,
-                        isEditing: $isRenaming,
-                        // One weight whether or not the row is open, so
-                        // opening it does not move where its name is cut;
-                        // the fill says which row is open.
-                        font: .supervision(.label, weight: .medium),
-                        foregroundColor: isDropTarget ? accent : SupervisionTokens.text.color,
-                        onRename: onRename,
-                        // The repository's tag follows the name rather
-                        // than the column, so the name keeps only its own
-                        // width.
-                        fillsWidth: !row.isMainFolder,
-                        // A branch keeps both ends; a conversation's name
-                        // and one the person gave keep their start.
-                        truncationMode: Text.TruncationMode(row.nameTruncation),
-                        // Clearing the name hands the row back to the name
-                        // it would have without one.
-                        submitsEmptyName: true,
-                        fieldName: "Worktree label",
-                        // The field edits the row's label, never its
-                        // branch: a row with no label starts empty, under
-                        // the name it goes by.
-                        editsFrom: row.label ?? "",
-                        prompt: row.label == nil ? row.name : nil
-                    )
-                    .lineLimit(1)
+                    // The mark belongs to the name, so it sits closer than
+                    // the next column does.
+                    HStack(spacing: Layout.spaceXS) {
+                        InlineRenameField(
+                            name: row.name,
+                            isEditing: $isRenaming,
+                            // One weight whether or not the row is open, so
+                            // opening it does not move where its name is cut;
+                            // the fill says which row is open.
+                            font: .supervision(.label, weight: .medium),
+                            foregroundColor: isDropTarget ? accent : SupervisionTokens.text.color,
+                            onRename: onRename,
+                            // The repository's mark follows the name rather
+                            // than the column, so the name keeps only its own
+                            // width.
+                            fillsWidth: !row.isMainFolder,
+                            // A branch keeps both ends; a conversation's name
+                            // and one the person gave keep their start.
+                            truncationMode: Text.TruncationMode(row.nameTruncation),
+                            // Clearing the name hands the row back to the name
+                            // it would have without one.
+                            submitsEmptyName: true,
+                            fieldName: "Worktree label",
+                            // The field edits the row's label, never its
+                            // branch: a row with no label starts empty, under
+                            // the name it goes by.
+                            editsFrom: row.label ?? "",
+                            prompt: row.label == nil ? row.name : nil
+                        )
+                        .lineLimit(1)
+                        if row.isMainFolder {
+                            RepositoryMark()
+                                .help(Text(verbatim: tooltip))
+                        }
+                    }
                     if row.isMainFolder {
-                        RepositoryTag()
-                            .help(Text(verbatim: tooltip))
                         Spacer(minLength: 0)
                     }
                     // At least the shared column; Answer… may widen it and
@@ -345,20 +351,16 @@ struct SessionRowView: View {
     }
 }
 
-/// The tag beside the name of the project's own folder's row: what the
-/// row is, not a state, so it stays whatever the row's lines say. Outlined
-/// rather than filled, as the usage limit's chip is, so it reads on the
-/// open row's fill too. VoiceOver reads it in the row's label.
-private struct RepositoryTag: View {
+/// The mark after the name of the project's own folder's row: what the row
+/// is, not a state, so it stays whatever the row's lines say. A symbol rather
+/// than a word, so a long branch loses only its width. The tooltip says it in
+/// words, and VoiceOver reads them in the row's label.
+private struct RepositoryMark: View {
     var body: some View {
-        Text(SessionRowFactText.repositoryTag)
+        Image(systemName: "house")
             .font(.supervision(.micro, weight: .medium))
             .foregroundStyle(SupervisionTokens.muted.color)
-            .lineLimit(1)
-            .fixedSize()
-            .padding(.horizontal, LimpidLayout.Supervision.spaceSnug)
-            .padding(.vertical, 1)
-            .overlay(Capsule().strokeBorder(SupervisionTokens.muted.color.opacity(0.5), lineWidth: 1))
+            .accessibilityHidden(true)
     }
 }
 

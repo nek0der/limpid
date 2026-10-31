@@ -51,17 +51,6 @@ enum ProjectOrder {
         return next
     }
 
-    /// `order` with `id` dropped on `target`'s header: before it, or after
-    /// it (`isAfter`), where the line was drawn. Unchanged for a header
-    /// dropped on itself.
-    static func dropped(_ id: UUID, on target: UUID, isAfter: Bool, in order: [UUID]) -> [UUID] {
-        guard id != target else { return order }
-        guard isAfter else { return moved(id, before: target, in: order) }
-        let rest = order.filter { $0 != id }
-        guard let index = rest.firstIndex(of: target) else { return order }
-        return moved(id, before: rest.indices.contains(index + 1) ? rest[index + 1] : nil, in: order)
-    }
-
     /// Whether `id` can move up (`offset` −1) or down (+1) in `order`: the
     /// menu's Move Up on the first header is off.
     static func canMove(_ id: UUID, by offset: Int, in order: [UUID]) -> Bool {

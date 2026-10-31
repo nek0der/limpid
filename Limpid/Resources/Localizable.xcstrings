@@ -8386,23 +8386,6 @@
         }
       }
     },
-    "Repository": {
-      "comment": "Sidebar: the tag beside the name of the project's own folder's row, which the worktrees are made from",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Repository"
-          }
-        },
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "リポジトリ"
-          }
-        }
-      }
-    },
     "Repository folder": {
       "comment": "Sidebar row tooltip and VoiceOver: the row is the project's own folder, the repository the worktrees are made from",
       "localizations": {

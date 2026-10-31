@@ -102,6 +102,9 @@ final class ProjectWindowState: Identifiable {
     /// project's, since it lists every project
     /// (`ProjectScrollMemory`).
     @ObservationIgnored var sidebarVisibleLines: Set<SidebarItemID> = []
+    /// The lines in sight by the scroll view's account but cut by the header
+    /// pinned over them: a row among them still has to be brought into view.
+    @ObservationIgnored var sidebarCoveredLines: Set<SidebarItemID> = []
     /// The pointer is over the sidebar. With the keyboard in the sidebar
     /// and a drag, one of the holds on its sections (`SidebarSectionHold`).
     var isPointerInSidebar = false

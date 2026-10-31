@@ -627,15 +627,18 @@ enum LimpidLayout {
         /// A project's header (`[mark] name ─── count ▽`): one line, taller
         /// than a fold line, so each project reads as starting there.
         static let sidebarProjectHeaderHeight: CGFloat = 28
-        /// Above each header but the first: the clear space that, with the
-        /// header's rule, marks where one project ends and the next begins.
+        /// Under each project but the last: the clear space that, with the
+        /// next header's rule, marks where one project ends and the next begins.
         static let sidebarProjectGap = spaceSnug
+        /// From one header to the next on the reorder layer, as far apart as
+        /// `SidebarProjectSection` lays folded headers out.
+        static let sidebarFoldedHeaderStep = sidebarProjectHeaderHeight + sidebarProjectGap + sessionRowSpacing
+        /// How far a header is pulled before it is a drag rather than a click.
+        static let sidebarHeaderDragThreshold: CGFloat = 4
         /// The header's project mark, a step under the title bar's.
         static let sidebarProjectAvatarSize: CGFloat = 17
         /// What waits inside a folded header, drawn at the glyph's smallest.
         static let sidebarHeaderMarkSize = stateGlyphCompactSize
-        /// The line a dragged header would land on.
-        static let sidebarDropLineHeight: CGFloat = 2
         static let sessionRowSpacing = spaceHairline
         static let sessionRowCornerRadius: CGFloat = 7
         /// Between the glyph, the text, and the fixed column; and between
