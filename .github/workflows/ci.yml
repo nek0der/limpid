@@ -17,9 +17,48 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Actions has no fail-fast across the jobs of a run, and `needs` would put the
+  # shortest jobs in front of the longest. So a pull request's run watches itself
+  # and stops at its first failure, which frees the macOS runners for other runs.
+  # `main` is left out: the run for each of its commits has to finish and save
+  # its build. A fork is left out too: its read-only token cannot cancel a run.
+  # This is its own job because canceling takes `actions: write`, which the jobs
+  # running a pull request's code should not hold. A run that goes on only costs
+  # time, so a failure here does not fail the run. The job polls every 30 seconds
+  # because all of this repository's runs share the token's limit of 1,000
+  # requests an hour.
+  stop-on-failure:
+    name: Stop the run on a failure
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    continue-on-error: true
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel the run when a job fails
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          while true; do
+            # A failed read says nothing about the jobs, so the loop waits for the next one.
+            if states=$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+              --jq '.jobs[] | select(.name != "Stop the run on a failure") | .conclusion // "running"'); then
+              if grep -qE '^(failure|timed_out)$' <<<"$states"; then
+                gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY"
+                exit
+              fi
+              # An empty list means the other jobs are not listed yet, not that they finished.
+              [ -z "$states" ] || grep -q '^running$' <<<"$states" || exit 0
+            fi
+            sleep 30
+          done
+
   rust:
     name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # This lets every OS finish on `main`. On a pull request, `stop-on-failure`
+    # stops the run at the first failure anyway.
     strategy:
       fail-fast: false
       matrix:
@@ -45,7 +84,8 @@ jobs:
 
   # The two build jobs do not wait for SwiftFormat and SwiftLint: those take
   # under a minute, and waiting put that minute in front of the longest job.
-  # A lint failure still fails the run. Review core still waits, so no more
+  # A lint failure still fails the run, and on a pull request it stops these
+  # jobs through `stop-on-failure`. Review core still waits, so no more
   # than five macOS jobs start at once, the limit for this account's plan.
   # A sixth would wait for a free runner, and the one left waiting could be
   # this one.
@@ -102,8 +142,10 @@ jobs:
         if: steps.cache-ghostty.outputs.cache-hit != 'true'
         run: ./scripts/build-ghostty.sh
 
+      # Not on a canceled run: a build stopped partway would be saved under the
+      # key of a complete one, and every later run would hit it.
       - name: Save GhosttyKit.xcframework cache
-        if: always() && steps.cache-ghostty.outputs.cache-hit != 'true' && hashFiles('vendor/ghostty/macos/GhosttyKit.xcframework/**') != ''
+        if: ${{ !cancelled() && steps.cache-ghostty.outputs.cache-hit != 'true' && hashFiles('vendor/ghostty/macos/GhosttyKit.xcframework/**') != '' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: vendor/ghostty/macos/GhosttyKit.xcframework
@@ -119,6 +161,11 @@ jobs:
       # `project.yml` stays out of the key: release-please changes its version
       # on every release, and Xcode checks the restored packages against
       # `project.yml` anyway.
+      #
+      # The key names the checkout path because SwiftPM records each package
+      # artifact's absolute path in `workspace-state.json` and Xcode looks
+      # nowhere else. Renaming the repository moves the checkout, and a cache
+      # from the old path then fails the build.
       - name: Restore Cargo and SwiftPM caches
         id: cache-deps
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
@@ -127,26 +174,28 @@ jobs:
             ~/.cargo/registry
             build/DerivedData/Build/Intermediates.noindex/cargo-target
             build/DerivedData/SourcePackages
-          key: build-deps-v1-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: build-deps-v1-${{ runner.os }}-
+          key: build-deps-v1-${{ runner.os }}-${{ github.workspace }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: build-deps-v1-${{ runner.os }}-${{ github.workspace }}-
 
       # A pull request builds on the last build of `main`, so it compiles what
       # it changed and what depends on that. Xcode judges a restored
       # DerivedData by file dates, which a fresh checkout resets, so the
       # sources take a date from their content first. Xcode's compilation
       # cache could not do this job: one changed file invalidates its whole
-      # module. The checkout path is the same on every runner.
+      # module.
       - name: Date the sources by their content
         run: scripts/stamp-source-times.sh
 
       # A restored build keeps its precompiled C modules even when a header
       # they came from changes, which fails the build or, worse, leaves an
       # unchanged Swift caller on the old signature. So the key names those
-      # headers, and a pull request that changes one builds clean.
+      # headers, and a pull request that changes one builds clean. It names the
+      # checkout path too: a build records absolute paths throughout, so one
+      # made at another path is not worth restoring.
       - name: Name the restored build
         id: build-key
         env:
-          PREFIX: derived-data-v1-${{ runner.os }}-${{ steps.xcode.outputs.build }}-${{ steps.ghostty-src.outputs.sha }}-${{ hashFiles('rust/weir-rust-bridge/include/**') }}
+          PREFIX: derived-data-v1-${{ runner.os }}-${{ github.workspace }}-${{ steps.xcode.outputs.build }}-${{ steps.ghostty-src.outputs.sha }}-${{ hashFiles('rust/weir-rust-bridge/include/**') }}
         run: printf 'prefix=%s\n' "$PREFIX" >> "$GITHUB_OUTPUT"
 
       - name: Restore the last build of main
@@ -199,8 +248,9 @@ jobs:
           path: build/DerivedData/Build
           key: ${{ steps.build-key.outputs.prefix }}-${{ github.sha }}
 
+      # Not on a canceled run, for the same reason as the libghostty cache.
       - name: Save Cargo and SwiftPM caches
-        if: always() && steps.cache-deps.outputs.cache-hit != 'true'
+        if: ${{ !cancelled() && steps.cache-deps.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
@@ -213,7 +263,7 @@ jobs:
       # and printed to the log as well as the job summary, which the API
       # cannot read.
       - name: Build timing summary
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           {
             echo "## Build timing"
@@ -251,7 +301,7 @@ jobs:
           plutil -lint "$SERVICE_PLIST"
 
       - name: Upload xcresult bundle
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: Weir.xcresult
@@ -259,7 +309,7 @@ jobs:
           retention-days: 14
 
       - name: Coverage summary
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           {
             echo "## Coverage report"
