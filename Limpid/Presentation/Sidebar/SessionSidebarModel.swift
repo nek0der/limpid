@@ -226,7 +226,8 @@ struct SessionSidebarModel: Equatable {
                 agentKinds: kinds,
                 lastActivity: input.lastActivity,
                 isActive: isActive,
-                isMainFolder: input.container.worktreeID == nil,
+                // The scratch row has no worktree either, and no project.
+                isMainFolder: input.container.projectID != nil && input.container.worktreeID == nil,
                 isMissing: input.isMissing,
                 section: input.section,
                 answerKey: Self.answerKey(input.fact.items),

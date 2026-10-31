@@ -128,13 +128,21 @@ struct SessionSidebarView: View {
             // The sidebar's foot bar, its rule from edge to edge of the
             // surface under the list it closes.
             SidebarFootBar {
-                ScratchRowView(
-                    isActive: model.isScratchActive,
-                    isKeyboardSelected: isFocused && keyboardLine == .row(.loose),
-                    actions: scratchActions
-                ) {
-                    session.setActiveContainer(.loose, in: window.id, intent: .person)
+                // Its tooltip and VoiceOver label state the time, as the
+                // list's rows do.
+                TimelineView(.periodic(from: .now, by: Self.rowClockInterval)) { context in
+                    ScratchRowView(
+                        row: model.scratchRow,
+                        startFolder: scratchStartFolder,
+                        now: rowClock(at: context.date),
+                        isKeyboardSelected: isFocused && keyboardLine == .row(.loose),
+                        actions: scratchActions,
+                        onAnswer: answerAction(model.scratchRow, others: others)
+                    ) {
+                        session.setActiveContainer(.loose, in: window.id, intent: .person)
+                    }
                 }
+                .modifier(ApprovalRowAnchor(requests: answerRequests(of: model.scratchRow)))
                 .modifier(SessionRowDropTarget(container: .loose, project: nil, rowDrop: rowDrop))
             }
         }
@@ -336,10 +344,31 @@ struct SessionSidebarView: View {
                 set: { renamingRow = $0 ? row.id : nil }
             )
         )
-        .modifier(ApprovalRowAnchor(requests: row.answerKey.flatMap { approvals.ledger.entries[$0]?.presentation }.map { [$0] } ?? []))
+        .modifier(ApprovalRowAnchor(requests: answerRequests(of: row)))
         // Every project's rows take a tab; the window stays on its own
         // project (`SidebarRowDrop`).
         .modifier(SessionRowDropTarget(container: row.id, project: project, rowDrop: rowDrop))
+    }
+
+    /// The request the approval card opened for `row` points at it for.
+    private func answerRequests(of row: SessionSidebarModel.Row) -> [ApprovalPresentation] {
+        row.answerKey.flatMap { approvals.ledger.entries[$0]?.presentation }.map { [$0] } ?? []
+    }
+
+    /// How often the rows' times step: they say minutes, so a finer tick
+    /// would only redraw the same text.
+    private static let rowClockInterval: TimeInterval = 60
+
+    /// The time the rows read at `date`: a usage limit's reset moves it on
+    /// without waiting for the next tick.
+    private func rowClock(at date: Date) -> Date {
+        max(date, resetSync?.resetPassedAt ?? date)
+    }
+
+    /// Where a new scratch tab starts, or the home folder when Settings
+    /// follows the active tab and there is none to follow.
+    private var scratchStartFolder: URL {
+        session.scratchStartDirectory(in: window.id) ?? FileManager.default.homeDirectoryForCurrentUser
     }
 
     /// What a tab or pane dragged across this window's sidebar does.
@@ -374,8 +403,8 @@ struct SessionSidebarView: View {
                 // only redraw the same text. A usage limit's chip drops
                 // its reset time as the limit resets, when the sync reads
                 // the limits again.
-                TimelineView(.periodic(from: .now, by: 60)) { context in
-                    let now = max(context.date, resetSync?.resetPassedAt ?? context.date)
+                TimelineView(.periodic(from: .now, by: Self.rowClockInterval)) { context in
+                    let now = rowClock(at: context.date)
                     // A section per project, so its header stays at the
                     // top while its rows pass under it. The rows are the
                     // lazy stack's own lines, so a project of sixty rows is
@@ -530,7 +559,7 @@ struct SessionSidebarView: View {
     private var scratchActions: SessionRowActions {
         SessionRowActions(
             revealInFinder: {
-                let folder = session.scratchStartDirectory(in: window.id) ?? FileManager.default.homeDirectoryForCurrentUser
+                let folder = scratchStartFolder
                 NSWorkspace.shared.activateFileViewerSelecting([folder])
             },
             closeAllTabs: session.tabs(in: .loose).isEmpty ? nil : {

@@ -14135,7 +14135,7 @@
       }
     },
     "Scratch": {
-      "comment": "Sidebar row for the shells outside any project",
+      "comment": "Sidebar row for the tabs outside any project",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -21842,8 +21842,25 @@
         }
       }
     },
+    "Its tabs start in %@": {
+      "comment": "Sidebar, VoiceOver: the scratch row and the folder its new tabs start in",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Its tabs start in %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タブは%@で開始します"
+          }
+        }
+      }
+    },
     "Its tabs start in the home folder": {
-      "comment": "Sidebar, VoiceOver: the scratch row, whose tooltip is ~",
+      "comment": "Sidebar, VoiceOver: the scratch row, whose new tabs start in the home folder",
       "localizations": {
         "en": {
           "stringUnit": {

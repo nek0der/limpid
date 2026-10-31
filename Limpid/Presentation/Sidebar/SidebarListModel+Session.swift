@@ -96,11 +96,9 @@ extension SidebarListModel {
             )
             return Group(header: header, rows: rows)
         }
-        // A window that shows nothing marks no row, the scratch row
-        // included: it stands there without showing it.
         self.init(
             groups: groups,
-            isScratchActive: selection.map { !$0.isChoosingProject && $0.activeContainerID == .loose } ?? false
+            scratchRow: SessionSidebarModel.scratchRow(window: window, sources: rowSources, usageLimits: usageLimits)
         )
     }
 

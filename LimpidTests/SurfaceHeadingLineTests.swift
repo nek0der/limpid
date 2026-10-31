@@ -118,7 +118,12 @@ struct SurfaceHeadingLineTests {
                 .recordFrame(in: book, as: "heading")
                 Spacer(minLength: 0)
                 SidebarFootBar {
-                    ScratchRowView(isActive: true, actions: SessionRowActions()) {}
+                    ScratchRowView(
+                        row: .test(.test(container: .loose)),
+                        startFolder: URL(fileURLWithPath: "/tmp"),
+                        now: .now,
+                        actions: SessionRowActions()
+                    ) {}
                         .recordFrame(in: book, as: "scratch")
                 }
             }

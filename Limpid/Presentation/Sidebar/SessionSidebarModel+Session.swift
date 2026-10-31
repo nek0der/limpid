@@ -90,9 +90,7 @@ extension SessionSidebarModel {
         } ?? []
         self.init(
             rows: inputs,
-            // A window that shows nothing marks no row, the scratch row
-            // included: it stands there without showing it.
-            activeContainer: session.selection(window).flatMap { $0.isChoosingProject ? nil : $0.activeContainerID },
+            activeContainer: Self.markedContainer(in: window, session: session),
             shownPanes: Set(session.activeTab(in: window)?.splitTree.allLeafIDs() ?? []),
             usageLimits: usageLimits,
             locale: sources.locale,
@@ -131,6 +129,32 @@ extension SessionSidebarModel {
             git: Git(pullRequest: pullRequest, facts: gitFacts)
         )
         self.init(rows: [input], activeContainer: container, usageLimits: UsageLimits(queue: queue), locale: locale)
+    }
+
+    /// The scratch row of `window`, which belongs to no project and has no
+    /// Git facts to state.
+    @MainActor
+    static func scratchRow(window: WindowID, sources: Sources, usageLimits: UsageLimits) -> Row {
+        let input = rowInput(
+            container: .loose,
+            project: nil,
+            sources: sources,
+            git: Git(pullRequest: nil, facts: nil)
+        )
+        return Self(
+            rows: [input],
+            activeContainer: markedContainer(in: window, session: sources.session),
+            shownPanes: Set(sources.session.activeTab(in: window)?.splitTree.allLeafIDs() ?? []),
+            usageLimits: usageLimits,
+            locale: sources.locale
+        ).rows[0]
+    }
+
+    /// The row `window` marks as open. A window that shows nothing marks no
+    /// row, the scratch row included: it stands there without showing it.
+    @MainActor
+    private static func markedContainer(in window: WindowID, session: WorkspaceSession) -> ContainerID? {
+        session.selection(window).flatMap { $0.isChoosingProject ? nil : $0.activeContainerID }
     }
 
     /// What every row is read from, built once for every project a list
