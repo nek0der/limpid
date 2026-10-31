@@ -230,6 +230,11 @@ enum AgentRecordFixtures {
 
         deinit {
             if descriptor >= 0 {
+                // Unlocked by name, as `AgentFileLock` does. A close alone
+                // lets go only once every copy of the descriptor has closed,
+                // and a child another test is starting holds one until its
+                // exec, close-on-exec or not.
+                flock(descriptor, LOCK_UN)
                 close(descriptor)
             }
         }

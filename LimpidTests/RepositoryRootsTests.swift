@@ -62,14 +62,18 @@ struct RepositoryRootsTests {
         let git = TopLevelStub([.success(URL(fileURLWithPath: "/repo"))], isHeld: true)
         let roots = RepositoryRoots(topLevel: { try await git.topLevel($0) }, paths: WorktreePathResolver(resolveLinks: { $0 }))
 
-        async let first: Void = roots.resolve(Self.folder)
-        async let second: Void = roots.resolve(Self.folder)
+        // Tasks on this actor, queued ahead of the poll's next check. An
+        // `async let` comes here from the shared pool, behind that check, and
+        // after a stall of the main actor in a parallel run the check found
+        // the deadline passed and neither caller waiting yet.
+        let first = Task { await roots.resolve(Self.folder) }
+        let second = Task { await roots.resolve(Self.folder) }
         // Both waiting on the ask before Git answers.
         await pollUntil { roots.waitingCallers[Self.folder.path, default: 0] >= 2 }
         #expect(roots.waitingCallers[Self.folder.path, default: 0] == 2)
         await git.waitUntilHeld()
         await git.release()
-        _ = await (first, second)
+        _ = await (first.value, second.value)
 
         #expect(await git.asks == 1)
         #expect(roots.answer(for: Self.folder) == .repository(path: "/repo"))

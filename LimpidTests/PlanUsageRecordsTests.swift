@@ -31,7 +31,10 @@ struct PlanUsageRecordsTests {
             records.watch { changes += 1 }
             let record = #"{"windows":[],"observedAt":"2026-10-29T02:13:20Z"}"#
             try Data(record.utf8).write(to: PlanUsageRecordDirectory.recordURL(for: .claude, in: dir), options: .atomic)
-            await pollUntil { changes > 0 }
+            // The event and the debounce after it both wait on the main actor,
+            // which a parallel run can stall past a short deadline, so only a
+            // change never reported should reach this one.
+            await pollUntil(timeout: .seconds(30), interval: .milliseconds(20)) { changes > 0 }
             #expect(changes > 0)
         }
     }

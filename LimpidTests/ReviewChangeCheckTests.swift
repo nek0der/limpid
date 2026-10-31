@@ -25,13 +25,33 @@ struct ReviewChangeCheckTests {
             try Data(text.utf8).write(to: repo.url.appendingPathComponent(path))
         }
         func run(_ arguments: [String]) async throws {
-            _ = try await GitProcess.run(arguments, cwd: repo.url)
+            let result = try await GitProcess.run(arguments, cwd: repo.url)
+            try #require(result.succeeded, "git \(arguments.joined(separator: " ")): \(result.stderr)")
         }
+        /// Git's reads are stopped at a timeout a full parallel run can reach,
+        /// which says nothing about the states, so a read that failed goes
+        /// again, and one that keeps failing is reported as what it is.
         func changed(_ states: [String: ReviewReadState], _ path: String) async -> Bool {
-            // A path with no state, or an index that cannot be read, reads as
-            // unchanged here: it fails the checks that expect a change.
-            guard let state = states[path] else { return false }
-            return await ReviewChangeCheck.anyChanged([(path, state)], git: git, root: repo.url, scope: .uncommitted) ?? false
+            guard let state = states[path] else {
+                Issue.record("no state for \(path)")
+                return false
+            }
+            for _ in 0..<3 {
+                if let isChanged = await ReviewChangeCheck.anyChanged([(path, state)], git: git, root: repo.url, scope: .uncommitted) {
+                    return isChanged
+                }
+            }
+            Issue.record("the index could not be read")
+            return false
+        }
+        /// Every file here exists but `gone.swift`, so a state of `c.txt`
+        /// without a hash is a read that failed.
+        func take(_ paths: Set<String>) async -> [String: ReviewReadState] {
+            var states: [String: ReviewReadState] = [:]
+            for _ in 0..<3 where states["c.txt"]?.hash == nil {
+                states = await ReviewChangeCheck.take(paths, git: git, root: repo.url, scope: .uncommitted)
+            }
+            return states
         }
         try write("a.swift", "let a = 1\n")
         try write("gone.swift", "let gone = 1\n")
@@ -40,7 +60,7 @@ struct ReviewChangeCheckTests {
         try await run(["commit", "-m", "files"])
         try write("a.swift", "let a = 2\n")
         let paths: Set = ["a.swift", "gone.swift", "c.txt"]
-        var states = await ReviewChangeCheck.take(paths, git: git, root: repo.url, scope: .uncommitted)
+        var states = await take(paths)
 
         #expect(await !changed(states, "a.swift"))
         let file = repo.url.appendingPathComponent("a.swift")
@@ -49,18 +69,18 @@ struct ReviewChangeCheckTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: file.path)
         #expect(await changed(states, "a.swift"), "a mode is diffed")
 
-        states = await ReviewChangeCheck.take(paths, git: git, root: repo.url, scope: .uncommitted)
+        states = await take(paths)
         // `cp -p`: the same size and modification time, other bytes.
         let modified = try FileManager.default.attributesOfItem(atPath: file.path)[.modificationDate]
         try write("a.swift", "let a = 3\n")
         try FileManager.default.setAttributes([.modificationDate: modified as Any], ofItemAtPath: file.path)
         #expect(await changed(states, "a.swift"))
 
-        states = await ReviewChangeCheck.take(paths, git: git, root: repo.url, scope: .uncommitted)
+        states = await take(paths)
         try await run(["add", "a.swift"])
         #expect(await changed(states, "a.swift"), "a stage")
 
-        states = await ReviewChangeCheck.take(paths, git: git, root: repo.url, scope: .uncommitted)
+        states = await take(paths)
         try FileManager.default.removeItem(at: repo.url.appendingPathComponent("gone.swift"))
         #expect(await changed(states, "gone.swift"), "a tracked file deleted")
 
@@ -71,14 +91,15 @@ struct ReviewChangeCheckTests {
         try await run(["checkout", "-q", "main"])
         try write("c.txt", "main\n")
         try await run(["commit", "-qam", "main"])
-        try await run(["merge", "other"])
-        states = await ReviewChangeCheck.take(paths, git: git, root: repo.url, scope: .uncommitted)
+        // Fails by design: it stops at the conflict.
+        _ = try await GitProcess.run(["merge", "other"], cwd: repo.url)
+        states = await take(paths)
         #expect(states["c.txt"]?.index?.split(separator: ";").count == 3, "three stages")
         try write("c.txt", "resolved\n")
         try await run(["add", "c.txt"])
         #expect(await changed(states, "c.txt"))
 
-        states = await ReviewChangeCheck.take(paths, git: git, root: repo.url, scope: .uncommitted)
+        states = await take(paths)
         try await run(["commit", "-qm", "merged"])
         #expect(await changed(states, "c.txt"), "HEAD moved")
     }
