@@ -140,8 +140,7 @@ struct AgentBadgeStrip: View {
 }
 
 /// A shell's mark where an agent's badge would be: a pane strip tab with
-/// no agent, the scratch row, a shell's notification. The terminal's
-/// symbol, quiet and unboxed, as a shell session's state glyph draws it,
+/// no agent, a shell's notification. The terminal's symbol, quiet and unboxed, as a shell session's state glyph draws it,
 /// so a shell reads the same wherever it shows; in the badge's width, so
 /// it lines up with the agents' letters.
 struct ShellPromptBadge: View {

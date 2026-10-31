@@ -99,7 +99,13 @@ struct SupervisionFootBarTests {
     @Test func scratchRow_fitsInsideTheFootBar() {
         for isActive in [false, true] {
             for size in Self.typeSizes {
-                let row = ScratchRowView(isActive: isActive, isKeyboardSelected: isActive, actions: SessionRowActions()) {}
+                let row = ScratchRowView(
+                    row: .test(.test(container: .loose), activeContainer: isActive ? .loose : nil),
+                    startFolder: URL(fileURLWithPath: "/tmp"),
+                    now: .now,
+                    isKeyboardSelected: isActive,
+                    actions: SessionRowActions()
+                ) {}
                 let height = Self.height(of: row, typeSize: size)
                 #expect(height == Layout.scratchRowHeight)
                 #expect(height <= Self.roomInsideRules)
@@ -225,7 +231,12 @@ struct SupervisionFootBarTests {
             let view = HStack(spacing: Layout.surfaceGap) {
                 Self.column(width: Layout.sidebarDefaultWidth) {
                     SidebarFootBar {
-                        ScratchRowView(isActive: true, actions: SessionRowActions()) {}
+                        ScratchRowView(
+                            row: .test(.test(container: .loose)),
+                            startFolder: URL(fileURLWithPath: "/tmp"),
+                            now: .now,
+                            actions: SessionRowActions()
+                        ) {}
                             .recordFrame(in: book, as: "sidebar.row")
                     }
                     .recordFrame(in: book, as: "sidebar")

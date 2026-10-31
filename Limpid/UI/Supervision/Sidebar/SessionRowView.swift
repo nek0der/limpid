@@ -373,17 +373,25 @@ struct SidebarFootBar<Content: View>: View {
     }
 }
 
-/// The scratch row: one line at the bottom for shells outside any
-/// project. No heading and no pin; its tooltip names the folder its tabs
-/// start in.
+/// The scratch row: one line at the bottom for the tabs outside any
+/// project. No heading and no pin; its glyph and badges say what a
+/// worktree's row says of the same tabs. With no second line, its fact is in
+/// its tooltip, after the folder a new tab starts in.
 struct ScratchRowView: View {
-    let isActive: Bool
+    let row: SessionSidebarModel.Row
+    /// Where a new scratch tab starts, as Settings says.
+    let startFolder: URL
+    let now: Date
     var isKeyboardSelected = false
     let actions: SessionRowActions
+    /// Opens the approval card beside the row; `nil` when the row offers
+    /// no Answer….
+    var onAnswer: (() -> Void)?
     let onActivate: () -> Void
     /// A dragged tab or pane would land here: the name takes the accent.
     @Environment(\.isDropTarget) private var isDropTarget
     @Environment(\.limpidAccent) private var accent
+    @Environment(\.locale) private var locale
     @State private var isHovering = false
 
     private typealias Layout = LimpidLayout.Supervision
@@ -391,20 +399,20 @@ struct ScratchRowView: View {
     var body: some View {
         Button(action: onActivate) {
             HStack(spacing: Layout.sessionRowColumnSpacing) {
-                StateGlyph(kind: .idle)
+                SessionStateGlyph(glyph: row.fact.glyph)
                     .frame(width: Layout.stateGlyphSize, height: Layout.stateGlyphSize)
                 Text("Scratch")
                     // The session rows' one weight.
                     .font(.supervision(.label, weight: .medium))
                     .foregroundStyle(isDropTarget ? accent : SupervisionTokens.text.color)
                 Spacer(minLength: LimpidLayout.Supervision.spaceXS)
-                ShellPromptBadge()
+                AgentBadgeStrip(kinds: row.agentKinds)
             }
             // The workspace rows' face, only shorter, so the open scratch
             // row is filled and inset as an open workspace row is.
             .modifier(SessionRowFace(
                 height: Layout.scratchRowHeight,
-                isActive: isActive,
+                isActive: row.isActive,
                 isHovering: isHovering,
                 isKeyboardSelected: isKeyboardSelected
             ))
@@ -413,15 +421,37 @@ struct ScratchRowView: View {
         // Out of ⇥'s stops, as every other line of the sidebar is: its
         // keyboard is ⌥⌘0 and the arrows.
         .focusable(false)
+        // Over the badges rather than beside them, so the row does not
+        // move; beside the row's button, so pressing it does not open the row.
+        .overlay(alignment: .trailing) {
+            if isHovering, let onAnswer {
+                Button(action: onAnswer) {
+                    Text("Answer…")
+                }
+                .buttonStyle(.supervisionSecondary(size: .compact))
+                // It shows only on a hovered row, whose fill is opaque.
+                .environment(\.supervisionSurfaceOpacity, 1)
+                .padding(.trailing, Layout.spaceXS)
+            }
+        }
+        // After the overlay, so the pointer on Answer… still counts as on
+        // the row.
         .onHover { isHovering = $0 }
         .contextMenu { SessionRowActionsMenu(actions: actions) }
-        .help(Text(verbatim: "~"))
-        // The tooltip's "~" would be read 「チルダ」.
-        .accessibilityHint(Text(
-            "Its tabs start in the home folder",
-            comment: "Sidebar, VoiceOver: the scratch row, whose tooltip is ~"
-        ))
-        .accessibilityAddTraits(isActive ? .isSelected : [])
+        .help(Text(verbatim: SessionRowFactText.scratchTooltip(for: row, startFolder: startFolder, now: now, locale: locale)))
+        .accessibilityLabel(Text(verbatim: SessionRowFactText.spokenLabel(
+            for: row,
+            projectName: nil,
+            now: now,
+            locale: locale
+        )))
+        .accessibilityHint(Text(verbatim: SessionRowFactText.scratchHint(startFolder: startFolder, locale: locale)))
+        .accessibilityAddTraits(row.isActive ? .isSelected : [])
+        .accessibilityActions {
+            if let onAnswer {
+                Button("Answer…", action: onAnswer)
+            }
+        }
     }
 }
 

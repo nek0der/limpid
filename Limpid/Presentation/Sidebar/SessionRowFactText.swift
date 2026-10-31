@@ -88,8 +88,8 @@ enum SessionRowFactText {
     /// not say it twice. A row waiting on a request Limpid cannot answer, with its
     /// pane out of view, ends with a line saying how to answer it, since
     /// the row offers no "Answer…" for it.
-    static func tooltip(for row: SessionSidebarModel.Row, now: Date, locale: Locale) -> String {
-        var parts = [row.name]
+    static func tooltip(for row: SessionSidebarModel.Row, lead: [String]? = nil, now: Date, locale: Locale) -> String {
+        var parts = lead ?? [row.name]
         // The repository's row is named as any row is, so it says what it is.
         if case .project = row.id {
             parts.append(repositoryFolder.resolved(in: locale))
@@ -169,6 +169,35 @@ enum SessionRowFactText {
         "Not among the worktrees above. Opening it adds it there.",
         comment: "Sidebar, one of the other worktrees: its tooltip says it is not a working row and opening it makes it one"
     )
+
+    /// The scratch row's tooltip: the folder a new tab starts in, in place of
+    /// the name the row shows, then the fact it has no second line to state
+    /// and what any row's tooltip says. A summary of its agents states the
+    /// fact, so the fact is not said twice.
+    static func scratchTooltip(for row: SessionSidebarModel.Row, startFolder: URL, now: Date, locale: Locale) -> String {
+        let folder = PathFormatting.abbreviateHome(startFolder.path)
+        guard row.fact.glyph != .shell else {
+            return tooltip(for: row, lead: [folder], now: now, locale: locale)
+        }
+        let fact = row.agentSummary == nil ? [current(row, now: now, locale: locale)] : []
+        return tooltip(for: row, lead: [folder] + fact, now: now, locale: locale)
+    }
+
+    /// The scratch row's VoiceOver hint: the folder in words, as the tooltip's
+    /// "~" would be read 「チルダ」.
+    static func scratchHint(startFolder: URL, locale: Locale) -> String {
+        let folder = PathFormatting.abbreviateHome(startFolder.path)
+        guard folder != "~" else {
+            return LocalizedStringResource(
+                "Its tabs start in the home folder",
+                comment: "Sidebar, VoiceOver: the scratch row, whose new tabs start in the home folder"
+            ).resolved(in: locale)
+        }
+        return LocalizedStringResource(
+            "Its tabs start in \(startFolder.lastPathComponent)",
+            comment: "Sidebar, VoiceOver: the scratch row and the folder its new tabs start in"
+        ).resolved(in: locale)
+    }
 
     /// Returns what VoiceOver reads for a row: its state, name, the checkout
     /// a labeled row shows ("Branch feat/login"), and project, then its

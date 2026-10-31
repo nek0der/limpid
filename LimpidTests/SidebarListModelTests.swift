@@ -72,7 +72,7 @@ struct SidebarListModelTests {
     @Test func noProject_saysThereIsNone_andAProjectListsIt() {
         let fixture = Fixture()
 
-        #expect(SidebarListModel(groups: [], isScratchActive: true).emptyState == .noProjects)
+        #expect(SidebarListModel(groups: [], scratchRow: .test(.test(container: .loose))).emptyState == .noProjects)
         #expect(Self.model(fixture).emptyState == nil)
     }
 
@@ -151,6 +151,53 @@ struct SidebarListModelTests {
         let model = Self.model(fixture)
         #expect(model.isScratchActive)
         #expect(!model.items.contains { $0.id == .row(.loose) })
+    }
+
+    /// With only shells in it, the row wears a shell's mark and no badge, as
+    /// a worktree's row of shells does, and is not called a project's folder.
+    @Test func theScratchRow_ofShells_wearsTheShellMarkAlone() {
+        let fixture = Fixture()
+        _ = fixture.session.openTab(container: .loose, in: fixture.primary.id, intent: .person, selects: false)
+        let row = Self.model(fixture).scratchRow
+        #expect(row.fact.glyph == .shell)
+        #expect(row.agentKinds.isEmpty)
+        #expect(!row.isMainFolder)
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        #expect(SessionRowFactText.scratchTooltip(for: row, startFolder: home, now: .now, locale: Self.english) == "~")
+        #expect(SessionRowFactText.scratchHint(startFolder: home, locale: Self.english) == "Its tabs start in the home folder")
+    }
+
+    /// A scratch tab's agent shows on the row while another row is open, so
+    /// the wait is not found only by opening the scratch tabs.
+    @Test func theScratchRow_showsItsAgentsWait() throws {
+        let fixture = Fixture()
+        let tab = fixture.session.openTab(container: .loose, in: fixture.primary.id, intent: .person, selects: false)
+        let pane = try #require(tab.splitTree.allLeafIDs().first)
+        let run = UUID().uuidString
+        var queue = AttentionQueue()
+        queue.insert(
+            id: .stop(EpisodeKey(origin: .runtime(run), episodeToken: "1")),
+            kind: .prompt(PromptWait(detail: nil)),
+            subject: .runtime(id: run, provider: .claude, paneID: pane, tabID: tab.id, projectID: nil),
+            arrivedAt: Date()
+        )
+        let row = Self.model(fixture, queue: queue).scratchRow
+        #expect(row.fact.glyph == .needsResponse)
+        #expect(row.agentKinds == [.claude])
+        #expect(!row.isActive)
+        let folder = URL(fileURLWithPath: "/tmp/limpid-scratch")
+        #expect(SessionRowFactText.scratchTooltip(for: row, startFolder: folder, now: .now, locale: Self.english)
+            == "/tmp/limpid-scratch · Needs response\nOpen the pane to answer in the terminal")
+        #expect(SessionRowFactText.scratchHint(startFolder: folder, locale: Self.japanese) == "タブはlimpid-scratchで開始します")
+    }
+
+    /// A window choosing a project shows nothing, so the scratch row it was
+    /// on stands there unmarked.
+    @Test func theScratchRow_isNotActiveWhileTheWindowChoosesAProject() {
+        let fixture = Fixture()
+        fixture.session.setActiveContainer(.loose, in: fixture.primary.id, intent: .person)
+        fixture.session.primarySelection.isChoosingProject = true
+        #expect(!Self.model(fixture).scratchRow.isActive)
     }
 
     // MARK: - Another window's project

@@ -95,9 +95,11 @@ struct SidebarListModel: Equatable {
 
     let groups: [Group]
     let items: [Item]
-    let isScratchActive: Bool
+    /// The scratch row's state, read as a worktree's row is: its tabs run
+    /// agents that wait and stop as any others do.
+    let scratchRow: SessionSidebarModel.Row
 
-    init(groups: [Group], isScratchActive: Bool) {
+    init(groups: [Group], scratchRow: SessionSidebarModel.Row) {
         self.groups = groups
         items = groups.flatMap { group in
             [Item.header(group.header)] + (group.rows?.items ?? []).map { item in
@@ -107,7 +109,11 @@ struct SidebarListModel: Equatable {
                 }
             }
         }
-        self.isScratchActive = isScratchActive
+        self.scratchRow = scratchRow
+    }
+
+    var isScratchActive: Bool {
+        scratchRow.isActive
     }
 
     /// The rows built for `projectID`, in the order they are listed; none
