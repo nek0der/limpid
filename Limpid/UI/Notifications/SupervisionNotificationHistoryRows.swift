@@ -140,8 +140,9 @@ struct SupervisionHistoryRow: View {
             }
             .padding(LimpidLayout.Supervision.notificationRowInsets)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // The fill alone marks the selected row: an edge of its own
+            // would run just inside its group's, one frame within another.
             .background(shape.fill(fill))
-            .popoverSelectionEdge(isSelected: isSelected, in: shape)
             .contentShape(shape)
         }
         .buttonStyle(.plain)
@@ -406,8 +407,8 @@ struct SupervisionHistoryFold: View {
             )
             .padding(LimpidLayout.Supervision.notificationRowInsets)
             .frame(maxWidth: .infinity, minHeight: LimpidLayout.Supervision.notificationFoldHeight, alignment: .leading)
+            // No edge, as on a row (`SupervisionHistoryRow`).
             .background(shape.fill(isSelected ? ground.selection.color : isHovering ? ground.hover.color : .clear))
-            .popoverSelectionEdge(isSelected: isSelected, in: shape)
             .contentShape(shape)
         }
         .buttonStyle(.plain)

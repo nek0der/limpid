@@ -228,7 +228,8 @@ enum PopoverGround: Equatable, Sendable {
     /// the fill can stand only so far off it before the text on it drops
     /// under 4.5:1, so the edge is what makes the row the keys are on
     /// plain to see, and it costs the text nothing. On the opaque ground the
-    /// fill alone reads, so no edge is drawn.
+    /// fill alone reads, so no edge is drawn. Rows inside a group
+    /// (`groupRule`) draw none either: it would double the group's edge.
     var selectionEdge: ThemedOverlay? {
         switch self {
         case .opaque: nil
@@ -475,9 +476,8 @@ enum SupervisionTokens {
     /// text sits on it, so it can be stronger than the fill.
     static let popoverSelectionEdge = ThemedOverlay(lightOpacity: 0.10, darkOpacity: 0.10)
     /// The edge around a group of rows on the material and the rules inside
-    /// it (`PopoverGround.groupRule`): a step under the selected row's edge,
-    /// so the row the keys are on still stands out within its group. No
-    /// text sits on it.
+    /// it (`PopoverGround.groupRule`). A selected row in a group has only
+    /// its fill, so this is the one frame there. No text sits on it.
     static let popoverRule = ThemedOverlay(lightOpacity: 0.08, darkOpacity: 0.08)
     /// The well an inline rename's field stands in, laid under the label
     /// and a few points past it (`InlineRenameEditingStyle`), as quiet as
