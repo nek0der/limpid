@@ -204,6 +204,29 @@ enum PopoverGround: Equatable, Sendable {
         }
     }
 
+    /// A bordered button's face at rest: the window's color on the opaque
+    /// ground, and nothing on the material, where an opaque box stands out
+    /// of the glass and any ink would match the hovered fill the button
+    /// has to step up to. Its edge alone draws it there.
+    var buttonFace: RowFill? {
+        switch self {
+        case .opaque: .solid(SupervisionTokens.window)
+        case .material: nil
+        }
+    }
+
+    /// A bordered button's edge while hovered, on the material only: there
+    /// `hover` can stand only so far off it before the stop color's title
+    /// drops under 4.5:1, and with no face at rest it is too quiet to see,
+    /// so the edge says the button is under the pointer, which costs the
+    /// title nothing. On the opaque ground the fill alone reads.
+    var buttonHoverEdge: ThemedOverlay? {
+        switch self {
+        case .opaque: nil
+        case .material: SupervisionTokens.popoverButtonHoverEdge
+        }
+    }
+
     /// The quiet well a field or a command sits in, which on the opaque
     /// ground has always been `hover`'s gray.
     var well: RowFill {
@@ -278,26 +301,19 @@ enum RowHighlight: Equatable, Sendable {
     /// The ground's fills (`PopoverGround.selection`, `.hover`), with the
     /// edge the material asks for: Weir's own popovers and lists.
     case ground
-    /// The system menu's: one accent fill for the row the keys or the
-    /// pointer are on, its words white on it, and no edge, as the menus
-    /// beside the menu bar extra draw theirs. The pointer selects the row
-    /// as the keys do, and leaving it leaves no row lit.
+    /// The menu bar extra's: one fill for the row the keys or the pointer
+    /// are on, and no edge. The pointer selects the row as the keys do, and
+    /// leaving it leaves no row lit. The fill is the label's ink rather than
+    /// the system's accent the menus beside it use: their rows are one line
+    /// with nothing else on them, where ours are two lines with a colored
+    /// badge and glyph, beside a primary button in the person's own accent.
     case systemMenu
 
     /// The fill of the selected row, where it is not the ground's.
     var selection: Color? {
         switch self {
         case .ground: nil
-        case .systemMenu: Color(nsColor: .selectedContentBackgroundColor)
-        }
-    }
-
-    /// The color every word on the selected row takes, where the fill is
-    /// strong enough to ask for one; `nil` keeps each word its own.
-    var selectedText: Color? {
-        switch self {
-        case .ground: nil
-        case .systemMenu: Color(nsColor: .selectedMenuItemTextColor)
+        case .systemMenu: .primary.opacity(0.14)
         }
     }
 
@@ -356,6 +372,30 @@ enum PopoverInk: Equatable, Sendable {
         case .vibrant: .primary
         }
     }
+
+    /// Words in the stop color: a stop's fact, and a refusal's or a
+    /// destructive button's title. The red reads on Weir's own panels
+    /// (`stoppedText` is held to 4.5:1 on them), but on the menu's glass
+    /// only the system's labels do, so there the state glyph's red disc and
+    /// the words themselves say it.
+    var stoppedText: Color {
+        switch self {
+        case .tokens: SupervisionTokens.stoppedText.color
+        case .vibrant: .primary
+        }
+    }
+
+    /// What the unread ring and dot are drawn in instead of the accent:
+    /// the menu's words are all the system's labels and its lamp is the
+    /// bar's ink, so a ring in the accent would be the one colored thing
+    /// on a calm row, and reads as a selected radio button. `nil` keeps the
+    /// accent on Weir's own panels.
+    var unreadMark: Color? {
+        switch self {
+        case .tokens: nil
+        case .vibrant: .primary
+        }
+    }
 }
 
 /// Which surface a view is drawn on: one of Weir's own floating panels,
@@ -372,8 +412,8 @@ enum PopoverSurface: Equatable, Sendable {
 
     /// What the rows stand on. The menu's window is the system's material
     /// whatever the app's transparency, and turns opaque only under Reduce
-    /// Transparency, so its buttons and wells take the fills laid over a
-    /// ground rather than the opaque ones the material all but matches.
+    /// Transparency, so its buttons and wells take the material's fills
+    /// rather than the opaque ones, which do not belong on the glass.
     var ground: PopoverGround {
         switch self {
         case let .weir(ground): ground
@@ -475,6 +515,10 @@ enum SupervisionTokens {
     /// in dark, where the fill alone stands only about 1.15:1 off it. No
     /// text sits on it, so it can be stronger than the fill.
     static let popoverSelectionEdge = ThemedOverlay(lightOpacity: 0.10, darkOpacity: 0.10)
+    /// The 1pt edge of a hovered bordered button on the material, a clear
+    /// step up from the menu's resting edge (`PopoverInk.line`, a quarter of
+    /// its label). No text sits on it.
+    static let popoverButtonHoverEdge = ThemedOverlay(lightOpacity: 0.55, darkOpacity: 0.55)
     /// The edge around a group of rows on the material and the rules inside
     /// it (`PopoverGround.groupRule`). A selected row in a group has only
     /// its fill, so this is the one frame there. No text sits on it.

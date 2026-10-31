@@ -1,11 +1,11 @@
 // SupervisionSecondaryButtonStyle.swift
-// Weir — the supervision window's small bordered button, on the window's surface color.
+// Weir — the supervision window's small bordered button, on its ground's face.
 
 import SwiftUI
 
-/// The supervision UI's bordered button: medium text on the window's
-/// surface color, edged in `line`, its corners 6pt. Hovering fills it with
-/// `hover` and pressing with `selection`; disabled, it fades to half, as
+/// The supervision UI's bordered button: medium text on its ground's face
+/// (`PopoverGround.buttonFace`), edged in its ink's line, its corners 6pt.
+/// Hovering fills it with `hover` and pressing with `selection`; disabled, it fades to half, as
 /// the primary style does. Its height is fixed like the primary's (22pt,
 /// 20pt compact, 18pt mini), so what sits beside it can count on it. The destructive
 /// style (`SupervisionDestructiveButtonStyle`) is this button in its
@@ -113,7 +113,7 @@ struct SupervisionSecondaryButtonStyle: ButtonStyle {
         private var title: Color {
             switch tone {
             case .standard, .onStateFill: ink.text
-            case .refusal, .destructive: SupervisionTokens.stoppedText.color
+            case .refusal, .destructive: ink.stoppedText
             case .ghost: isHovering && isEnabled ? ink.text : ink.muted
             }
         }
@@ -122,15 +122,17 @@ struct SupervisionSecondaryButtonStyle: ButtonStyle {
             switch tone {
             case .ghost: .clear
             case .onStateFill: SupervisionTokens.stateFillButtonEdge.color
-            case .standard, .refusal, .destructive: ink.line
+            case .standard, .refusal, .destructive:
+                (isHovering && isEnabled ? ground.buttonHoverEdge?.color : nil) ?? ink.line
             }
         }
 
         /// As see-through as the surface the button is on, so with
         /// transparency on it does not stand out as an opaque box; on an
-        /// opaque ground (the decision bar) the ground says 1. Pressed and
-        /// hovered take their popover ground's fills (`PopoverGround`):
-        /// on a panel's material the opaque ones all but vanish.
+        /// opaque ground (the decision bar) the ground says 1. Every step
+        /// takes its popover ground's fill (`PopoverGround`): on a panel's
+        /// material the opaque hover and press all but vanish, and the
+        /// opaque face at rest stands out of the glass.
         private var fill: Color {
             if tone == .onStateFill {
                 return stateFillFace.color
@@ -140,7 +142,7 @@ struct SupervisionSecondaryButtonStyle: ButtonStyle {
             } else if isHovering, isEnabled {
                 ground.hover
             } else {
-                tone == .ghost ? nil : .solid(SupervisionTokens.window)
+                tone == .ghost ? nil : ground.buttonFace
             }
             return token.map { $0.color.opacity(surfaceOpacity) } ?? .clear
         }

@@ -7,19 +7,21 @@ import SwiftUI
 /// them where the item is and its fact. Its button (Answer…)
 /// stands beside the row rather than in it, so the row's fill marks only
 /// what opening the row goes to; VoiceOver reaches the button there, as
-/// its own element. The menu bar lays what it acts on in place under the
-/// row, outside the fill for the same reason.
+/// its own element. The menu bar lays the button with what else it acts on
+/// in place under the row, outside the fill for the same reason, and passes
+/// no `onAction`.
 struct NeedsAttentionRowView: View {
     let row: NeedsAttentionListModel.Row
     let now: Date
     let isSelected: Bool
-    let isActionSelected: Bool
+    var isActionSelected = false
     /// What opening the row does, for VoiceOver: the list goes to the pane
     /// in its own window; the menu bar says it goes there in Weir.
     var openHint = Self.listOpenHint
     /// Opens the row, chosen as it was.
     let onOpen: (NeedsAttentionListOpening) -> Void
-    let onAction: () -> Void
+    /// Presses the button beside the row; `nil` draws none there.
+    var onAction: (() -> Void)?
     /// The pointer came over the row (`true`) or left it, for a list whose
     /// pointer selects the row it is over; `nil` where the row only tints
     /// itself under the pointer.
@@ -38,8 +40,8 @@ struct NeedsAttentionRowView: View {
     var body: some View {
         HStack(spacing: WeirLayout.Supervision.spaceSnug) {
             rowFace
-            if let actionTitle {
-                Button(actionTitle, action: onAction)
+            if let onAction, let action = row.action {
+                Button(Self.title(action), action: onAction)
                     .buttonStyle(.supervisionSecondary(size: .compact))
                     // The keyboard's place on the button, shown like a
                     // focused control, since the list holds the focus.
@@ -55,16 +57,13 @@ struct NeedsAttentionRowView: View {
 
     private var rowFace: some View {
         HStack(alignment: .top, spacing: WeirLayout.Supervision.popoverRowColumnSpacing) {
-            // On the system menu's lit row the fill is the system's
-            // accent, which an unread ring in the accent would vanish
-            // into; it turns the color of the row's words, as they do.
-            StateGlyph(kind: glyph, inkOnAccentFill: selectedText)
+            StateGlyph(kind: glyph, unreadInkOverride: ink.unreadMark)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: WeirLayout.Supervision.popoverRowLineSpacing) {
                 HStack(spacing: WeirLayout.Supervision.spaceSnug) {
                     Text(verbatim: row.title)
                         .font(.supervision(.label, weight: .semibold))
-                        .foregroundStyle(selectedText ?? ink.text)
+                        .foregroundStyle(ink.text)
                         .lineLimit(1)
                         .supervisionTruncation(.name)
                     if let agent = row.agent {
@@ -78,7 +77,7 @@ struct NeedsAttentionRowView: View {
                     Text(display: waitLabel)
                         .font(.supervision(.meta))
                         .monospacedDigit()
-                        .foregroundStyle(selectedText ?? ink.muted)
+                        .foregroundStyle(ink.muted)
                         .fixedSize()
                 }
                 Text(detail)
@@ -119,13 +118,7 @@ struct NeedsAttentionRowView: View {
         .modifier(NewWindowHelp(isShown: row.opensInNewWindow))
     }
 
-    /// The one color every word takes on the selected row where the fill
-    /// asks for it (the system menu's); `nil` keeps each word its own.
-    private var selectedText: Color? {
-        isSelected ? highlight.selectedText : nil
-    }
-
-    /// The row's fill: under the system menu's highlight, the accent while
+    /// The row's fill: under the system menu's highlight, its fill while
     /// the row is selected and nothing otherwise, since the pointer selects
     /// the row rather than tinting it; on the ground's, its selection and
     /// hover fills.
@@ -151,12 +144,12 @@ struct NeedsAttentionRowView: View {
     /// The place in the quiet color, the fact in the color of its state:
     /// amber for what waits on the person and red for a stop, as on the
     /// sidebar's rows, so the two lists read alike. On the system menu's
-    /// fill both are white, as a menu turns every word of its lit row.
+    /// glass the fact is the system's label (`PopoverInk`).
     private var detail: AttributedString {
         var lead = AttributedString(row.placeLead)
-        lead.foregroundColor = selectedText ?? ink.muted
+        lead.foregroundColor = ink.muted
         var fact = AttributedString(row.fact)
-        fact.foregroundColor = selectedText ?? factColor
+        fact.foregroundColor = factColor
         return lead + fact
     }
 
@@ -185,16 +178,15 @@ struct NeedsAttentionRowView: View {
 
     private var factColor: Color {
         switch row.state {
-        case .approval, .question, .response, .signIn: SupervisionTokens.waitingText.color
-        case .stopped: SupervisionTokens.stoppedText.color
+        case .approval, .question, .response, .signIn: ink.warningText
+        case .stopped: ink.stoppedText
         case .unread: ink.muted
         }
     }
 
-    private var actionTitle: LocalizedStringKey? {
-        switch row.action {
+    static func title(_ action: NeedsAttentionListModel.RowAction) -> LocalizedStringKey {
+        switch action {
         case .answer: "Answer…"
-        case nil: nil
         }
     }
 }

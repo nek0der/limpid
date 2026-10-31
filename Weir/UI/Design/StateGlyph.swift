@@ -71,11 +71,10 @@ struct StateGlyph: View {
 
     let kind: Kind
     var size: CGFloat = WeirLayout.Supervision.stateGlyphSize
-    /// What the unread ring and dot are drawn in on a row filled with the
-    /// system's accent (the menu bar's lit row), where a ring in the
-    /// accent would vanish into the fill; `nil` everywhere else, where
-    /// they take the person's accent.
-    var inkOnAccentFill: Color?
+    /// What the unread ring and dot are drawn in instead of the person's
+    /// accent, on a surface that has its own ink for them (the menu bar's
+    /// rows); `nil` everywhere else.
+    var unreadInkOverride: Color?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.weirAccent) private var accent
@@ -95,7 +94,7 @@ struct StateGlyph: View {
             size: size,
             isTurning: !isReduceMotionOn,
             isContrastIncreased: contrast == .increased,
-            unreadInk: inkOnAccentFill ?? SupervisionTokens.accentIcon(color: accent)
+            unreadInk: unreadInkOverride ?? SupervisionTokens.accentIcon(color: accent)
         )
     }
 }

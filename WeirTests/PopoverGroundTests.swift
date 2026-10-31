@@ -61,6 +61,25 @@ struct PopoverGroundTests {
         #expect(PopoverGround.opaque.hover == .solid(Tokens.hover))
     }
 
+    /// A bordered button keeps the window's face on the opaque ground, and
+    /// has none on the material, so no opaque box stands on the glass.
+    @Test func aButtonsFace_isOpaqueOnlyOnTheOpaqueGround() {
+        #expect(PopoverGround.opaque.buttonFace == .solid(Tokens.window))
+        #expect(PopoverGround.material.buttonFace == nil)
+    }
+
+    /// With no face at rest, a hovered button shows by its edge on the
+    /// material, which stands clearly off it; the opaque ground's fill reads
+    /// without one.
+    @Test(arguments: [false, true])
+    func aHoveredButtonsEdge_standsOffThePopoverMaterial(isDark: Bool) throws {
+        #expect(PopoverGround.opaque.buttonHoverEdge == nil)
+        let material = Tokens.popoverMaterial.value(isDark: isDark)
+        let edge = try #require(PopoverGround.material.buttonHoverEdge).value(over: material, isDark: isDark)
+        let ratio = ContrastRatio.between(edge, material)
+        #expect(ratio >= ContrastRatio.icon, "edge in \(isDark ? "dark" : "light"): \(ratio)")
+    }
+
     /// On the material, the selected row stands off it further than the
     /// opaque `selection` did (about 1.1:1, all but gone), and further than
     /// a hovered one, so the row the keys are on shows.
