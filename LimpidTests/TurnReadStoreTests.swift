@@ -36,7 +36,12 @@ struct TurnReadStoreTests {
             let store = TurnReadStore(directory: dir)
             store.markRead([Self.mark("a")])
 
-            await pollUntil(interval: .milliseconds(20)) { TurnReadStore(directory: dir).isRead(Self.mark("a")) }
+            // The save waits on the main queue, which a parallel run can stall
+            // past a short deadline, so only a save that never comes should
+            // reach this one.
+            await pollUntil(timeout: .seconds(30), interval: .milliseconds(20)) {
+                TurnReadStore(directory: dir).isRead(Self.mark("a"))
+            }
 
             #expect(TurnReadStore(directory: dir).isRead(Self.mark("a")))
         }

@@ -140,7 +140,10 @@ struct ApprovalDeadlineTests {
         )
         #expect(store.ledger.entry(for: request)?.state == .held)
 
-        await pollUntil(interval: .milliseconds(10)) { store.ledger.entry(for: request)?.state == .timedOut }
+        // The deadline's timer fires on the main actor, which a parallel run can
+        // stall past a short deadline, so only a timer that never fires should
+        // reach this one.
+        await pollUntil(timeout: .seconds(30), interval: .milliseconds(10)) { store.ledger.entry(for: request)?.state == .timedOut }
         #expect(store.ledger.entry(for: request)?.state == .timedOut)
     }
 

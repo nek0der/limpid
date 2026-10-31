@@ -494,15 +494,15 @@ struct InlineRenameGeometryTests {
         let (window, host) = Self.hosted(view)
         defer { window.close() }
         if let caret {
-            // The field takes the keyboard on its own a turn or two after it
-            // mounts; the glyphs are compared once the field editor draws them.
-            await settle(host, timeout: Self.timeout) {
-                guard let textField = Self.textField(in: host) else { return false }
-                if !(window.firstResponder is NSTextView) {
-                    window.makeFirstResponder(textField)
-                }
-                return (window.firstResponder as? NSTextView)?.string == name
-            }
+            // The field takes the keyboard on its own a few turns after it
+            // mounts, selecting the name and scrolling to its start as it
+            // does, and then aligns its editor. We wait those turns rather
+            // than take the keyboard for it, so the caret is put and the glyphs
+            // are read on a field that has opened, not on one still opening.
+            await settle(host, timeout: Self.timeout) { Self.textField(in: host) != nil }
+            await Self.waitForTheFieldToOpen(in: host)
+            await settle(host, timeout: Self.timeout) { (window.firstResponder as? NSTextView)?.string == name }
+            await Self.waitForTheFieldToOpen(in: host)
             guard let editor = window.firstResponder as? NSTextView, editor.string == name else { return nil }
             let length = (name as NSString).length
             switch caret {
@@ -522,6 +522,16 @@ struct InlineRenameGeometryTests {
             }
         }
         return await settledValue(in: host, timeout: Self.timeout) { value(host, window) }
+    }
+
+    /// Runs the main queue past the turns an opening field waits for:
+    /// `KeyboardHandoff`'s two, the update that focuses it, and the few
+    /// `attachEditorAlignment` looks again for.
+    private static func waitForTheFieldToOpen(in host: NSView) async {
+        for _ in 0..<3 {
+            host.layoutSubtreeIfNeeded()
+            await KeyboardHandoff.responderSettled()
+        }
     }
 
     /// A black block a label's height, `width` wide past the gutter, masked
