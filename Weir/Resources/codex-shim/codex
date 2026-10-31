@@ -142,63 +142,8 @@ export WEIR_AGENT_TMUX_HOST_MODE
 # Hand off to the real agent, inside a tmux session of its own when the
 # user asked for that. Every exit from this script goes through here.
 exec_agent() {
-  # The first instruction goes last, after `--`, as one argument whatever
-  # it holds: quotes and `$(...)` reach the agent as typed. A reader in
-  # front of the agent passes it, inside tmux as outside
-  # (`weir_prompt_reader`).
-  if command -v weir_take_initial_prompt >/dev/null 2>&1 && weir_take_initial_prompt; then
-    set -- /bin/sh -c "$weir_prompt_reader" weir-prompt "$weir_initial_prompt_file" 0 "$@"
-  fi
-  [ "$hosts_in_tmux" = 1 ] || exec "$@"
-  # Unique per invocation. `-A` is deliberately absent: with the name
-  # already taken it attaches and silently drops the command, handing
-  # back the running agent instead of starting the one that was asked
-  # for.
-  ea_session="weir-$(printf '%s' "$WEIR_PANE_ID" | tr -cd 'A-Za-z0-9' | cut -c1-8)-$$"
-  # The agent command is in "$@" and the tmux command line has to come
-  # before it. We append the tmux side after it and then rotate the
-  # agent command to the end, which is how a list whose values may hold
-  # spaces is built in POSIX sh.
-  ea_count=$#
-  set -- "$@" -L "${WEIR_AGENT_TMUX_SOCKET:-weir}" -f /dev/null \
-    set -s escape-time 10 ";" \
-    set -s default-terminal tmux-256color ";" \
-    set -sa terminal-overrides ",*:RGB" ";" \
-    set -g prefix None ";" \
-    new-session -s "$ea_session"
-  # A variable set to empty is passed on empty: a session on a server that
-  # already runs takes every variable not given here from the server's
-  # environment, and a demo pane empties the record directories precisely
-  # so the agent writes no records into another build's.
-  # One this pane does not set is unset in the session, for the same
-  # reason: left out, the session would take the server's value, which
-  # is the pane's that started the server (another pane's home, another
-  # run's id). tmux's `-e` only sets (`NAME=value`), so `/usr/bin/env -u`
-  # takes it out as the agent starts.
-  ea_unset=""
-  for ea_name in $hosted_env_names; do
-    eval "ea_is_set=\${$ea_name+set}"
-    if [ -z "$ea_is_set" ]; then
-      ea_unset="$ea_unset $ea_name"
-      continue
-    fi
-    eval "ea_value=\${$ea_name}"
-    set -- "$@" -e "$ea_name=$ea_value"
-  done
-  # `/usr/bin/env` guarantees more than one argument after the options,
-  # which is what makes tmux exec our argv directly rather than passing
-  # a single string to `sh -c` — so nothing here needs quoting.
-  set -- "$@" /usr/bin/env
-  for ea_name in $ea_unset; do
-    set -- "$@" -u "$ea_name"
-  done
-  while [ "$ea_count" -gt 0 ]; do
-    ea_arg="$1"
-    shift
-    set -- "$@" "$ea_arg"
-    ea_count=$((ea_count - 1))
-  done
-  exec "$WEIR_AGENT_TMUX" "$@"
+  command -v weir_exec_agent >/dev/null 2>&1 || exec "$@"
+  weir_exec_agent "$hosts_in_tmux" "$hosted_env_names" 0 "$@"
 }
 
 # Codex resolves a relative `CODEX_HOME` against the directory it starts
