@@ -144,7 +144,7 @@ struct SupervisionHistoryDeliveryNotice: View {
             guard let url = NotificationSettingsPane.url else { return }
             openURL(url)
         }
-        .buttonStyle(.supervisionSecondary(size: .compact))
+        .buttonStyle(.supervisionSecondary(size: .compact, tone: .onStateFill))
     }
 }
 

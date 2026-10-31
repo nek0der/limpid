@@ -61,6 +61,11 @@ struct SupervisionSecondaryButtonStyle: ButtonStyle {
         /// in the text color while hovered, so it reads as pressable
         /// without a border competing with what it sits on.
         case ghost
+        /// A button standing inside a state's soft fill (the notification
+        /// history's notice): an opaque neutral face at every step, so it
+        /// never takes on the fill's hue, and lighter than the fill, where
+        /// the window's color would read as a hole cut in the band.
+        case onStateFill
     }
 
     var size = Size.regular
@@ -99,7 +104,7 @@ struct SupervisionSecondaryButtonStyle: ButtonStyle {
                 .padding(.horizontal, size.horizontalPadding)
                 .frame(height: size.height)
                 .background(shape.fill(fill))
-                .overlay(shape.strokeBorder(tone == .ghost ? Color.clear : ink.line, lineWidth: 1))
+                .overlay(shape.strokeBorder(edge, lineWidth: 1))
                 .contentShape(shape)
                 .opacity(isEnabled ? 1 : SupervisionTokens.disabledOpacity)
                 .onHover { isHovering = $0 }
@@ -107,9 +112,17 @@ struct SupervisionSecondaryButtonStyle: ButtonStyle {
 
         private var title: Color {
             switch tone {
-            case .standard: ink.text
+            case .standard, .onStateFill: ink.text
             case .refusal, .destructive: SupervisionTokens.stoppedText.color
             case .ghost: isHovering && isEnabled ? ink.text : ink.muted
+            }
+        }
+
+        private var edge: Color {
+            switch tone {
+            case .ghost: .clear
+            case .onStateFill: SupervisionTokens.stateFillButtonEdge.color
+            case .standard, .refusal, .destructive: ink.line
             }
         }
 
@@ -119,6 +132,9 @@ struct SupervisionSecondaryButtonStyle: ButtonStyle {
         /// hovered take their popover ground's fills (`PopoverGround`):
         /// on a panel's material the opaque ones all but vanish.
         private var fill: Color {
+            if tone == .onStateFill {
+                return stateFillFace.color
+            }
             let token: RowFill? = if configuration.isPressed {
                 ground.selection
             } else if isHovering, isEnabled {
@@ -127,6 +143,16 @@ struct SupervisionSecondaryButtonStyle: ButtonStyle {
                 tone == .ghost ? nil : .solid(SupervisionTokens.window)
             }
             return token.map { $0.color.opacity(surfaceOpacity) } ?? .clear
+        }
+
+        private var stateFillFace: ThemedColor {
+            if configuration.isPressed {
+                SupervisionTokens.stateFillButtonPressed
+            } else if isHovering, isEnabled {
+                SupervisionTokens.stateFillButtonHover
+            } else {
+                SupervisionTokens.stateFillButton
+            }
         }
     }
 }

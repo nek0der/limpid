@@ -555,6 +555,14 @@ enum SupervisionTokens {
     /// Nothing with words on it is filled in `waiting` itself: the strong
     /// amber under dark letters reads as a dark block.
     static let waitingFill = ThemedColor(light: 0xFDF0DF, dark: 0x3A2B18)
+    /// A button standing inside a state's soft fill, at rest, hovered, and
+    /// pressed, with its edge: opaque neutrals, so the button keeps its own
+    /// color whatever the fill's hue. Each step moves further from the rest
+    /// face, and `text` keeps 4.5:1 on the strongest.
+    static let stateFillButton = ThemedColor(light: 0xFFFFFF, dark: 0x30333A)
+    static let stateFillButtonHover = ThemedColor(light: 0xECEEF2, dark: 0x3D4047)
+    static let stateFillButtonPressed = ThemedColor(light: 0xE2E6ED, dark: 0x4A4D55)
+    static let stateFillButtonEdge = ThemedColor(light: 0xCCD1DA, dark: 0x4A4D55)
     /// The needs-input glyph's disc ("?"), wherever it is drawn: the
     /// sidebar, the tabs, Needs Attention, the history, the cards. The
     /// lightest amber on which a white mark still reaches 3:1 for
