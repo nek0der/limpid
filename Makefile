@@ -88,14 +88,17 @@ build-release: $(PBXPROJ)
 # `build` alone never assembles an archive, which is how the v0.1.5 generic
 # archive reached the release workflow. We archive unsigned so this runs
 # without the Developer ID certificate, then check the layout that
-# `exportArchive` depends on.
+# `exportArchive` depends on. RELEASE_CHECK_BUILD_SETTINGS adds build settings;
+# left empty, the archive is optimized as a release is.
 RELEASE_CHECK_ARCHIVE ?= build/ReleaseCheck/Limpid.xcarchive
+RELEASE_CHECK_BUILD_SETTINGS ?=
 release-check: $(PBXPROJ)
 	scripts/test-check-release-archive.sh
 	rm -rf '$(RELEASE_CHECK_ARCHIVE)'
 	xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
 		-destination '$(BUILD_DESTINATION)' \
 		CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO \
+		$(RELEASE_CHECK_BUILD_SETTINGS) \
 		archive -archivePath '$(RELEASE_CHECK_ARCHIVE)'
 	scripts/check-release-archive.sh '$(RELEASE_CHECK_ARCHIVE)'
 

@@ -349,7 +349,16 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      # Whole-module optimization is most of this job's time, and one changed
+      # file means redoing all of it, so a cache cannot help. A pull request
+      # skips it: the archive's layout and the `#if DEBUG` branches do not
+      # depend on the optimizer. `main` and the release pull request still
+      # optimize as a release does, so a failure only the optimizer hits shows
+      # up before the tag exists: merging the release pull request is what
+      # creates the tag.
       - name: Archive Release unsigned and check it can be distributed
+        env:
+          RELEASE_CHECK_BUILD_SETTINGS: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release-please--') && 'SWIFT_OPTIMIZATION_LEVEL=-Onone SWIFT_COMPILATION_MODE=singlefile' || '' }}
         run: make release-check
 
       # The guardrail job has no build, so the notices check proves what the
