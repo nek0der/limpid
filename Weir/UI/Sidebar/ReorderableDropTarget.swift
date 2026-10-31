@@ -23,13 +23,7 @@
 
 import SwiftUI
 import UniformTypeIdentifiers
-
-typealias ReorderableDropPosition = DropPosition
-
-enum DropPosition {
-    case before
-    case after
-}
+import WeirDomain
 
 extension View {
     /// `targetID` MUST be unique across all drop targets in the

@@ -66,7 +66,7 @@ struct TabCommands: Commands {
                     guard let target else { return }
                     target.commands.send(.newWorktree)
                 } label: {
-                    Label("New Worktree…", systemImage: "arrow.triangle.branch")
+                    Label("New Worktree…", systemImage: ContainerSymbol.worktree)
                 }
                 .weirShortcut(.newWorktree, in: state.settingsStore)
                 .disabled(target.flatMap { state.session.selection($0.id)?.shownProjectID } == nil)

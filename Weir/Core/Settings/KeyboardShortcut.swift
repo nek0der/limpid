@@ -316,7 +316,7 @@ enum WeirShortcutAction: String, CaseIterable, Codable, Identifiable {
     var iconName: String {
         switch self {
         case .newTab: "plus"
-        case .newWorktree: "arrow.triangle.branch"
+        case .newWorktree: ContainerSymbol.worktree
         case .newWorktreeNow: "bolt"
         case .renameTab: "pencil"
         case .reopenClosedTab: "arrow.uturn.backward"
