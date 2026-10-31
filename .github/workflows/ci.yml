@@ -8,9 +8,13 @@ on:
 permissions:
   contents: read
 
+# A pull request only needs its latest push checked, so a new push cancels the
+# run before it. Every commit on `main` gets a run of its own: canceling would
+# leave a commit unchecked and its build unsaved for pull requests, and sharing
+# a group with `cancel-in-progress: false` would still drop a waiting run.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   rust:
