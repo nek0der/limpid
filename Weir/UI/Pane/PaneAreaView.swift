@@ -6,11 +6,9 @@ import SwiftUI
 
 struct PaneAreaView: View {
     @Environment(WorkspaceSession.self) private var session
-    @Environment(ReviewPresentation.self) private var reviewPresentation
     @Environment(SettingsStore.self) private var settings
     @Environment(StopLedgerStore.self) private var stopLedger
     @Environment(\.surfaceRegistry) private var registry
-    @Environment(\.paneVisibilityReporter) private var paneVisibility
     /// The window this pane area is in. Drawn only under
     /// `SessionTerminalView`, inside a main window, whose
     /// `MainWindowContent` puts the window in the environment.
@@ -27,21 +25,6 @@ struct PaneAreaView: View {
     /// taking them (`WorkspaceSession.isScratchElsewhere(in:)`).
     private var isScratchElsewhere: Bool {
         session.isScratchElsewhere(in: window.id)
-    }
-
-    /// What this pane area shows, for the window registry: which terminals
-    /// draw and which panes the person can be said to see.
-    private var display: PaneAreaDisplay {
-        let tab = renderableTab
-        return PaneAreaDisplay(
-            leafIDs: tab?.splitTree.allLeafIDs() ?? [],
-            zoomedLeafID: tab?.zoomedLeafID,
-            review: review
-        )
-    }
-
-    private var review: PaneAreaDisplay.Review {
-        window.review?.isShown == true ? .tab : .closed
     }
 
     var body: some View {
@@ -67,36 +50,6 @@ struct PaneAreaView: View {
             if window.review?.isShown != true {
                 terminals
             }
-        }
-        // Drive the occlusion update off the `SplitTree` itself rather
-        // than a freshly-allocated `Set<UUID>`. SwiftUI calls the
-        // `.onChange` key getter on every body re-eval to diff against
-        // the previous value, so observing a computed `Set` allocated
-        // a fresh set on every animation frame of a divider drag /
-        // window resize. The tree comparison is cheap and only emits
-        // on real structural changes.
-        .onChange(of: renderableTab?.splitTree, initial: true) { _, _ in
-            paneVisibility.report(display)
-        }
-        // Zooming changes which leaf counts as seen (the drawing set stays
-        // whole; see `VisibilityInputBuilder.renderedPanes`).
-        .onChange(of: renderableTab?.zoomedLeafID) { _, _ in
-            paneVisibility.report(display)
-        }
-        // The review tab coming to the front, or going behind a terminal tab.
-        .onChange(of: window.review?.isShown) { _, _ in
-            paneVisibility.report(display)
-        }
-        // The window switching to another project: the registry let go of
-        // what it reported of the project left, and the tab drawn can be
-        // the same one (a scratch tab), which no change above reports.
-        .onChange(of: window.selection.shownProjectID) { _, _ in
-            paneVisibility.report(display)
-        }
-        // The review's surface opening or closing. Focus goes
-        // back to the agent's pane in `ReviewTabActions.close`, not here.
-        .onChange(of: reviewPresentation.directory) { _, _ in
-            paneVisibility.report(display)
         }
     }
 

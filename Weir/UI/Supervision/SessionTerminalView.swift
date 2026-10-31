@@ -8,20 +8,81 @@ import SwiftUI
 /// instances alive across tab switches, so a re-activated tab brings its
 /// surface back instantly.
 struct SessionTerminalView: View {
-    @Environment(WorkspaceSession.self) private var session
-    @Environment(ReviewPresentation.self) private var reviewPresentation
-    /// The window drawn: its tab is the one shown.
-    @Environment(ProjectWindowState.self) private var window
     let ghosttyApp: GhosttyApp
 
     var body: some View {
-        // Review outranks the empty state. Closing the last tab while a review
-        // was open took the surface off screen with the presentation still
-        // open — the window said review was up, and nothing was.
-        if session.activeTab(in: window.id) != nil || reviewPresentation.isPresented {
+        SessionTerminalRegion {
             PaneAreaView(ghosttyApp: ghosttyApp)
-        } else {
-            SessionTerminalEmptyState()
+        }
+    }
+}
+
+/// The pane area or the empty state, and the reports of what the window shows.
+/// Generic over the pane area so a test can stand in for the terminals, which
+/// need a running libghostty.
+struct SessionTerminalRegion<PaneArea: View>: View {
+    @Environment(WorkspaceSession.self) private var session
+    @Environment(ReviewPresentation.self) private var reviewPresentation
+    @Environment(\.paneVisibilityReporter) private var paneVisibility
+    /// The window drawn: its tab is the one shown.
+    @Environment(ProjectWindowState.self) private var window
+    @ViewBuilder let paneArea: PaneArea
+
+    /// What the region shows, for the window registry: which terminals draw
+    /// and which panes the person can be said to see.
+    private var display: PaneAreaDisplay {
+        let tab = session.drawnTab(in: window.id)
+        return PaneAreaDisplay(
+            leafIDs: tab?.splitTree.allLeafIDs() ?? [],
+            zoomedLeafID: tab?.zoomedLeafID,
+            review: window.review?.isShown == true ? .tab : .closed
+        )
+    }
+
+    var body: some View {
+        // A container that stays through both branches: the reports hang off
+        // it, not off the pane area, so the move to a row with no tabs is
+        // reported too. Reported from the pane area, they went with it, and
+        // the last panes counted as drawn and seen from then on.
+        ZStack {
+            // Review outranks the empty state. Closing the last tab while a review
+            // was open took the surface off screen with the presentation still
+            // open — the window said review was up, and nothing was.
+            if session.activeTab(in: window.id) != nil || reviewPresentation.isPresented {
+                paneArea
+            } else {
+                SessionTerminalEmptyState()
+            }
+        }
+        // Drive the occlusion update off the `SplitTree` itself rather
+        // than a freshly-allocated `Set<UUID>`. SwiftUI calls the
+        // `.onChange` key getter on every body re-eval to diff against
+        // the previous value, so observing a computed `Set` allocated
+        // a fresh set on every animation frame of a divider drag /
+        // window resize. The tree comparison is cheap and only emits
+        // on real structural changes.
+        .onChange(of: session.drawnTab(in: window.id)?.splitTree, initial: true) { _, _ in
+            paneVisibility.report(display)
+        }
+        // Zooming changes which leaf counts as seen (the drawing set stays
+        // whole; see `VisibilityInputBuilder.renderedPanes`).
+        .onChange(of: session.drawnTab(in: window.id)?.zoomedLeafID) { _, _ in
+            paneVisibility.report(display)
+        }
+        // The review tab coming to the front, or going behind a terminal tab.
+        .onChange(of: window.review?.isShown) { _, _ in
+            paneVisibility.report(display)
+        }
+        // The window switching to another project: the registry let go of
+        // what it reported of the project left, and the tab drawn can be
+        // the same one (a scratch tab), which no change above reports.
+        .onChange(of: window.selection.shownProjectID) { _, _ in
+            paneVisibility.report(display)
+        }
+        // The review's surface opening or closing. Focus goes
+        // back to the agent's pane in `ReviewTabActions.close`, not here.
+        .onChange(of: reviewPresentation.directory) { _, _ in
+            paneVisibility.report(display)
         }
     }
 }
