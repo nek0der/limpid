@@ -3,19 +3,22 @@
 
 import SwiftUI
 
-/// Which agent a session row or an all projects card speaks for:
+/// One agent, wherever one is named by a mark: a tab, a pane's header, a
+/// card, or a row (`AgentBadgeStrip` for a place with several):
 /// "Cl" and "Cx" in white on Claude's and Codex's brand colors. A session
 /// with only a shell has none: its state glyph is the terminal's mark
 /// already, and a boxed word beside it would only say it again. The letters
-/// are always the same width, so the column the badge sits in lines up from row to row. A
-/// row's label names the agent in full, so there VoiceOver skips the
-/// badge; a card, whose label is made of what it shows, has the badge say
-/// the agent's name (`spokenName`), and a shell's glyph says "Shell".
+/// are always the same width, so the column the badge sits in lines up from
+/// row to row. Where a place's own label names the agent in full, VoiceOver
+/// skips the badge; a place whose label is made of what it shows has the badge
+/// say the agent's name (`spokenName`).
 struct SessionAgentBadge: View {
     enum Size {
-        /// Under the time in a session row's fixed column.
+        /// On a line of text: under the time in a session row's fixed
+        /// column, on a Needs Attention row.
         case row
-        /// On a line of its own height (a card's top line).
+        /// On a line of its own height (a card's top line, a tab, a pane's
+        /// header).
         case regular
 
         var height: CGFloat {
@@ -84,6 +87,54 @@ struct SessionAgentBadge: View {
         switch kind {
         case .claude: SupervisionTokens.claudeEdge.color
         case .codex: SupervisionTokens.codexEdge.color
+        }
+    }
+}
+
+/// The mark that stands for the agents past the ones with a badge of their own
+/// (`AgentBadgeSlots`): "+2" in a badge's box, so it lines up with them, and
+/// in no agent's color, as it is none of them.
+struct AgentOverflowBadge: View {
+    let count: Int
+    var size = SessionAgentBadge.Size.row
+
+    private typealias Layout = LimpidLayout.Supervision
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Layout.agentBadgeCornerRadius, style: .continuous)
+        Text(verbatim: "+\(count)")
+            .font(.supervision(size.fontSize, weight: .bold, design: .monospaced))
+            .foregroundStyle(SupervisionTokens.muted.color)
+            .frame(width: Layout.agentBadgeWidth, height: size.height)
+            .overlay(shape.strokeBorder(SupervisionTokens.line.color, lineWidth: Layout.agentBadgeEdgeWidth))
+            .fixedSize()
+            .accessibilityHidden(true)
+    }
+}
+
+/// Each kind of agent in a row or a card, side by side in `AgentKind`'s order:
+/// where each stands does not move as states change. What state any of them
+/// is in is said by the line beside it, which names the agent.
+struct AgentBadgeStrip: View {
+    let kinds: [AgentKind]
+    var size = SessionAgentBadge.Size.row
+    @Environment(\.locale) private var locale
+
+    private typealias Layout = LimpidLayout.Supervision
+
+    var body: some View {
+        let fitted = AgentBadgeSlots.fit(kinds)
+        HStack(spacing: Layout.agentBadgeSpacing) {
+            ForEach(fitted.shown, id: \.self) { kind in
+                SessionAgentBadge(
+                    badge: .agent(kind),
+                    text: SessionRowFactText.badge(.agent(kind), locale: locale),
+                    size: size
+                )
+            }
+            if !fitted.hidden.isEmpty {
+                AgentOverflowBadge(count: fitted.hidden.count, size: size)
+            }
         }
     }
 }

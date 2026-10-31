@@ -128,7 +128,8 @@ struct DemoSceneTests {
         #expect(rows.allSatisfy { $0.checkout == nil })
         #expect(rows.map(\.factText) == [
             "Unread · No file changes",
-            "Unread · 4 files changed",
+            // The one row with two kinds of agent names whose turn this is.
+            "Claude · Unread · 4 files changed",
             "Waiting for approval: tsc",
             "Bash: pnpm test src/billing",
             "Stopped: API Error: Request timed out.",

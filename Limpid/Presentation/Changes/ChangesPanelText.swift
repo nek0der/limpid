@@ -752,11 +752,12 @@ enum ChangesPanelText {
         return ([head] + lines).joined(separator: "\n")
     }
 
-    /// The session header's chip while the sidebar is folded for the panel.
+    /// What VoiceOver hears as the sidebar folds for the panel. On screen the
+    /// panel opening beside it says why.
     static func sidebarFolded(locale: Locale) -> String {
         LocalizedStringResource(
-            "Sidebar hidden to make room for Changes",
-            comment: "Worktree header: the sidebar is folded while the changes panel needs its width"
+            "Sidebar hidden for Changes",
+            comment: "VoiceOver announcement: the sidebar is folded while the changes panel needs its width"
         ).resolved(in: locale)
     }
 

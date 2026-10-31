@@ -27,6 +27,14 @@ enum AttentionSubject: Equatable, Sendable {
     /// because its session was not matched to a pane.
     case unplaced(provider: AgentKind)
 
+    /// The agent the subject is about; `nil` for a session row's own.
+    var agentKind: AgentKind? {
+        switch self {
+        case let .runtime(_, provider, _, _, _), let .unplaced(provider): provider
+        case .sessionRow: nil
+        }
+    }
+
     /// `nil` for a session row or an unplaced request, which have no pane
     /// to show.
     var paneID: UUID? {

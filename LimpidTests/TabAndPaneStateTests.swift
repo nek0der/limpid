@@ -161,7 +161,7 @@ struct TabTests {
 
     // MARK: - The tab's agent
 
-    @Test func aTabWithTwoAgents_wearsTheFirstAgentsBadge() {
+    @Test func aTabWithTwoAgents_namesBoth_inAgentKindsOrder() {
         let claudePane = UUID()
         let codexPane = UUID()
         var tab = Tab(
@@ -170,19 +170,19 @@ struct TabTests {
             container: .loose
         )
         tab.agentBadges[.codex] = [codexPane: AgentBadge(state: .running, updatedAt: Date())]
-        #expect(tab.agentKind == .codex)
+        #expect(tab.agentKinds == [.codex])
         tab.agentBadges[.claude] = [claudePane: AgentBadge(state: .idle, updatedAt: Date())]
-        #expect(tab.agentKind == .claude, "Claude comes first in AgentKind's order")
+        #expect(tab.agentKinds == [.claude, .codex], "in AgentKind's order")
     }
 
     @Test func aTabIsAnAgentTab_whileAnAgentHasASessionInIt_andRunsInTmuxByEitherSource() {
         let pane = UUID()
         var tab = Tab(title: "t", splitTree: SplitTree(leafID: pane), container: .loose)
-        #expect(tab.agentKind == nil)
+        #expect(tab.agentKinds.isEmpty)
         tab.agentBadges[.codex] = [pane: AgentBadge(state: .unknown, updatedAt: Date())]
-        #expect(tab.agentKind == .codex, "a run restored at launch has not reported yet, and is still the tab's agent")
+        #expect(tab.agentKinds == [.codex], "a run restored at launch has not reported yet, and is still the tab's agent")
         tab.agentBadges[.codex] = [pane: AgentBadge(state: .idle, updatedAt: Date())]
-        #expect(tab.agentKind == .codex, "the tab wears its agent's badge")
+        #expect(tab.agentKinds == [.codex], "the tab wears its agent's badge")
 
         #expect(!tab.isHostedInTmux(mountedTmuxPaneIDs: []))
         #expect(tab.isHostedInTmux(mountedTmuxPaneIDs: [pane]))
@@ -190,7 +190,7 @@ struct TabTests {
         #expect(tab.isHostedInTmux(mountedTmuxPaneIDs: []))
 
         tab.agentBadges[.codex] = [:]
-        #expect(tab.agentKind == nil, "a retired run leaves the tab a plain terminal")
+        #expect(tab.agentKinds.isEmpty, "a retired run leaves the tab a plain terminal")
     }
 }
 

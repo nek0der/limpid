@@ -20,7 +20,7 @@ struct OpenTabsModelTests {
         PaneStripModel.ItemInput(
             id: id,
             title: title,
-            agent: agent,
+            agents: agent.map { [PaneStripModel.AgentInput(kind: $0)] } ?? [],
             paneGlyphs: paneGlyphs,
             paneItems: paneItems,
             hasUnread: false,

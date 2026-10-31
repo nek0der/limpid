@@ -249,9 +249,9 @@ struct SessionRowView: View {
     }
 
     /// The second line after its fact: a usage limit's chip, then the pull
-    /// request's mark and the agent badge in the column the time is in. The
-    /// column only grows to the left for the mark, so the fact is what is
-    /// cut short, never the mark or the badge.
+    /// request's mark and the agents' badges in the column the time is in. The
+    /// column only grows to the left for them, so the fact is what is cut
+    /// short, never a mark or a badge.
     private func trailingLineTwo(tooltip: String) -> some View {
         HStack(spacing: Layout.sessionRowColumnSpacing) {
             HStack(spacing: Layout.sessionRowColumnSpacing) {
@@ -279,7 +279,7 @@ struct SessionRowView: View {
                     SessionPRMark(style: attachedMark)
                         .prHoverCardPart(pullRequestCard, part: .mark)
                 }
-                SessionAgentBadge(badge: row.fact.badge, text: row.badgeText)
+                AgentBadgeStrip(kinds: row.agentKinds)
                     .help(Text(verbatim: tooltip))
             }
             .frame(minWidth: hasTrailingMark ? Layout.sessionRowTrailingColumnWidth : 0, alignment: .trailing)
@@ -294,13 +294,7 @@ struct SessionRowView: View {
     /// This is true when the second line's column shows a pull request's
     /// mark or an agent's badge.
     private var hasTrailingMark: Bool {
-        guard attachedMark == nil else {
-            return true
-        }
-        guard case .agent = row.fact.badge else {
-            return false
-        }
-        return true
+        attachedMark != nil || !row.agentKinds.isEmpty
     }
 
     /// Answer… shows while the pointer is on a row that offers it,

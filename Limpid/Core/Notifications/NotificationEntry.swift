@@ -66,7 +66,8 @@ struct NotificationEntry: Codable, Identifiable, Equatable {
     /// Pane this notification belonged to. Used to jump back to the
     /// source via the history panel's row tap.
     let paneID: UUID?
-    /// Tab that owned the pane at the time. Persisted so a closed pane
+    /// What the source was called at the time: the tab that owned the pane,
+    /// or the pane in a tab of several agents. Persisted so a closed pane
     /// still resolves to a recognizable label after the fact.
     let tabTitleSnapshot: String?
     /// Container the pane belonged to, snapshotted at fire time so the

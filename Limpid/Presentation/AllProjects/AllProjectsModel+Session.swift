@@ -81,9 +81,8 @@ extension AllProjectsModel {
             glyph: row.fact.glyph,
             factText: factLine(row.factText, chips: header.gitChips),
             chips: header.gitChips,
-            badge: row.fact.badge,
-            badgeText: row.badgeText,
-            badgeSpokenName: badgeSpokenName(row.fact.badge, locale: sources.locale),
+            agentKinds: row.agentKinds,
+            badgesSpokenName: badgesSpokenName(row.agentKinds, locale: sources.locale),
             windowNote: note,
             // "Answer…" only while the ledger still holds the request, as
             // the Needs Attention list offers it.
@@ -94,6 +93,7 @@ extension AllProjectsModel {
             ),
             leadItemID: row.leadItemID,
             leadPaneID: row.leadPaneID,
+            leadPaneName: row.leadPaneID.flatMap { sources.session.agentPaneNameAmongNeighbors($0) },
             factTruncation: .fact(row.fact.fact),
             pullRequest: row.fact.pullRequest,
             checkout: row.checkout?.shown,
@@ -108,11 +108,10 @@ extension AllProjectsModel {
         chips.contains { $0.text == factText } ? "" : factText
     }
 
-    /// The agent's name for the card's badge to say: the card's
-    /// label is made of what it shows, and a badge's "Cl" says nothing
-    /// aloud.
-    static func badgeSpokenName(_ badge: SessionRowFact.Badge, locale: Locale) -> String {
-        SessionRowFactText.agentName(badge, locale: locale)
+    /// The agents' names for the card's badges to say: the card's label is
+    /// made of what it shows, and a badge's "Cl" says nothing aloud.
+    static func badgesSpokenName(_ kinds: [AgentKind], locale: Locale) -> String {
+        AgentStatusText.spokenList(kinds.map { SessionRowFactText.agentName(.agent($0), locale: locale) }, locale: locale)
     }
 
     /// "Answer…" for a request Limpid can still answer; "Open Pane" for one

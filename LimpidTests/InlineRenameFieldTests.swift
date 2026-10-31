@@ -93,7 +93,7 @@ struct InlineRenameFieldTests {
     /// The well and the fade reach a few points past the label on each side,
     /// and on the leading side never as far as what stands before the label:
     /// a tab's badge with its state mark laid into the gap, the sidebar
-    /// row's state glyph, and the pane header's kind glyph.
+    /// row's state glyph, and the pane header's kind mark.
     @Test func inlineOutsets_reachPastTheLabel_andStopShortOfTheIcon() {
         let style = InlineRenameEditingStyle.inline
         let layout = LimpidLayout.Supervision.self

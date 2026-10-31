@@ -21,6 +21,7 @@ struct PaneHeaderView: View {
     @Environment(AttentionState.self) private var attention
     @Environment(AttentionQueueStore.self) private var attentionQueue
     @Environment(\.surfaceRegistry) private var registry
+    @Environment(\.conversationIdentities) private var conversationIdentities
     @Environment(\.displayScale) private var displayScale
     @Environment(PaneRenamePresentation.self) private var renamePresentation
     @Environment(SettingsStore.self) private var settingsStore
@@ -38,6 +39,10 @@ struct PaneHeaderView: View {
     /// a rename fits in place, and the floating field hangs below it.
     @State private var headerFrame: CGRect = .zero
     @State private var isHovering = false
+    /// The pointer is on the chip of hidden panes. The header's own tap
+    /// focuses this pane and runs alongside the chip's, which goes to another:
+    /// in either order, this one taking focus back would undo the chip.
+    @State private var isHoveringHiddenPanes = false
     /// True from the moment the pointer moves with the button down until
     /// the gesture ends or is canceled, which is how a drag that AppKit
     /// took over still resets.
@@ -75,6 +80,21 @@ struct PaneHeaderView: View {
         attention.paneHeaderLabel(paneID: paneID, in: session, locale: locale)
     }
 
+    /// The conversation's color, as its tab and its cards wear it; `nil` for
+    /// a worktree of one conversation and for a scratch tab. Read here rather
+    /// than in the pane area: what decides the colors follows every turn, and
+    /// this body draws the header alone, where the area's would draw the
+    /// terminal again.
+    private func identity(of label: PaneHeaderLabel) -> Int? {
+        guard let conversation = label.conversation, let tab = session.tab(containing: paneID) else { return nil }
+        return conversationIdentities?.identities(in: tab.container)[conversation]
+    }
+
+    /// The panes this one stands in front of while zoomed.
+    private var hiddenPanes: PaneHeaderHiddenPanes? {
+        PaneHeaderRules.hiddenPanes(behind: paneID, in: session.tab(containing: paneID), items: attentionQueue.queue.items)
+    }
+
     /// The mark on the trailing edge (`PaneHeaderRules.mark`).
     private var mark: PaneHeaderMark? {
         PaneHeaderRules.mark(
@@ -88,9 +108,11 @@ struct PaneHeaderView: View {
     var body: some View {
         let label = self.label
         let mark = self.mark
+        let identity = identity(of: label)
+        let hiddenPanes = self.hiddenPanes
         // The widest row that fits, so a narrow pane drops what it cannot
         // show rather than leaving an empty gap or cutting the menu at the
-        // edge. The glyph and the menu always stay: the glyph says what the
+        // edge. The kind's mark and the menu always stay: the mark says what the
         // pane is and the menu is how to act on it. While renaming the field
         // is what matters, so the name stays.
         ViewThatFits(in: .horizontal) {
@@ -98,18 +120,18 @@ struct PaneHeaderView: View {
                 isEditing: isEditing,
                 showsPromptCacheClock: attention.promptCacheMark(paneID: paneID) != nil
             ), id: \.self) { form in
-                row(label: label, mark: mark, form: form)
+                row(label: label, mark: mark, identity: identity, hiddenPanes: hiddenPanes, form: form)
             }
         }
         .padding(.horizontal, LimpidLayout.paneHeaderHorizontalPadding)
         // `minWidth: 0` holds the header to the pane's width when the pane
         // is narrower than the row's smallest layout. Without it the frame
         // grows to the row's width, the pane centers that wider header, and
-        // the glyph slides left past the pane's edge; with it the row keeps
+        // the kind's mark slides left past the pane's edge; with it the row keeps
         // its leading edge.
         //
         // Not clipped. The split floor never lets a pane get narrower than
-        // the glyph-and-menu form (`PaneHeaderMetrics.minimumWidth`), so
+        // the mark-and-menu form (`PaneHeaderMetrics.minimumWidth`), so
         // there is nothing to cut. And clipping a row that holds the
         // AppKit-backed menu makes SwiftUI put the whole row, with every
         // AppKit view drawn in it such as the cache clock's pointer tracker,
@@ -147,13 +169,19 @@ struct PaneHeaderView: View {
                 KeyboardHandoff.returnToTerminal(paneID: paneID, registry: registry, keeper: .terminalOrTextField, timing: .nextTurn)
             }
         }
-        .onHover { isHovering = $0 }
+        // Marks the conversation's cards while the pointer rests here.
+        .conversationHover(
+            label.conversation,
+            surface: .paneHeader(paneID),
+            identity: identity,
+            mark: .paneHeader
+        ) { isHovering = $0 }
         // Simultaneous, so the rename field's double-click is not held up
         // behind this tap and the focus change lands on the first click,
         // the way a click on the terminal itself does.
         .simultaneousGesture(
             TapGesture().onEnded {
-                if !isEditing {
+                if !isEditing, !isHoveringHiddenPanes {
                     focusPane()
                 }
             }
@@ -191,6 +219,13 @@ struct PaneHeaderView: View {
                 Button(zoomActionTitle) { performZoomAction() }
                 Button("Move Pane to New Tab") { movePaneToNewTab() }
             }
+            if let hiddenPanes {
+                Button {
+                    goToHiddenPane(hiddenPanes)
+                } label: {
+                    Text(verbatim: PaneHiddenPanesText.line(hiddenPanes, locale: locale))
+                }
+            }
         }
         .accessibilityAction(named: Text("Close Pane")) { onSurface { $0.onRequestCloseActivePane?() } }
         .promptCacheAccessibilityAction(attention.promptCacheMark(paneID: paneID)) { _ in
@@ -215,15 +250,15 @@ struct PaneHeaderView: View {
         }
     }
 
-    private func row(label: PaneHeaderLabel, mark: PaneHeaderMark?, form: PaneHeaderForm) -> some View {
+    private func row(
+        label: PaneHeaderLabel,
+        mark: PaneHeaderMark?,
+        identity: Int?,
+        hiddenPanes: PaneHeaderHiddenPanes?,
+        form: PaneHeaderForm
+    ) -> some View {
         HStack(spacing: LimpidLayout.paneHeaderItemSpacing) {
-            // The tab row's identity glyphs, so a pane and a single-pane tab
-            // running the same thing are marked the same way.
-            Image(systemName: label.isAgent ? "bolt" : "terminal")
-                .font(.supervision(LimpidLayout.paneHeaderGlyphFontSize, weight: .semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: LimpidLayout.paneHeaderGlyphSlot, height: LimpidLayout.paneHeaderGlyphSlot)
-                .accessibilityHidden(true)
+            kindMark(label: label, identity: identity, form: form)
             if form.showsName {
                 InlineRenameField(
                     name: label.name,
@@ -253,6 +288,9 @@ struct PaneHeaderView: View {
                 detailText(detail)
             }
             Spacer(minLength: LimpidLayout.paneHeaderItemSpacing)
+            if form.showsSettings, let hiddenPanes {
+                hiddenPanesChip(hiddenPanes)
+            }
             // Kept for as long as the state mark is: in words while the row
             // has room for the model, else as the symbol alone.
             if form.showsMark, label.showsWarning {
@@ -274,6 +312,49 @@ struct PaneHeaderView: View {
             }
             actionsMenu(label: label)
         }
+    }
+
+    /// Who runs in the pane, as its tab and its cards mark it: the agent's
+    /// badge, led by its conversation's color, or a shell's prompt. VoiceOver
+    /// hears the agent in the header's label.
+    @ViewBuilder
+    private func kindMark(label: PaneHeaderLabel, identity: Int?, form: PaneHeaderForm) -> some View {
+        if let kind = label.agentKind {
+            ConversationIdentityLead(identity: form.showsIdentity(isEditing: isEditing) ? identity : nil) {
+                SessionAgentBadge(
+                    badge: .agent(kind),
+                    text: SessionRowFactText.badge(.agent(kind), locale: locale),
+                    size: .regular
+                )
+            }
+        } else {
+            ShellPromptBadge()
+        }
+    }
+
+    /// What the zoom hides ("1 other pane · Needs approval"), which goes to
+    /// the pane that most needs the person.
+    private func hiddenPanesChip(_ hidden: PaneHeaderHiddenPanes) -> some View {
+        Button {
+            goToHiddenPane(hidden)
+        } label: {
+            Text(verbatim: PaneHiddenPanesText.line(hidden, locale: locale))
+                .font(.supervision(LimpidLayout.paneHeaderDetailFontSize, weight: hidden.glyph == nil ? .regular : .medium))
+                .foregroundStyle(hidden.glyph.textColor)
+                .lineLimit(1)
+                .fixedSize()
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHoveringHiddenPanes = $0 }
+        // A narrowing pane drops the chip under the pointer with no final
+        // leave, which would keep the header's tap from focusing the pane.
+        .onDisappear { isHoveringHiddenPanes = false }
+    }
+
+    private func goToHiddenPane(_ hidden: PaneHeaderHiddenPanes) {
+        guard let tab = session.tab(containing: paneID) else { return }
+        PaneActions.activateAndFocus(session, registry: registry, tabID: tab.id, paneID: hidden.lead, in: window.id, intent: .person)
     }
 
     /// A wash over the pane's own background; see `paneHeaderFill`.
@@ -309,7 +390,7 @@ struct PaneHeaderView: View {
     private func warning(inWords: Bool, isAmbiguous: Bool) -> some View {
         HStack(spacing: LimpidLayout.paneHeaderItemSpacing / 2) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.supervision(LimpidLayout.paneHeaderGlyphFontSize, weight: .semibold))
+                .font(.supervision(LimpidLayout.paneHeaderWarningFontSize, weight: .semibold))
                 .frame(width: LimpidLayout.paneHeaderWarningSlot, height: LimpidLayout.paneHeaderWarningSlot)
             if inWords {
                 Text(isAmbiguous ? PaneHeaderLabel.unavailableSettings : AgentPermissionMode.bypassPermissions.spokenName)

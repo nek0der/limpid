@@ -431,7 +431,7 @@ enum ChangesPanelActions {
                 let runtime = AttentionState.headerRuntime(inPane: place.paneID, among: runtimes)
                 let isTitled = mapping.conversations(of: tab.id)?.titled == conversation
                 let live = ConversationChoice.LiveTab(
-                    title: tab.displayTitle,
+                    title: tab.shownTitle,
                     isInSession: isInSession,
                     checkoutPlace: isInSession ? nil : CheckoutName.place(of: tab.container, in: session),
                     titleOverride: isTitled ? tab.titleOverride : nil,

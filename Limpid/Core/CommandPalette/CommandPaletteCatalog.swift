@@ -171,7 +171,7 @@ enum CommandPaletteCatalog {
             items.append(CommandPaletteItem(
                 id: "tab.\(tab.id.uuidString)",
                 category: .navigate,
-                title: tab.displayTitle,
+                title: tab.shownTitle,
                 subtitle: subtitle.map { PathFormatting.abbreviateHome($0) },
                 icon: "macwindow",
                 shortcutDisplay: nil,

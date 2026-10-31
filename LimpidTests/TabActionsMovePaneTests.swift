@@ -317,7 +317,7 @@ struct TabActionsMovePaneTests {
 
         let moved = try #require(session.tab(containing: pane))
         #expect(moved.id != source.id)
-        #expect(moved.agentKind == .codex)
+        #expect(moved.agentKinds == [.codex])
         #expect(session.tab(source.id)?.agentsInFront[pane] == nil)
     }
 

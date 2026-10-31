@@ -4,11 +4,12 @@
 import Foundation
 
 /// The agent a pane runs, as its terminal's foreground job says, for the
-/// badge its tab, row, and header wear before the agent's run has a record.
+/// badge its tab, row, and header wear and the bar under it before the
+/// agent's run has a record.
 /// Codex writes its record at its first prompt, not as it starts, so
 /// without this a Codex typed into a shell would wear the shell's glyph
-/// until then. Only the badge: what the agent is doing is the record's to
-/// say, and a record, once there, wins (`Tab.agentKind(inPane:)`).
+/// until then. Only that it is there: what the agent is doing is the record's
+/// to say, and a record, once there, wins (`Tab.agentKind(inPane:)`).
 struct PaneAgentInFront: Equatable, Sendable {
     let kind: AgentKind
     /// Staged by the pane strip's "+" (or a new session) as the tab opened,

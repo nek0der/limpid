@@ -171,7 +171,7 @@ extension AppState {
             // Seen-ness was decided above, by what the person can see.
             requireFocus: false,
             kind: .agentNeedsInput,
-            tabTitleSnapshot: tab?.displayTitle,
+            tabTitleSnapshot: tab?.shownTitle,
             containerLabel: containerLabel.flatMap { $0.isEmpty ? nil : $0 },
             runtimeID: runtimeID,
             requestKey: fact.key,

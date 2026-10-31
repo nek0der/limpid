@@ -325,7 +325,7 @@ final class GhosttyEventCoordinator {
         }
 
         let owningTab = session?.tab(containing: paneID)
-        let title = owningTab?.displayTitle ?? "Limpid"
+        let title = owningTab?.shownTitle ?? "Limpid"
         let locale = notificationManager.appLocale()
         let exitFragment: String = {
             if exit < 0 {
@@ -351,7 +351,7 @@ final class GhosttyEventCoordinator {
                 containerID: owningTab?.container,
                 requireFocus: config.mode == .unfocused,
                 kind: .commandFinished,
-                tabTitleSnapshot: owningTab?.displayTitle,
+                tabTitleSnapshot: owningTab?.shownTitle,
                 containerLabel: owningTab.map { session?.containerLabel(for: $0.container, locale: locale) } ?? nil,
                 exitCode: exit >= 0 ? exit : nil,
                 durationSeconds: durationSeconds
@@ -457,7 +457,7 @@ final class GhosttyEventCoordinator {
         }
 
         let title = explicitTitle.isEmpty
-            ? (owningTab?.displayTitle ?? "Limpid")
+            ? (owningTab?.shownTitle ?? "Limpid")
             : explicitTitle
 
         notificationManager.send(
@@ -468,7 +468,7 @@ final class GhosttyEventCoordinator {
             containerID: owningTab?.container,
             requireFocus: true,
             kind: .desktop,
-            tabTitleSnapshot: owningTab?.displayTitle,
+            tabTitleSnapshot: owningTab?.shownTitle,
             containerLabel: owningTab.map { session.containerLabel(for: $0.container, locale: notificationManager.appLocale()) }
         )
 

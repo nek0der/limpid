@@ -911,7 +911,7 @@ extension ChangesPanelModelTests {
             history: [:],
             locale: Self.english
         ) == nil, "an episode no record stands for")
-        #expect(ChangesPanelText.sidebarFolded(locale: Self.japanese) == "変更パネルの幅を確保するため、サイドバーを一時的に非表示にしています")
+        #expect(ChangesPanelText.sidebarFolded(locale: Self.japanese) == "変更パネルのためサイドバーを非表示にしました")
     }
 
     @Test func aTurnWhoseRecordSkippedLargeFiles_saysHowMany() throws {

@@ -20,10 +20,31 @@ extension View {
         onHover: ((Bool) -> Void)? = nil
     ) -> some View {
         modifier(ConversationHoverModifier(
-            conversation: conversation,
+            conversations: conversation.map { [$0] } ?? [],
             surface: surface,
             identity: identity,
             mark: mark,
+            onHover: onHover
+        ))
+    }
+
+    /// A strip tab as a surface of the hover: it reports every conversation
+    /// its panes run that holds a color (`running`), and is outlined for a
+    /// card of any of them, unless it is the selected tab, whose pane answers
+    /// instead (`ConversationHoverRule.tabOutline`).
+    func conversationHover(
+        tab id: UUID,
+        running: [ConversationKey: Int],
+        isSelected: Bool,
+        onHover: @escaping (Bool) -> Void
+    ) -> some View {
+        modifier(ConversationHoverModifier(
+            conversations: Set(running.keys),
+            surface: .tab(id),
+            // Any of them, the same one each read: a report needs only to
+            // know there is a color.
+            identity: running.values.min(),
+            mark: .tab(running: running, isSelected: isSelected),
             onHover: onHover
         ))
     }
@@ -45,8 +66,12 @@ extension View {
 enum ConversationHoverMark: Equatable {
     /// A strip tab: outlined in the color of a hovered card's conversation
     /// when the tab runs it in any pane. `running` is each conversation the
-    /// tab runs that holds a color, with it.
-    case tab(running: [ConversationKey: Int])
+    /// tab runs that holds a color, with it. Not while the tab is selected:
+    /// the pane's frame is in sight then (`PaneConversationFrame`).
+    case tab(running: [ConversationKey: Int], isSelected: Bool)
+    /// A pane's header: only reports. It is the whole pane that answers a
+    /// hovered card (`PaneConversationFrame`).
+    case paneHeader
     /// A turn card: outlined in its own color under its own tab's hover,
     /// dimmed under another's. `isRinged` leaves the outline to the review's
     /// ring, which says more.
@@ -63,7 +88,7 @@ enum ConversationHoverMark: Equatable {
 /// own body, its words and facts, is not built again each time the pointer
 /// moves between tabs and cards.
 private struct ConversationHoverModifier: ViewModifier {
-    let conversation: ConversationKey?
+    let conversations: Set<ConversationKey>
     let surface: ConversationHoverPresentation.Surface
     let identity: Int?
     let mark: ConversationHoverMark
@@ -77,7 +102,7 @@ private struct ConversationHoverModifier: ViewModifier {
     /// What is reported: a change of any part under the pointer ends the
     /// old report and starts a new one.
     private struct Report: Equatable {
-        let conversation: ConversationKey?
+        let conversations: Set<ConversationKey>
         let surface: ConversationHoverPresentation.Surface
         let identity: Int?
     }
@@ -88,7 +113,7 @@ private struct ConversationHoverModifier: ViewModifier {
             .onHover { isHovering in
                 self.isHovering = isHovering
                 onHover?(isHovering)
-                report(isHovering, Report(conversation: conversation, surface: surface, identity: identity))
+                report(isHovering, Report(conversations: conversations, surface: surface, identity: identity))
             }
             // A view closed, scrolled out of a lazy list, or taken away under
             // the pointer is sent no final leave, which would leave the other
@@ -96,12 +121,12 @@ private struct ConversationHoverModifier: ViewModifier {
             .onDisappear {
                 guard isHovering else { return }
                 isHovering = false
-                report(false, Report(conversation: conversation, surface: surface, identity: identity))
+                report(false, Report(conversations: conversations, surface: surface, identity: identity))
             }
             // What the view stands for changed under the pointer: the old
             // conversation is no longer what the pointer is on, and the new
             // one is reported only if it holds a color.
-            .onChange(of: Report(conversation: conversation, surface: surface, identity: identity)) { old, new in
+            .onChange(of: Report(conversations: conversations, surface: surface, identity: identity)) { old, new in
                 guard isHovering else { return }
                 report(false, old)
                 report(true, new)
@@ -110,14 +135,14 @@ private struct ConversationHoverModifier: ViewModifier {
 
     @ViewBuilder private func marked(_ content: Content, hover: ConversationHover?) -> some View {
         switch mark {
-        case let .tab(running):
-            let outline = ConversationHoverRule.tabOutline(running: running, hover: hover)
+        case let .tab(running, isSelected):
+            let outline = ConversationHoverRule.tabOutline(running: running, isSelected: isSelected, hover: hover)
             content
                 .overlay {
                     if let outline {
-                        // On the tab's folder shape down to the strip's rule,
-                        // as the hover fill is. Silent: the card under the
-                        // pointer names its conversation.
+                        // On the tab's folder shape, as the hover fill is.
+                        // Silent: the card under the pointer names its
+                        // conversation.
                         UnevenRoundedRectangle(
                             topLeadingRadius: Layout.paneStripTabCornerRadius,
                             topTrailingRadius: Layout.paneStripTabCornerRadius,
@@ -130,6 +155,8 @@ private struct ConversationHoverModifier: ViewModifier {
                     }
                 }
                 .animation(reduceMotion ? nil : LimpidMotion.conversationHover, value: outline)
+        case .paneHeader:
+            content
         case let .card(isRinged):
             let emphasis = emphasis(hover)
             let shape = RoundedRectangle(cornerRadius: Layout.turnCardCornerRadius, style: .continuous)
@@ -157,7 +184,7 @@ private struct ConversationHoverModifier: ViewModifier {
     }
 
     private func emphasis(_ hover: ConversationHover?) -> ConversationHoverRule.Emphasis {
-        ConversationHoverRule.cardEmphasis(of: conversation, hover: hover, hasIdentity: identity != nil)
+        ConversationHoverRule.cardEmphasis(of: conversations.first, hover: hover, hasIdentity: identity != nil)
     }
 
     /// Tells the window which conversation's other surface to mark. A view
@@ -165,11 +192,11 @@ private struct ConversationHoverModifier: ViewModifier {
     /// whatever the color: one given back while the pointer rests here
     /// would otherwise leave the other surface marked.
     private func report(_ isHovering: Bool, _ report: Report) {
-        guard let conversation = report.conversation else { return }
+        guard !report.conversations.isEmpty else { return }
         if !isHovering {
-            window.conversationHover.leave(conversation, from: report.surface)
+            window.conversationHover.leave(report.conversations, from: report.surface)
         } else if report.identity != nil {
-            window.conversationHover.enter(conversation, from: report.surface)
+            window.conversationHover.enter(report.conversations, from: report.surface)
         }
     }
 }

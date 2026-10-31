@@ -3,7 +3,7 @@
 
 import SwiftUI
 
-/// This is a row: the session's name and how long the item has waited, and under
+/// This is a row: the session's name, the agent's badge, and how long the item has waited, and under
 /// them where the item is and its fact. Its button (Answer…)
 /// stands beside the row rather than in it, so the row's fill marks only
 /// what opening the row goes to; VoiceOver reaches the button there, as
@@ -67,6 +67,13 @@ struct NeedsAttentionRowView: View {
                         .foregroundStyle(selectedText ?? ink.text)
                         .lineLimit(1)
                         .supervisionTruncation(.name)
+                    if let agent = row.agent {
+                        SessionAgentBadge(
+                            badge: .agent(agent),
+                            text: SessionRowFactText.badge(.agent(agent), locale: locale),
+                            spokenName: SessionRowFactText.agentName(.agent(agent), locale: locale)
+                        )
+                    }
                     Spacer(minLength: LimpidLayout.Supervision.spaceSnug)
                     Text(display: waitLabel)
                         .font(.supervision(.meta))

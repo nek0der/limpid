@@ -30,8 +30,9 @@ struct SessionSidebarModel: Equatable {
         let fact: SessionRowFact
         let factText: String
         let tone: Tone
-        /// "Cl" or "Cx"; empty for a shell, which has no badge.
-        let badgeText: String
+        /// Each kind of agent in the row, in `AgentKind`'s order, whose
+        /// badges it shows (`AgentBadgeStrip`); empty for a shell.
+        var agentKinds: [AgentKind] = []
         /// When an agent in the row last moved; `nil` for a row with no
         /// agent, which then shows no time.
         let lastActivity: Date?
@@ -212,6 +213,7 @@ struct SessionSidebarModel: Equatable {
     ) {
         let rows = inputs.map { input in
             let fact = SessionRowFact.make(input.fact)
+            let kinds = Self.agentKinds(of: input, fact: fact)
             let limit = Self.usageLimit(of: input, in: usageLimits)
             let isActive = input.container == activeContainer
             return Row(
@@ -219,9 +221,9 @@ struct SessionSidebarModel: Equatable {
                 name: input.name,
                 nameTruncation: input.nameTruncation,
                 fact: fact,
-                factText: SessionRowFactText.make(fact.fact, locale: locale),
+                factText: SessionRowFactText.make(fact, agentKinds: kinds, locale: locale),
                 tone: Self.tone(of: fact.fact),
-                badgeText: SessionRowFactText.badge(fact.badge, locale: locale),
+                agentKinds: kinds,
                 lastActivity: input.lastActivity,
                 isActive: isActive,
                 isMainFolder: input.container.worktreeID == nil,
@@ -269,6 +271,16 @@ struct SessionSidebarModel: Equatable {
             && worktree.origin == .gitWorktree && worktree.admission != .discovered
     }
 
+    /// The row's kinds of agent: those running in it, with the one its fact
+    /// is about, which may have left its pane (a stop outlives its agent).
+    private static func agentKinds(of input: RowInput, fact: SessionRowFact) -> [AgentKind] {
+        var kinds = Set(input.fact.agents.map(\.provider))
+        if case let .agent(kind) = fact.badge {
+            kinds.insert(kind)
+        }
+        return AgentKind.allCases.filter(kinds.contains)
+    }
+
     /// The account-wide limits of the row's agents' providers.
     private static func usageLimit(of input: RowInput, in limits: UsageLimits) -> [UsageLimit] {
         let providers = Set((input.agents.isEmpty ? [input.fact] : input.agents).flatMap { $0.agents.map(\.provider) })
@@ -276,7 +288,7 @@ struct SessionSidebarModel: Equatable {
     }
 
     /// "Claude: Unread · 2 files changed / Codex: Idle", when the row has
-    /// more than one agent: the row itself shows only the one that most
+    /// more than one agent: the row's line states only the one that most
     /// needs the person. A slash between agents, as a fact may hold a
     /// dot of its own.
     private static func agentSummary(_ agents: [SessionRowFact.Input], locale: Locale) -> String? {
@@ -288,12 +300,7 @@ struct SessionSidebarModel: Equatable {
                 comment: "Worktree row tooltip: one agent and its fact"
             ).resolved(in: locale)
         }
-        return lines.dropFirst().reduce(lines[0]) { text, line in
-            LocalizedStringResource(
-                "\(text) / \(line)",
-                comment: "Worktree row tooltip: separates one agent's fact from the next"
-            ).resolved(in: locale)
-        }
+        return SessionRowFactText.agentList(lines, locale: locale)
     }
 
     private static func tone(of fact: SessionRowFact.Fact) -> Tone {

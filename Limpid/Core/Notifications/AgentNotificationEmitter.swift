@@ -139,7 +139,7 @@ struct AgentNotificationEmitter {
             containerID: tab.container,
             requireFocus: suppressWhenPaneFocused,
             kind: delivery.kind,
-            tabTitleSnapshot: tab.displayTitle,
+            tabTitleSnapshot: session.notificationSourceName(paneID: paneID, in: tab),
             containerLabel: session.containerLabel(for: tab.container, locale: locale),
             runtimeID: runtimeID,
             eventToken: eventToken,

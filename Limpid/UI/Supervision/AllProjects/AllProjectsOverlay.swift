@@ -412,15 +412,13 @@ private struct AllProjectsCardView: View {
                 if card.pullRequest != nil, let mark = PRMarkPresentation.supervisionStyle(for: prStatusStore.info(for: card.id)) {
                     SessionPRMark(style: mark, size: LimpidLayout.Supervision.agentBadgeLargeHeight)
                 }
-                // The card's one mark of its agent, as on the session's row;
-                // the card's label is made of what it shows, so the
-                // badge says the agent's name aloud.
-                SessionAgentBadge(
-                    badge: card.badge,
-                    text: card.badgeText,
-                    size: .regular,
-                    spokenName: card.badgeSpokenName
-                )
+                // The card's marks of its agents, as on the session's row;
+                // the card's label is made of what it shows, so the badges
+                // say the agents' names aloud.
+                AgentBadgeStrip(kinds: card.agentKinds, size: .regular)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text(verbatim: card.badgesSpokenName))
+                    .accessibilityHidden(card.agentKinds.isEmpty)
             }
             place
             if !card.factText.isEmpty {
@@ -429,6 +427,13 @@ private struct AllProjectsCardView: View {
                     .foregroundStyle(SupervisionTokens.muted.color)
                     .lineLimit(1)
                     .supervisionTruncation(card.factTruncation)
+            }
+            if !lastLines.isEmpty, let name = card.leadPaneName {
+                Text(verbatim: name)
+                    .font(.supervision(.meta))
+                    .foregroundStyle(SupervisionTokens.muted.color)
+                    .lineLimit(1)
+                    .supervisionTruncation(.name)
             }
             if !lastLines.isEmpty {
                 let tail = RoundedRectangle(cornerRadius: Layout.allProjectsTailCornerRadius, style: .continuous)

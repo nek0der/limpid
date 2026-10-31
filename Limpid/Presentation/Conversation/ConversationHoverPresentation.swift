@@ -1,13 +1,13 @@
 // ConversationHoverPresentation.swift
-// Limpid — the conversation a window highlights while the pointer is on one of its tabs or turn cards.
+// Limpid — the conversations a window highlights while the pointer is on a tab, a pane's header, or a turn card.
 
 import Foundation
 import Observation
 
-/// The conversation under the pointer in one window, and where the pointer
-/// is: on its tab in the pane strip, or on one of its turn cards in the
-/// changes panel. The other surface reads it to mark the same conversation
-/// (`ConversationHoverRule`). One per window (`ProjectWindowState`), so a
+/// The conversations under the pointer in one window, and where the pointer
+/// is: on a tab in the pane strip, on a pane's header, or on a turn card in
+/// the changes panel. The other surfaces read it to mark the same
+/// conversations (`ConversationHoverRule`). One per window (`ProjectWindowState`), so a
 /// pointer in one window never marks another window's tabs or cards.
 @MainActor
 @Observable
@@ -32,6 +32,10 @@ final class ConversationHoverPresentation {
     /// conversation alone cannot tell which view a leave comes from.
     enum Surface: Hashable {
         case tab(UUID)
+        /// A pane's header, which answers as a tab does for the one
+        /// conversation it runs, after the same delay: the headers lie on
+        /// the way to the terminal too.
+        case paneHeader(UUID)
         case card(TurnID)
         /// A section's heading, which stands for its conversation's cards:
         /// it marks the conversation's tab at once, as a card does.
@@ -39,7 +43,7 @@ final class ConversationHoverPresentation {
 
         var source: Source {
             switch self {
-            case .tab: .tab
+            case .tab, .paneHeader: .tab
             case .card, .heading: .card
             }
         }
@@ -54,7 +58,7 @@ final class ConversationHoverPresentation {
     /// A tab hover waiting out `tabDelay`: the tab it is for, and what
     /// cancels it.
     private struct Pending {
-        let conversation: ConversationKey
+        let conversations: Set<ConversationKey>
         let surface: Surface
         let cancel: @MainActor () -> Void
     }
@@ -65,34 +69,35 @@ final class ConversationHoverPresentation {
         self.timer = timer
     }
 
-    /// The pointer came onto `surface`, a tab, a card, or a section
-    /// heading of `conversation`. A later enter replaces an earlier one, whichever surface it came
-    /// from, as SwiftUI can deliver the next view's enter before the last
-    /// one's leave.
-    func enter(_ conversation: ConversationKey, from surface: Surface) {
+    /// The pointer came onto `surface`, a tab, a pane's header, a card, or a
+    /// section heading of `conversations`. A later enter replaces an earlier
+    /// one, whichever surface it came from, as SwiftUI can deliver the next
+    /// view's enter before the last one's leave.
+    func enter(_ conversations: Set<ConversationKey>, from surface: Surface) {
         cancelPending()
         switch surface {
         case .card, .heading:
-            set(Hover(conversation: conversation, source: .card), from: surface)
-        case .tab:
+            set(Hover(conversations: conversations, source: .card), from: surface)
+        case .tab, .paneHeader:
             let cancel = timer.schedule(Self.tabDelay) { [weak self] in
                 guard let self else { return }
                 pending = nil
-                set(Hover(conversation: conversation, source: .tab), from: surface)
+                set(Hover(conversations: conversations, source: .tab), from: surface)
             }
-            pending = Pending(conversation: conversation, surface: surface, cancel: cancel)
+            pending = Pending(conversations: conversations, surface: surface, cancel: cancel)
         }
     }
 
-    /// The pointer left `surface`, a tab, a card, or a section heading of
-    /// `conversation`. Only the hover that view set ends: a leave that arrives after the next
-    /// view's enter must not clear what that enter set, even where the next
-    /// view is another card of the same conversation.
-    func leave(_ conversation: ConversationKey, from surface: Surface) {
-        if let pending, pending.conversation == conversation, pending.surface == surface {
+    /// The pointer left `surface`, a tab, a pane's header, a card, or a
+    /// section heading of `conversations`. Only the hover that view set ends:
+    /// a leave that arrives after the next view's enter must not clear what
+    /// that enter set, even where the next view is another card of the same
+    /// conversation.
+    func leave(_ conversations: Set<ConversationKey>, from surface: Surface) {
+        if let pending, pending.conversations == conversations, pending.surface == surface {
             cancelPending()
         }
-        if hovered?.conversation == conversation, hoveredSurface == surface {
+        if hovered?.conversations == conversations, hoveredSurface == surface {
             hovered = nil
             hoveredSurface = nil
         }

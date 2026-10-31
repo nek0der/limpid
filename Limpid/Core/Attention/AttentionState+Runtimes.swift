@@ -4,8 +4,11 @@
 import Foundation
 
 extension AttentionState {
+    /// In `AgentKind`'s order rather than the dictionary's, which can differ
+    /// from one launch to the next: which agent a row at rest speaks for and
+    /// which pane it opens are read from the first of these.
     var allRuntimes: [AgentRuntimePresentation] {
-        runtimesByKind.values.flatMap(\.self)
+        AgentKind.allCases.flatMap { runtimesByKind[$0] ?? [] }
     }
 
     /// Replaces one provider's runtimes. The marks are not trimmed here: the

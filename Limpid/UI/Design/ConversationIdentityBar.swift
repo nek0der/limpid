@@ -36,20 +36,67 @@ struct ConversationIdentityBar: View {
     }
 }
 
+/// The identity bar of one badge, its height shared among the colors of the
+/// conversations the badge stands for: a tab with two Claude conversations has
+/// one badge and a bar of two colors, in the bar's own width, so the tab grows
+/// no wider for them. Past the bar's limit, the rest show on their panes'
+/// headers and their cards.
+struct ConversationIdentitySegments: View {
+    let identities: [Int]
+    var height: CGFloat = LimpidLayout.Supervision.conversationIdentityBarHeight
+
+    private typealias Layout = LimpidLayout.Supervision
+
+    var body: some View {
+        if identities.count == 1, let identity = identities.first {
+            ConversationIdentityBar(identity: identity, height: height)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(identities.prefix(Layout.conversationIdentityBarSegmentLimit).enumerated()), id: \.offset) { _, identity in
+                    ConversationIdentityBar.color(identity)
+                }
+            }
+            .frame(width: Layout.conversationIdentityBarWidth, height: height)
+            .clipShape(RoundedRectangle(cornerRadius: Layout.conversationIdentityBarCornerRadius, style: .continuous))
+            .accessibilityHidden(true)
+        }
+    }
+}
+
 /// A conversation's badge led by its identity bar where it has one: the
 /// one arrangement every SwiftUI place that names a conversation by its
 /// badge draws, so the bar is on the same side and at the same gap in each.
 /// With no identity (a worktree of one active conversation, or a scratch
 /// tab) the badge stands alone.
 struct ConversationIdentityLead<Badge: View>: View {
-    let identity: Int?
-    var barHeight: CGFloat = LimpidLayout.Supervision.conversationIdentityBarHeight
+    /// One color for a conversation; a tab's badge standing for several
+    /// conversations of its kind has several (`ConversationIdentitySegments`).
+    let identities: [Int]
+    let barHeight: CGFloat
     @ViewBuilder let badge: () -> Badge
 
+    init(
+        identity: Int?,
+        barHeight: CGFloat = LimpidLayout.Supervision.conversationIdentityBarHeight,
+        @ViewBuilder badge: @escaping () -> Badge
+    ) {
+        self.init(identities: identity.map { [$0] } ?? [], barHeight: barHeight, badge: badge)
+    }
+
+    init(
+        identities: [Int],
+        barHeight: CGFloat = LimpidLayout.Supervision.conversationIdentityBarHeight,
+        @ViewBuilder badge: @escaping () -> Badge
+    ) {
+        self.identities = identities
+        self.barHeight = barHeight
+        self.badge = badge
+    }
+
     var body: some View {
-        if let identity {
+        if !identities.isEmpty {
             HStack(spacing: LimpidLayout.Supervision.conversationIdentityBarSpacing) {
-                ConversationIdentityBar(identity: identity, height: barHeight)
+                ConversationIdentitySegments(identities: identities, height: barHeight)
                 badge()
             }
         } else {

@@ -76,8 +76,13 @@ struct PaneContainerView: View {
             // Under the terminal, inside the pane, so each leaf of a split
             // has its own. No transition: animating its height would resize
             // the pty on every frame of the animation.
-            DecisionBarView(paneID: paneID)
+            PaneDecisionBar(paneID: paneID, restingOpacity: opacity)
                 .transition(.identity)
+        }
+        // Around the header and the bar too: it is the whole pane a card asks
+        // about.
+        .overlay {
+            PaneConversationFrame(paneID: paneID)
         }
     }
 
@@ -197,5 +202,22 @@ struct PaneContainerView: View {
         }
         .animation(ModalMotion.floatingPanel.animation(reduceMotion: reduceMotion), value: exitCode)
         .animation(ModalMotion.paneBar.animation(reduceMotion: reduceMotion), value: session.paneSearchStates[paneID] != nil)
+    }
+}
+
+/// A pane's decision bar, which fades with its terminal as part of a pane
+/// without focus (`DecisionBarModel.staysOpaque`). A view of its own, so the
+/// attention list it reads does not draw the whole pane again.
+private struct PaneDecisionBar: View {
+    let paneID: UUID
+    let restingOpacity: Double
+    @Environment(AttentionQueueStore.self) private var attentionQueue
+    @Environment(WorkspaceSession.self) private var session
+
+    var body: some View {
+        let opacity = DecisionBarModel.staysOpaque(in: paneID, queue: attentionQueue.queue, session: session) ? 1 : restingOpacity
+        DecisionBarView(paneID: paneID)
+            .opacity(opacity)
+            .animation(LimpidMotion.paneDim, value: opacity)
     }
 }

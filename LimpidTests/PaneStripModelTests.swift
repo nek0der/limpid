@@ -23,7 +23,7 @@ struct PaneStripModelTests {
         .init(
             id: id,
             title: title,
-            agent: agent,
+            agents: agent.map { [PaneStripModel.AgentInput(kind: $0)] } ?? [],
             paneGlyphs: paneGlyphs,
             paneItems: paneItems,
             hasUnread: hasUnread,
@@ -101,7 +101,7 @@ struct PaneStripModelTests {
             items: [PaneStripModel.ItemInput(
                 id: UUID(),
                 title: "Fix the tests",
-                agent: .claude,
+                agents: [.init(kind: .claude)],
                 hasUnread: false,
                 isInTmux: true,
                 exitCodes: []
@@ -109,7 +109,7 @@ struct PaneStripModelTests {
             activeTabID: nil,
             reviewTab: .none
         ).items[0]
-        #expect(agent.agent == .claude)
+        #expect(agent.agents.map(\.kind) == [.claude])
         #expect(agent.tooltip(locale: Locale(identifier: "ja")) == "Fix the tests\nClaude\ntmux で実行中のため、Limpid を終了してもセッションは残ります")
     }
 
@@ -190,12 +190,12 @@ struct PaneStripModelTests {
             activeTabID: nil,
             reviewTab: .none
         ).items[0]
-        #expect(running.agentLine(locale: Locale(identifier: "ja")) == "Claude · 実行中")
-        #expect(running.agentLine(locale: Locale(identifier: "en")) == "Claude · Running")
+        #expect(running.agentLines(locale: Locale(identifier: "ja")) == ["Claude · 実行中"])
+        #expect(running.agentLines(locale: Locale(identifier: "en")) == ["Claude · Running"])
         #expect(running.tooltip(locale: Locale(identifier: "ja")) == "Fix\nClaude · 実行中")
 
         let idle = PaneStripModel(items: [Self.input(agent: .codex)], activeTabID: nil, reviewTab: .none).items[0]
-        #expect(idle.agentLine(locale: Locale(identifier: "ja")) == "Codex")
+        #expect(idle.agentLines(locale: Locale(identifier: "ja")) == ["Codex"])
     }
 
     /// A failed exit's mark is in the display language, in the same words
@@ -378,7 +378,7 @@ struct PaneStripModelTests {
         )
     }
 
-    @Test func items_tabRunningConversation_carriesItsKeyAndIdentity() async throws {
+    @Test func items_tabRunningConversation_carriesItsIdentity() async throws {
         let fixture = ActionStoresFixture()
         let container = ContainerID.project(fixture.project.id)
         fixture.session.openTab(container: container)
@@ -393,10 +393,10 @@ struct PaneStripModelTests {
 
         let strip = Self.strip(fixture)
 
-        #expect(strip.item(for: tabs[0])?.conversation == TurnSummaryFixture.conversation("a"))
-        #expect(strip.item(for: tabs[0])?.identity == 0)
-        #expect(strip.item(for: tabs[1])?.conversation == TurnSummaryFixture.conversation("b"))
-        #expect(strip.item(for: tabs[1])?.identity == 1)
+        #expect(strip.item(for: tabs[0])?.runningIdentities == [TurnSummaryFixture.conversation("a"): 0])
+        #expect(strip.item(for: tabs[0])?.agents.first?.identities == [0])
+        #expect(strip.item(for: tabs[1])?.runningIdentities == [TurnSummaryFixture.conversation("b"): 1])
+        #expect(strip.item(for: tabs[1])?.agents.first?.identities == [1])
     }
 
     /// One conversation in the worktree needs no color to tell it apart.
@@ -412,13 +412,13 @@ struct PaneStripModelTests {
 
         let item = Self.strip(fixture).item(for: tab)
 
-        #expect(item?.conversation == TurnSummaryFixture.conversation("a"))
-        #expect(item?.identity == nil)
+        #expect(item?.runningIdentities.isEmpty == true)
+        #expect(item?.agents.first?.identities == [])
     }
 
-    /// A split tab running two conversations is the one its title stands
-    /// for: the session that started last.
-    @Test func items_splitTabWithTwoConversations_usesLatestSession() async throws {
+    /// A split tab running two conversations of one kind has one badge, with
+    /// the colors of both, in pane order.
+    @Test func items_splitTabWithTwoConversations_showsTheColorsOfBoth() async throws {
         let fixture = ActionStoresFixture()
         PaneActions.split(fixture.session, direction: .horizontal)
         let container = ContainerID.project(fixture.project.id)
@@ -435,12 +435,12 @@ struct PaneStripModelTests {
         let item = Self.strip(fixture).item(for: tab)
 
         let key = TurnSummaryFixture.conversation("newer")
-        #expect(item?.conversation == key)
-        #expect(item?.identity != nil)
-        #expect(item?.identity == identities[key])
+        let olderKey = TurnSummaryFixture.conversation("older")
+        #expect(item?.agents.count == 1)
+        #expect(item?.agents.first?.identities == [olderKey, key].compactMap { identities[$0] })
+        #expect(item?.agents.first?.identities.count == 2)
         // The second pane's conversation still finds the tab: a card of
         // either outlines it, each in its own color.
-        let olderKey = TurnSummaryFixture.conversation("older")
         #expect(item?.runningIdentities == [olderKey: identities[olderKey], key: identities[key]].compactMapValues(\.self))
         #expect(item?.runningIdentities.count == 2)
     }
@@ -461,8 +461,38 @@ struct PaneStripModelTests {
 
         let shell = Self.strip(fixture).item(for: tabs[2])
 
-        #expect(shell?.conversation == nil)
-        #expect(shell?.identity == nil)
+        #expect(shell?.agents.isEmpty == true)
+        #expect(shell?.runningIdentities.isEmpty == true)
+    }
+
+    /// A scratch tab has no cards to match, but its title still follows its
+    /// conversation: a split of agents goes by its folder only until then.
+    @Test func items_scratchSplitOfAgents_takesItsTitleOnceItsConversationHasAName() {
+        let (session, tab, first) = WorkspaceSessionFixture.withLooseTab()
+        let second = UUID()
+        let older = Self.run("older", in: first, startedAt: 0)
+        var newer = Self.run("newer", in: second, startedAt: 60)
+        session.update(tab.id) { tab in
+            tab.splitTree = tab.splitTree.insert(at: first, direction: .horizontal, newID: second).tree
+            tab.title = "Terminal's title"
+            tab.pwd = "/work/alpha"
+            tab.agentBadges[.claude] = [first: older.badge, second: newer.badge]
+        }
+        func title() -> String? {
+            PaneStripModel(
+                container: tab.container,
+                session: session,
+                window: session.primaryWindowID,
+                queue: AttentionQueue(),
+                runtimes: [older.runtime, newer.runtime],
+                mountedTmuxPaneIDs: [],
+                reviewTab: .none
+            ).item(for: tab)?.title
+        }
+        #expect(title() == "alpha")
+        newer.badge.firstPrompt = "Fix the tests"
+        session.update(tab.id) { $0.agentBadges[.claude]?[second] = newer.badge }
+        #expect(title() == "Terminal's title")
     }
 
     /// A scratch tab has no worktree to match its conversation's cards in.
@@ -480,7 +510,7 @@ struct PaneStripModelTests {
             mountedTmuxPaneIDs: [],
             reviewTab: .none
         ).item(for: tab)
-        #expect(item?.conversation == nil)
-        #expect(item?.identity == nil)
+        #expect(item?.runningIdentities.isEmpty == true)
+        #expect(item?.agents.first?.identities == [])
     }
 }

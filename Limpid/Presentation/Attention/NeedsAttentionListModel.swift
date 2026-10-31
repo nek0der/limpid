@@ -38,9 +38,12 @@ struct NeedsAttentionListModel: Equatable {
     struct Row: Identifiable, Equatable {
         let id: AttentionItemID
         let state: RowState
-        /// The session's name, or the agent's for a request no pane is
-        /// known for.
+        /// The session's name, with its pane's where the session has several
+        /// agent panes, or the agent's for a request no pane is known for.
         let title: String
+        /// The agent the item is about, whose badge the row shows, so two
+        /// items of one session can be told apart; `nil` for a session's own.
+        var agent: AgentKind?
         /// The project (and worktree) the item is in; `nil` when it is in
         /// none, or not placed yet.
         let place: String?
@@ -132,6 +135,7 @@ struct NeedsAttentionListModel: Equatable {
                 id: item.id,
                 state: Self.state(of: item.kind),
                 title: names.title,
+                agent: item.subject.agentKind,
                 place: names.place,
                 fact: fact,
                 placeLead: place.map { AgentStatusText.lead($0, before: fact, locale: locale) } ?? "",
@@ -336,7 +340,12 @@ extension NeedsAttentionListModel {
             guard let tab = tabID.flatMap({ session.tab($0) }) ?? session.tab(containing: paneID) else {
                 return Names(title: provider.rawValue.capitalized, place: nil)
             }
-            let title = SessionSidebarModel.rowName(of: tab.container, in: session, locale: locale)
+            let rowName = SessionSidebarModel.rowName(of: tab.container, in: session, locale: locale)
+            // Which pane, once the row's name alone leaves two items alike.
+            let title = AgentStatusText.joined(
+                [rowName] + (session.agentPaneNameAmongNeighbors(paneID).map { [$0] } ?? []),
+                locale: locale
+            )
             // Placed by its project: the title is the row's name already.
             // The scratch row's name is its place. A row the person labeled
             // is placed by its branch too, as its sidebar row shows it.

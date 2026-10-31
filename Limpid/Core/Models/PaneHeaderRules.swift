@@ -14,6 +14,8 @@ import Foundation
 /// the title until the conversation has produced one, the model and the mode
 /// until a hook has carried them.
 struct PaneHeaderAgent: Equatable {
+    /// Which agent it is, for the header's badge.
+    var kind: AgentKind
     var providerName: String
     var title: String?
     var model: String?
@@ -23,12 +25,14 @@ struct PaneHeaderAgent: Equatable {
 /// What a pane header shows, left to right: the name, then the dimmer
 /// detail beside it, the pane's directory. `detail` is nil when there is
 /// nothing to add, which includes a detail that would only repeat the name.
-/// `agentName` is for the hover text and VoiceOver, not the row: the glyph
-/// already marks an agent pane, and where it runs is the more useful line.
+/// `agentName` is for the hover text and VoiceOver, not the row: the badge
+/// already names the agent, and where it runs is the more useful line.
 struct PaneHeaderLabel: Equatable {
     var name: String
     var detail: String?
-    var isAgent: Bool
+    /// The agent the pane is for, whose badge leads the header; `nil` for a
+    /// shell, which has the shell's mark.
+    var agentKind: AgentKind?
     var agentName: String?
     /// The name is one the person gave the pane, rather than one read from
     /// its agent or its folder.
@@ -40,6 +44,13 @@ struct PaneHeaderLabel: Equatable {
     /// Whether the run records lack enough evidence to identify the current
     /// settings owner.
     var settingsAreAmbiguous = false
+    /// The conversation the pane runs, whose identity color leads the badge
+    /// and whose cards the header answers for; `nil` before it has one.
+    var conversation: ConversationKey?
+
+    var isAgent: Bool {
+        agentKind != nil
+    }
 
     /// Shared by row layout and rename sizing so every warning reserves space.
     var showsWarning: Bool {
@@ -70,31 +81,31 @@ struct PaneHeaderLabel: Equatable {
     }
 }
 
-/// How much of a header a row has room for, widest first. The kind glyph
-/// and the "⋯" menu are in every form: the glyph says what the pane is and
+/// How much of a header a row has room for, widest first. The kind's mark
+/// and the "⋯" menu are in every form: the mark says what the pane is and
 /// the menu is how to act on it. Between them the detail goes first, then
 /// the agent's model and mode, then the warning's words, then the name, then
 /// the state mark with the warning's symbol, then the prompt cache clock,
 /// which is what a narrow pane most needs to say while it shows: the next
 /// message will cost a re-write, and the clock is the way to deal with it.
 enum PaneHeaderForm: CaseIterable, Equatable {
-    /// Glyph, name, detail, warning, model and mode, cache clock, state
+    /// Kind's mark, name, detail, warning, model and mode, cache clock, state
     /// mark, menu.
     case all
-    /// Glyph, name, warning, model and mode, cache clock, state mark, menu.
+    /// Kind's mark, name, warning, model and mode, cache clock, state mark, menu.
     case withSettings
-    /// Glyph, name (truncating), warning's symbol, cache clock, state mark,
+    /// Kind's mark, name (truncating), warning's symbol, cache clock, state mark,
     /// menu.
     case withName
-    /// Glyph, warning's symbol, cache clock, state mark, menu.
+    /// Kind's mark, warning's symbol, cache clock, state mark, menu.
     case withMark
-    /// Glyph, cache clock, menu: `PaneHeaderMetrics.clockFormWidth`. Tried
+    /// Kind's mark, cache clock, menu: `PaneHeaderMetrics.clockFormWidth`. Tried
     /// only while the pane has a clock to show.
     case withClock
-    /// Glyph and menu: `PaneHeaderMetrics.minimumWidth`, or
+    /// Kind's mark and menu: `PaneHeaderMetrics.minimumWidth`, or
     /// `zoomedMinimumWidth` with the unzoom button a zoomed pane keeps
     /// beside its menu in every form.
-    case glyphAndMenu
+    case kindAndMenu
 
     var showsName: Bool {
         self == .all || self == .withSettings || self == .withName
@@ -117,10 +128,17 @@ enum PaneHeaderForm: CaseIterable, Equatable {
         self == .all || self == .withSettings || self == .withName || self == .withMark
     }
 
+    /// Whether the kind's mark has its conversation's color before it. It goes
+    /// before the narrow forms do, and while renaming so the field keeps its
+    /// width: the split floor and the rename threshold count the badge alone.
+    func showsIdentity(isEditing: Bool) -> Bool {
+        showsMark && !isEditing
+    }
+
     /// Whether the form has a place for the prompt cache clock; the clock
     /// itself shows only while the pane has one.
     var showsPromptCacheClock: Bool {
-        self != .glyphAndMenu
+        self != .kindAndMenu
     }
 }
 
@@ -148,7 +166,7 @@ enum PaneHeaderRules {
     /// While renaming in place only the form with the name will do, since
     /// the field is what the user is working in. The clock's own form is
     /// tried only while there is a clock: without one it would be the
-    /// glyph-and-menu form under another name.
+    /// mark-and-menu form under another name.
     static func forms(isEditing: Bool, showsPromptCacheClock: Bool) -> [PaneHeaderForm] {
         if isEditing {
             return [.withName]
@@ -158,7 +176,7 @@ enum PaneHeaderRules {
 
     /// Where a rename opens for a header this wide. Below the threshold the
     /// field would be a few characters wide — at the narrowest the header
-    /// shows only its glyph and menu — so the rename floats under the header
+    /// shows only its kind's mark and menu — so the rename floats under the header
     /// instead. A header not measured yet (width 0) has no frame to hang a
     /// panel from, so it edits in place.
     static func renameStyle(
@@ -297,11 +315,44 @@ enum PaneHeaderRules {
         return PaneHeaderLabel(
             name: name,
             detail: detail == name ? nil : detail,
-            isAgent: agent != nil,
+            agentKind: agent?.kind,
             agentName: agent.flatMap { normalizedName($0.providerName) },
             isNamedByPerson: personName != nil,
             model: normalizedName(agent?.model),
             permissionMode: agent?.permissionMode
+        )
+    }
+}
+
+/// The panes a zoomed pane's header stands in front of: how many there are,
+/// and what most needs the person among them, which the header's chip says and
+/// goes to, since nothing else on screen shows that those panes are there.
+struct PaneHeaderHiddenPanes: Equatable {
+    let count: Int
+    /// The pane the chip goes to: the one the glyph is about, else the first.
+    let lead: UUID
+    /// What ranks first among their waits and stops; `nil` with none. A
+    /// turn's unread is not one, as on a tab.
+    let glyph: SessionRowFact.Glyph?
+}
+
+extension PaneHeaderRules {
+    /// `nil` unless `paneID` is what its tab shows zoomed.
+    static func hiddenPanes(behind paneID: UUID, in tab: Tab?, items: [AttentionItem]) -> PaneHeaderHiddenPanes? {
+        guard let tab, isZoomed(paneID, in: tab) else { return nil }
+        let others = tab.splitTree.allLeafIDs().filter { $0 != paneID }
+        guard let first = others.first else { return nil }
+        let waiting = items.filter { item in
+            if case .unread = item.kind {
+                return false
+            }
+            return item.subject.paneID.map(others.contains) ?? false
+        }
+        let dominant = PanePriority.dominant(waiting)
+        return PaneHeaderHiddenPanes(
+            count: others.count,
+            lead: dominant?.subject.paneID ?? first,
+            glyph: dominant.map { SessionRowFact.glyph(of: $0.kind) }
         )
     }
 }

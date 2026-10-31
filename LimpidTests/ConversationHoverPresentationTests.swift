@@ -21,31 +21,31 @@ struct ConversationHoverPresentationTests {
 
     @Test func leave_otherKey_keepsHovered() {
         let presentation = makePresentation()
-        presentation.enter(first, from: cardA)
-        presentation.leave(second, from: cardB)
-        #expect(presentation.hovered == .init(conversation: first, source: .card))
+        presentation.enter([first], from: cardA)
+        presentation.leave([second], from: cardB)
+        #expect(presentation.hovered == .init(conversations: [first], source: .card))
     }
 
     @Test func enterFromCard_isImmediate() {
         let presentation = makePresentation()
-        presentation.enter(first, from: cardA)
-        #expect(presentation.hovered == .init(conversation: first, source: .card))
+        presentation.enter([first], from: cardA)
+        #expect(presentation.hovered == .init(conversations: [first], source: .card))
     }
 
     @Test func enterFromTab_waitsTheTabDelay() {
         let presentation = makePresentation()
-        presentation.enter(first, from: tab)
+        presentation.enter([first], from: tab)
         clock.advance(by: .milliseconds(149))
         #expect(presentation.hovered == nil)
         clock.advance(by: .milliseconds(1))
-        #expect(presentation.hovered == .init(conversation: first, source: .tab))
+        #expect(presentation.hovered == .init(conversations: [first], source: .tab))
     }
 
     @Test func enterFromTab_leaveBeforeDelay_cancels() {
         let presentation = makePresentation()
-        presentation.enter(first, from: tab)
+        presentation.enter([first], from: tab)
         clock.advance(by: .milliseconds(100))
-        presentation.leave(first, from: tab)
+        presentation.leave([first], from: tab)
         clock.advance(by: .milliseconds(100))
         #expect(presentation.hovered == nil)
     }
@@ -54,11 +54,11 @@ struct ConversationHoverPresentationTests {
     /// A's leave: B's hover stays, and with it the tab's outline.
     @Test func leave_sameConversationOtherCard_keepsHovered() {
         let presentation = makePresentation()
-        presentation.enter(first, from: cardA)
-        presentation.enter(first, from: cardB)
-        presentation.leave(first, from: cardA)
-        #expect(presentation.hovered == .init(conversation: first, source: .card))
-        presentation.leave(first, from: cardB)
+        presentation.enter([first], from: cardA)
+        presentation.enter([first], from: cardB)
+        presentation.leave([first], from: cardA)
+        #expect(presentation.hovered == .init(conversations: [first], source: .card))
+        presentation.leave([first], from: cardB)
         #expect(presentation.hovered == nil)
     }
 
@@ -67,10 +67,10 @@ struct ConversationHoverPresentationTests {
     @Test func enterFromTab_otherTabsLeave_keepsPending() {
         let presentation = makePresentation()
         let other = ConversationHoverPresentation.Surface.tab(UUID())
-        presentation.enter(first, from: tab)
-        presentation.leave(first, from: other)
+        presentation.enter([first], from: tab)
+        presentation.leave([first], from: other)
         clock.advance(by: ConversationHoverPresentation.tabDelay)
-        #expect(presentation.hovered == .init(conversation: first, source: .tab))
+        #expect(presentation.hovered == .init(conversations: [first], source: .tab))
     }
 
     /// A section's heading marks its tab at once, as a card does, and its
@@ -78,13 +78,13 @@ struct ConversationHoverPresentationTests {
     @Test func enterFromHeading_isACardHover() {
         let presentation = makePresentation()
         let heading = ConversationHoverPresentation.Surface.heading(first)
-        presentation.enter(first, from: heading)
-        #expect(presentation.hovered == .init(conversation: first, source: .card))
+        presentation.enter([first], from: heading)
+        #expect(presentation.hovered == .init(conversations: [first], source: .card))
 
-        presentation.enter(first, from: cardA)
-        presentation.leave(first, from: heading)
-        #expect(presentation.hovered == .init(conversation: first, source: .card), "the card's hover stays")
-        presentation.leave(first, from: cardA)
+        presentation.enter([first], from: cardA)
+        presentation.leave([first], from: heading)
+        #expect(presentation.hovered == .init(conversations: [first], source: .card), "the card's hover stays")
+        presentation.leave([first], from: cardA)
         #expect(presentation.hovered == nil)
     }
 }

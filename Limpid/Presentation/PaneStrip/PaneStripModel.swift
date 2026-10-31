@@ -37,11 +37,12 @@ enum PaneAttention: Equatable {
 }
 
 extension PaneStripModel.Item {
-    /// The tab's tooltip: its title, who runs in it with the state
-    /// its glyph shows ("Claude · Running"), and, in tmux, that the session
-    /// outlives Limpid; one to a line.
+    /// The tab's tooltip: its title, each kind of agent in it with its own
+    /// state ("Claude · Running"), and, in tmux, that the session outlives
+    /// Limpid; one to a line. It names every agent, the ones a "+2" stands
+    /// for included.
     func tooltip(locale: Locale) -> String {
-        var lines = [title, agentLine(locale: locale)]
+        var lines = [title] + agentLines(locale: locale)
         if isInTmux {
             lines.append(LocalizedStringResource("Running in tmux — the session survives quitting Limpid").resolved(in: locale))
         }
@@ -55,20 +56,29 @@ extension PaneStripModel.Item {
         failedExitCode.map { NotificationHistoryRowText.exitCodeText(Int($0), locale: locale) }
     }
 
-    /// Who runs in the tab, then the state its glyph shows, as the tooltip
-    /// and VoiceOver say it ("Claude · Running").
-    func agentLine(locale: Locale) -> String {
-        let name = SessionRowFactText.agentName(agent.map { .agent($0) } ?? .shell, locale: locale)
-        guard let stateGlyph else { return name }
-        return AgentStatusText.joined([name, SessionRowFactText.stateName(stateGlyph, locale: locale)], locale: locale)
+    /// Who runs in the tab, each kind of agent with its own state, as the
+    /// tooltip and VoiceOver say it ("Claude · Running"). A shell's tab has
+    /// the one line, with the tab's state.
+    func agentLines(locale: Locale) -> [String] {
+        guard !agents.isEmpty else {
+            return [Self.line(name: SessionRowFactText.agentName(.shell, locale: locale), state: stateGlyph, locale: locale)]
+        }
+        return agents.map { agent in
+            Self.line(name: SessionRowFactText.agentName(.agent(agent.kind), locale: locale), state: agent.state, locale: locale)
+        }
+    }
+
+    private static func line(name: String, state: SessionRowFact.Glyph?, locale: Locale) -> String {
+        guard let state else { return name }
+        return AgentStatusText.joined([name, SessionRowFactText.stateName(state, locale: locale)], locale: locale)
     }
 
     /// What VoiceOver says for the tab, in the strip and in Open Tabs:
-    /// the title, who runs in it (the badge's letters in words) with the
-    /// state its glyph shows ("Claude, Running"), then what the marks say,
+    /// the title, who runs in it (the badges' letters in words) with the
+    /// state each glyph shows ("Claude, Running"), then what the marks say,
     /// since a glyph, a dot, and a color are not words.
     func spokenLabel(locale: Locale) -> String {
-        var parts = [title, AgentStatusText.spoken(agentLine(locale: locale), locale: locale)]
+        var parts = [title] + agentLines(locale: locale).map { AgentStatusText.spoken($0, locale: locale) }
         if let code = failedExitCode {
             parts.append(LocalizedStringResource("Process exited (code \(code))").resolved(in: locale))
         }
@@ -86,6 +96,17 @@ extension PaneStripModel.Item {
 /// session's tabs in its order, the review's tab while one is open, and
 /// the "+" that adds a tab. ⌘1…9 and ⇧⌘[ ⇧⌘] walk the same order.
 struct PaneStripModel: Equatable {
+    /// One kind of agent in a tab, as its badge shows it.
+    struct Agent: Equatable {
+        let kind: AgentKind
+        /// What ranks first among this kind's panes (`tabGlyph`), which its
+        /// badge carries; `nil` with nothing running or waiting.
+        let state: SessionRowFact.Glyph?
+        /// The identity colors of this kind's conversations in the tab, in
+        /// pane order: its badge's bar, as many colors as it has room for.
+        let identities: [Int]
+    }
+
     struct Item: Identifiable, Equatable {
         let id: UUID
         let title: String
@@ -93,12 +114,16 @@ struct PaneStripModel: Equatable {
         /// leading edge; `nil` for a tab without one.
         let paletteIndex: Int?
         let isActive: Bool
-        /// The agent with a session in one of the tab's panes, whose badge
-        /// the tab wears; `nil` for a shell.
-        let agent: AgentKind?
-        /// The state the tab shows before its badge: what ranks first among
-        /// its panes (`PaneStripModel.tabGlyph`); `nil` for a tab with
-        /// nothing running or waiting.
+        /// Each kind of agent in the tab's panes, in `AgentKind`'s order;
+        /// empty for a shell.
+        let agents: [Agent]
+        /// What ranks first among the agents a "+2" stands for
+        /// (`AgentBadgeSlots`), which that mark carries; `nil` when it has
+        /// none to show, or none is hidden.
+        let hiddenAgentsState: SessionRowFact.Glyph?
+        /// What ranks first among all the tab's panes
+        /// (`PaneStripModel.tabGlyph`), which colors Open Tabs' line; `nil`
+        /// for a tab with nothing running or waiting.
         let stateGlyph: SessionRowFact.Glyph?
         /// A finished command, a notification (OSC 9/777), or a bell since
         /// the tab was last shown: a dot, which stays until the tab is
@@ -111,22 +136,13 @@ struct PaneStripModel: Equatable {
         /// How many panes the tab is split into. The strip does not show
         /// it; Open Tabs says it for a split tab ("Shell · 2 panes").
         let paneCount: Int
-        /// The conversation the tab's title stands for: the one in
-        /// `Tab.latestAgentSessionPaneID`'s pane, or with none, the tab's one
-        /// conversation (`ConversationTabs`). Optional because a
-        /// shell's tab runs none, and a scratch tab's has no worktree whose
-        /// cards it could be matched with.
-        var conversation: ConversationKey?
-        /// That conversation's identity color, as the changes panel hands
-        /// it out (`ConversationIdentityStore`), so the tab and the
-        /// conversation's cards can be matched. Optional because a
-        /// worktree with one active conversation shows none, and a scratch
-        /// tab has no worktree to hand one out in.
-        var identity: Int?
         /// Every conversation the tab's panes run that holds an identity
         /// color, with it (`ConversationTabs.TabConversations.all`): a card
         /// of any of them outlines the tab, in that conversation's color,
-        /// so a split tab answers for its second pane too.
+        /// and the pointer on the tab marks the cards of them all, so a
+        /// split tab answers for its second pane too. Empty for a worktree
+        /// with one active conversation, and a scratch tab, which has no
+        /// worktree to hand a color out in.
         var runningIdentities: [ConversationKey: Int] = [:]
 
         /// Where the tab's title is cut: a name's end, but a path's start,
@@ -136,6 +152,26 @@ struct PaneStripModel: Equatable {
         var titleTruncation: SupervisionTruncation {
             .title(title)
         }
+
+        /// The agents with a badge of their own, and how many a count mark
+        /// stands for (`AgentBadgeSlots`).
+        var shownAgents: [Agent] {
+            AgentBadgeSlots.fit(agents).shown
+        }
+
+        var hiddenAgentCount: Int {
+            AgentBadgeSlots.fit(agents).hidden.count
+        }
+    }
+
+    /// One kind of agent in a tab, as `ItemInput` reads it.
+    struct AgentInput {
+        let kind: AgentKind
+        /// The header marks and the attention items of this kind's panes
+        /// (`tabGlyph`).
+        var paneGlyphs: [SessionRowFact.Glyph] = []
+        var paneItems: [AttentionItem] = []
+        var identities: [Int] = []
     }
 
     /// What one tab is read from.
@@ -143,7 +179,7 @@ struct PaneStripModel: Equatable {
         let id: UUID
         let title: String
         var paletteIndex: Int?
-        let agent: AgentKind?
+        var agents: [AgentInput] = []
         /// Each pane's header mark (`PaneHeaderRules.mark`), for the panes
         /// that have one.
         var paneGlyphs: [SessionRowFact.Glyph] = []
@@ -157,9 +193,6 @@ struct PaneStripModel: Equatable {
         /// How many panes the tab is split into; one for a tab read without
         /// its split.
         var paneCount = 1
-        /// The conversation the tab's title stands for, and its color.
-        var conversation: ConversationKey?
-        var identity: Int?
         /// Each conversation the tab runs that holds a color, with it.
         var runningIdentities: [ConversationKey: Int] = [:]
     }
@@ -185,19 +218,28 @@ struct PaneStripModel: Equatable {
 
     init(items inputs: [ItemInput], activeTabID: UUID?, reviewTab: ReviewTab) {
         items = inputs.map { input in
-            Item(
+            let stateGlyph = Self.tabGlyph(input.paneGlyphs, items: input.paneItems)
+            let hidden = AgentBadgeSlots.fit(input.agents).hidden
+            return Item(
                 id: input.id,
                 title: input.title,
                 paletteIndex: input.paletteIndex,
                 isActive: input.id == activeTabID && reviewTab != .inFront,
-                agent: input.agent,
-                stateGlyph: Self.tabGlyph(input.paneGlyphs, items: input.paneItems),
+                agents: input.agents.map { agent in
+                    Agent(
+                        kind: agent.kind,
+                        // A tab of one kind has one state, whichever pane it
+                        // comes from.
+                        state: input.agents.count == 1 ? stateGlyph : Self.tabGlyph(agent.paneGlyphs, items: agent.paneItems),
+                        identities: agent.identities
+                    )
+                },
+                hiddenAgentsState: Self.tabGlyph(hidden.flatMap(\.paneGlyphs), items: hidden.flatMap(\.paneItems)),
+                stateGlyph: stateGlyph,
                 hasUnread: input.hasUnread,
                 isInTmux: input.isInTmux,
                 failedExitCode: input.exitCodes.first { $0 != 0 },
                 paneCount: input.paneCount,
-                conversation: input.conversation,
-                identity: input.identity,
                 runningIdentities: input.runningIdentities
             )
         }
