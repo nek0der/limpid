@@ -6,7 +6,7 @@ import Foundation
 import Testing
 @testable import Limpid
 
-@Suite("Notification request live status")
+@Suite("Notification request live status", .timeLimit(.minutes(1)))
 @MainActor
 struct NotificationRequestLiveStatusTests {
 
@@ -85,7 +85,7 @@ struct NotificationRequestLiveStatusTests {
 
             let live = attention.liveStatus(for: history.entries[0], requests: store.ledger)
             #expect(live == .resolved)
-            await pollUntil(timeout: .seconds(1), interval: .milliseconds(10)) { history.unreadCount == 0 }
+            await untilObserved { history.unreadCount == 0 }
             #expect(history.unreadCount == 0, "the ledger's change alone retires the row")
             #expect(mark(of: history.entries[0], live: live) == .idle)
             history.flushSynchronously()
@@ -206,7 +206,7 @@ struct NotificationRequestLiveStatusTests {
 
             // The service restarted meanwhile: a new epoch, listing nothing.
             store.receive([], epoch: UUID())
-            await pollUntil(timeout: .seconds(1), interval: .milliseconds(10)) { history.unreadCount == 0 }
+            await untilObserved { history.unreadCount == 0 }
             #expect(history.unreadCount == 0, "the epoch alone wakes the sync")
             #expect(attention.liveStatus(for: history.entries[0], requests: store.ledger) == .resolved)
 

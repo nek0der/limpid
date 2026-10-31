@@ -81,6 +81,7 @@ struct ReviewSessionTests {
         _ = await writing.reload(scope: .uncommitted, selectedFileID: nil)
         let line = try #require(writing.diff?.lines.first { $0.isCommentable && $0.kind == .added })
         writing.add(line: line, body: "Why?")
+        #expect(other.insertableComments.count == 1, "the writer's comments are both sessions'")
 
         repository.diffs[Self.file.id] = try ReviewDiffFixture.diff(of: Self.file, fingerprint: "f2")
         await writing.load(Self.file)

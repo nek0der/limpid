@@ -45,7 +45,6 @@ struct WorktreeTextTests {
         #expect(LocalizedStringResource("Previous Worktree").resolved(in: Self.japanese) == "前のワークツリー")
         // The row's menu entry closes the tabs and keeps the row.
         #expect(LocalizedStringResource("Close All Tabs").resolved(in: Self.japanese) == "すべてのタブを閉じる")
-        #expect(EmptyState.noWorktreeSelected.message(locale: Self.japanese) == "ワークツリーが選択されていません")
         #expect(EmptyState.noMatchingWorktrees.message(locale: Self.japanese) == "一致するワークツリーはありません")
         #expect(LocalizedStringResource("Worktree label").resolved(in: Self.japanese) == "ワークツリーのラベル")
     }

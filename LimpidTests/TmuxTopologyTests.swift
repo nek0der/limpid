@@ -18,13 +18,6 @@ struct TmuxTopologyTests {
         socketPath: "/private/tmp/tmux-501/default", serverPID: "42", serverStartedAt: "100", paneID: "%4"
     )
 
-    private func topology(sessionID: String = "$2", start: String = "100") -> TmuxTopology {
-        TmuxTopology(panes: TmuxTopology.parsePanes(
-            "42\t\(start)\t\(sessionID)\t@3\t%4\t1\t1\n",
-            socketPath: "/private/tmp/tmux-501/default"
-        ), socketAliases: ["/tmp/tmux-501/default": "/private/tmp/tmux-501/default"])
-    }
-
     /// We keep every unzoomed split visible, but a zoomed pane hides its
     /// neighbors even when their window is active.
     @Test func parsedPanes_distinguishVisibilityFromInputFocus() {
@@ -87,10 +80,10 @@ struct TmuxTopologyTests {
     /// A pane tmux moved to another session is still the run's; a server
     /// that reused the pid but started at another time is not its server.
     @Test func topology_followsMovedPaneAndRejectsReusedServerIDs() {
-        #expect(topology(sessionID: "$9").locations(for: endpoint).map(\.sessionID) == ["$9"])
-        #expect(topology(start: "101").locations(for: endpoint).isEmpty)
-        var shared = topology()
-        shared.panes += topology(sessionID: "$9").panes
+        #expect(TmuxTopology.onePane(sessionID: "$9").locations(for: endpoint).map(\.sessionID) == ["$9"])
+        #expect(TmuxTopology.onePane(start: "101").locations(for: endpoint).isEmpty)
+        var shared = TmuxTopology.onePane()
+        shared.panes += TmuxTopology.onePane(sessionID: "$9").panes
         #expect(shared.locations(for: endpoint).count == 2)
     }
 }

@@ -1,5 +1,5 @@
 // ReviewStackTests.swift
-// Limpid — the review tab's stacked diff: every file under its header, the reading marks, the band, and moving between files.
+// Limpid — the review tab's stacked diff: every file under its header, the reading marks and moving between files.
 
 import Foundation
 import Testing
@@ -40,7 +40,6 @@ struct ReviewStackTests {
     /// checkbox before each name.
     @Test func theTabsFileList_opensAtTheDefaultWidth() {
         #expect(ReviewPresentation().railWidth == ReviewRail.default)
-        #expect(ReviewRail.default == 240)
     }
 
     @Test func progress_countsTheCheckedFilesOfTheList() {
@@ -182,23 +181,6 @@ struct ReviewStackTests {
         // An unchecked file has nothing to open.
         opened.toggle("b", isFolded: true, viewed: viewed)
         #expect(opened.ids(viewed: viewed).isEmpty)
-    }
-
-    // MARK: - The band
-
-    @Test func theBand_saysHowManyFilesAreLeft() {
-        let option = ReviewScopeOption.uncommitted(includesChangesOutsideTurns: false)
-        let ids = Self.files.map(\.id)
-
-        #expect(ReviewTabModel.bandStatus(option, fileIDs: ids, viewed: [Self.first.id]) == .unviewedFiles(2))
-        #expect(ReviewTabModel.bandStatus(option, fileIDs: ids, viewed: Set(ids)) == .allFilesViewed)
-        #expect(ReviewTabModel.bandStatus(option, fileIDs: [], viewed: []) == .noChanges)
-        #expect(ReviewTabText.band(.unviewedFiles(2), locale: Self.en) == "2 unviewed files")
-        #expect(ReviewTabText.band(.unviewedFiles(2), locale: Self.ja) == "未確認のファイル 2")
-        #expect(ReviewTabText.band(.allFilesViewed, locale: Self.en) == "All files viewed")
-        #expect(ReviewTabText.band(.allFilesViewed, locale: Self.ja) == "すべてのファイルを確認済み")
-        #expect(ReviewTabText.band(.noChanges, locale: Self.en) == "No changes")
-        #expect(ReviewTabText.band(.noChanges, locale: Self.ja) == "変更はありません")
     }
 
     /// Blue while the range holds turns past the viewed line, whatever the

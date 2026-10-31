@@ -161,7 +161,8 @@ struct LiveLocaleAppKitTests {
         #expect(textField.placeholderString == "Search")
     }
 
-    @Test func quickTerminalPanel_titleFollowsTheAppLocale() async throws {
+    @Test(.timeLimit(.minutes(1)))
+    func quickTerminalPanel_titleFollowsTheAppLocale() async throws {
         try await withTempDir { directory in
             let store = try SettingsStore.inEnglish(in: directory)
             let controller = QuickTerminalController(
@@ -173,9 +174,16 @@ struct LiveLocaleAppKitTests {
             )
             #expect(controller.panel.title == "Quick Terminal")
 
+            // The window's own report of its new title: the change reaches
+            // it a main actor hop after the setting. A title that never
+            // changes runs into the time limit, and cancellation ends the
+            // loop.
+            let (titleChanges, titleChanged) = AsyncStream.makeStream(of: Void.self)
+            let observation = controller.panel.observe(\.title) { _, _ in titleChanged.yield() }
+            defer { observation.invalidate() }
             store.appLanguage = .japanese
-            await pollUntil(timeout: .milliseconds(500), interval: .milliseconds(10)) {
-                controller.panel.title != "Quick Terminal"
+            for await _ in titleChanges {
+                break
             }
             #expect(controller.panel.title == "クイックターミナル")
             #expect(controller.panel.accessibilityTitle() == "クイックターミナル")

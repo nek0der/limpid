@@ -10,15 +10,21 @@ struct InitialPromptFileTests {
     /// A tab opened to run an agent writes no instruction file: the sheet
     /// takes no instruction any more.
     @Test func aNewAgentTab_writesNoInstructionFile() throws {
-        try withTempDir { dir in
-            let (session, project) = WorkspaceSessionFixture.withProject()
-            let container = ContainerID.project(project.id)
-            let pane = try #require(TabActions.newTab(session, in: container, running: .claude))
-            #expect(session.stagedLaunch(paneID: pane) == WorkspaceSession.StagedLaunch(command: "claude", promptFile: nil))
-            let staged = session.tabs.flatMap(\.initialPromptFiles.values)
-            #expect(staged.isEmpty)
-            #expect((try? FileManager.default.contentsOfDirectory(atPath: dir.path))?.isEmpty ?? true)
+        /// Every other test here hands in a folder of its own, so only the
+        /// tab could change the folder a build writes to. A folder not there
+        /// holds nothing.
+        func filesWritten() -> Set<String> {
+            let names = try? FileManager.default.contentsOfDirectory(atPath: InitialPromptFile.defaultDirectory.path)
+            return Set(names ?? [])
         }
+        let before = filesWritten()
+        let (session, project) = WorkspaceSessionFixture.withProject()
+        let container = ContainerID.project(project.id)
+        let pane = try #require(TabActions.newTab(session, in: container, running: .claude))
+        #expect(session.stagedLaunch(paneID: pane) == WorkspaceSession.StagedLaunch(command: "claude", promptFile: nil))
+        let staged = session.tabs.flatMap(\.initialPromptFiles.values)
+        #expect(staged.isEmpty)
+        #expect(filesWritten() == before)
     }
 
     /// A tab an earlier build opened behind, restored with its terminal not

@@ -28,24 +28,21 @@ struct VersionedDocumentMigratorTests {
         VersionedDocumentMigrator(versionKey: "version", currentVersion: current, versionWhenAbsent: absent, steps: steps)
     }
 
-    @Test func current_isReportedAsCurrent() throws {
-        let outcome = try Self.migrator(current: 3, steps: []).migrate(Self.json(["version": 3]))
-        #expect(outcome == .current)
-    }
-
-    @Test func newer_isNeverMigrated() throws {
-        let outcome = try Self.migrator(current: 3, steps: [Self.bump(from: 3)]).migrate(Self.json(["version": 4]))
-        #expect(outcome == .newer(found: 4))
-    }
-
-    @Test func olderWithoutSteps_isUnsupported() throws {
-        let outcome = try Self.migrator(current: 3, steps: []).migrate(Self.json(["version": 2]))
-        #expect(outcome == .unsupported(found: 2))
-    }
-
-    @Test func gapInTheChain_isUnsupported() throws {
-        let outcome = try Self.migrator(current: 4, steps: [Self.bump(from: 3)]).migrate(Self.json(["version": 2]))
-        #expect(outcome == .unsupported(found: 2))
+    /// What cannot be brought forward: a document already current, one from
+    /// a newer build, one older than every step, and one a gap in the chain
+    /// leaves behind.
+    @Test(arguments: [
+        (current: 3, stepsFrom: [Int](), found: 3, expected: VersionedDocumentMigrator.Outcome.current),
+        (current: 3, stepsFrom: [3], found: 4, expected: .newer(found: 4)),
+        (current: 3, stepsFrom: [], found: 2, expected: .unsupported(found: 2)),
+        (current: 4, stepsFrom: [3], found: 2, expected: .unsupported(found: 2))
+    ])
+    func aDocumentNoStepApplies_isLeftAlone(
+        current: Int, stepsFrom: [Int], found: Int, expected: VersionedDocumentMigrator.Outcome
+    ) throws {
+        let outcome = try Self.migrator(current: current, steps: stepsFrom.map(Self.bump(from:)))
+            .migrate(Self.json(["version": found]))
+        #expect(outcome == expected)
     }
 
     @Test func steps_runInOrderToTheCurrentVersion() throws {

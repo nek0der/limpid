@@ -297,8 +297,7 @@ extension WindowProjectSwitchTests {
     // MARK: - A folder from outside
 
     /// Finder's Open With, `open -a`, a drop on the Dock icon: as ⌘O, in the
-    /// window the person was last in, brought to the front; a file is no
-    /// project, nor is a package, which ⌘O cannot choose.
+    /// window the person was last in, brought to the front.
     @Test func anOpenedFolder_withEveryWindowHiddenOnAnotherProject_switchesThatWindowAndShowsIt() async throws {
         let (session, registry) = SelectionIntentTests.registered()
         let shown = session.addOrActivateProject(rootURL: URL(fileURLWithPath: "/limpid-shown-\(UUID().uuidString)"))
@@ -339,6 +338,7 @@ extension WindowProjectSwitchTests {
         #expect(session.windowIDs.count == 2)
     }
 
+    /// A file is no project, nor is a package, which ⌘O cannot choose.
     @Test func aFolderFromOutside_opensInTheWindowLastUsed_andAFileOrAPackageIsLeftAlone() async throws {
         let fixture = Fixture()
         try await withTempDir { dir in

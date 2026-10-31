@@ -5,6 +5,14 @@ import Foundation
 @testable import Limpid
 
 extension RuntimeFact {
+    /// A Claude run `name` that stopped on an error in every pane of `tab`.
+    static func stopped(_ name: String, in tab: Tab, of project: Project) -> RuntimeFact {
+        RuntimeFact(
+            runtimeID: name, provider: .claude, paneIDs: tab.splitTree.allLeafIDs(), tabID: tab.id, projectID: project.id,
+            state: .error, updatedAt: Date(), episodeToken: "1", isEpisodeRead: false, detail: nil
+        )
+    }
+
     /// A Claude run `id` in `state`, shown in `pane`, in its first episode,
     /// changed only where a test says.
     static func test(

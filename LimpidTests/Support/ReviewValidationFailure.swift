@@ -1,11 +1,10 @@
 // ReviewValidationFailure.swift
-// Limpid — the one error the review scenarios throw.
+// Limpid — the one error the review's terminal probe scenario throws.
 
 import Foundation
 
-/// Shared by the scenarios that run in the test target and by the one that
-/// runs from `scripts/validate-review-core.sh`, which compiles the two sets
-/// separately.
+/// `scripts/validate-review-core.sh` compiles the probe scenario on its own,
+/// without Swift Testing, so its checks report through this error.
 struct ReviewValidationFailure: Error {
     let message: String
 }

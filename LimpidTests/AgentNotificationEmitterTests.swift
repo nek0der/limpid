@@ -7,11 +7,19 @@
 
 import Foundation
 import Testing
+import UserNotifications
 @testable import Limpid
 
 @MainActor
 @Suite("AgentNotificationEmitter")
 struct AgentNotificationEmitterTests {
+    /// The banners that would have reached macOS. Every case hands one in,
+    /// so none of them reaches the system's notification center.
+    @MainActor
+    private final class Banners {
+        var posted: [UNNotificationRequest] = []
+    }
+
     private func payload(
         kind: AgentNotificationKind,
         body: String?,
@@ -38,10 +46,14 @@ struct AgentNotificationEmitterTests {
         )
     }
 
-    private func emitter(_ history: NotificationHistoryStore) -> AgentNotificationEmitter {
+    private func emitter(_ history: NotificationHistoryStore, banners: Banners = Banners()) -> AgentNotificationEmitter {
         AgentNotificationEmitter(
             kind: .claude,
-            notificationManager: LimpidNotificationManager(historyStore: history, appLocale: { Locale(identifier: "en") }),
+            notificationManager: LimpidNotificationManager(
+                historyStore: history,
+                appLocale: { Locale(identifier: "en") },
+                bannerPoster: { banners.posted.append($0) }
+            ),
             suppressWhenPaneFocused: true,
             runtimeID: "claude:RUN",
             eventToken: "4"
@@ -192,8 +204,9 @@ struct AgentNotificationEmitterTests {
         try withTempDir { root in
             let history = NotificationHistoryStore(directory: root)
             let (session, tab, pane) = WorkspaceSessionFixture.withLooseTab()
+            let banners = Banners()
 
-            try emitter(history).deliver(
+            try emitter(history, banners: banners).deliver(
                 payload(
                     kind: .failed,
                     body: "rate limited",
@@ -211,6 +224,16 @@ struct AgentNotificationEmitterTests {
             #expect(entry.kind == .agentError)
             #expect(entry.body == "rate limited")
             #expect(entry.event == .stopped(agent: .claude, reason: "rate limited"))
+            #expect(banners.posted.isEmpty)
+
+            // The same failure, not told to stay quiet, does post: it is the
+            // flag that kept the list above empty.
+            try emitter(history, banners: banners).deliver(
+                payload(kind: .failed, body: "rate limited", tab: tab.id, pane: pane),
+                tab: tab,
+                session: session
+            )
+            #expect(banners.posted.map(\.content.body) == ["rate limited"])
         }
     }
 

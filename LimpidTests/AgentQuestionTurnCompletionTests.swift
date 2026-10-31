@@ -183,6 +183,11 @@ struct AgentQuestionTurnCompletionTests {
                 payload: payload("Stop", prompt: "old"), environment: environment,
                 completedAt: 1, bootSessionID: "boot"
             )
+            let old = try #require(AgentQuestionTurnCompletion(
+                payload: payload("PermissionRequest", prompt: "old"), environment: environment,
+                requestedAt: 0, bootSessionID: "boot"
+            ))
+            #expect(old.hasCompleted())
             var timebase = mach_timebase_info_data_t()
             #expect(mach_timebase_info(&timebase) == KERN_SUCCESS)
             let day = UInt64(86401 * 1_000_000_000 * Double(timebase.denom) / Double(timebase.numer))
@@ -193,7 +198,12 @@ struct AgentQuestionTurnCompletionTests {
             let receipts = try FileManager.default.contentsOfDirectory(
                 at: directory.appendingPathComponent("question-turns"), includingPropertiesForKeys: nil
             )
-            #expect(receipts.filter { $0.pathExtension == "json" }.count == 1)
+            let kept = receipts.filter { $0.pathExtension == "json" }
+            #expect(kept.count == 1)
+            let survivor = try #require(kept.first)
+            let receipt = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: survivor)) as? [String: Any])
+            #expect(receipt["promptID"] as? String == "prompt", "the new receipt is the one kept")
+            #expect(!old.hasCompleted(), "the expired one is gone")
         }
     }
 

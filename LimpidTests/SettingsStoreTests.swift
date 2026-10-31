@@ -118,13 +118,14 @@ struct SettingsStoreTests {
     @Test func aFileThatCannotBeRead_isSetAside() throws {
         try withTempDir { dir in
             let file = dir.appendingPathComponent("settings.json")
-            let original = try LimpidSettings.makeFileEncoder().encode(LimpidSettings.default)
+            let original = try LimpidSettings.testFileData(version: 2, overrides: ["newTab": TestShortcuts.commandN])
             try original.write(to: file)
             let manager = FileManager.default
             try manager.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
 
             let store = SettingsStore(directory: dir)
             #expect(store.savingSuspension == nil)
+            #expect(store.settings.keyboard.overrides.isEmpty, "the defaults, as nothing could be read")
             let aside = try #require(try manager.contentsOfDirectory(atPath: dir.path)
                 .first { $0.hasPrefix("settings.json.bak-read-failed-") })
             let asideURL = dir.appendingPathComponent(aside)

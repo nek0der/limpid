@@ -82,13 +82,11 @@ struct TurnEndPRRefreshTests {
     }
 
     /// The sync watches the attention list by itself, with no one calling it.
-    @Test func aRunLeavingItsTurn_isSeenWithoutBeingAsked() async throws {
+    @Test func aRunLeavingItsTurn_isSeenWithoutBeingAsked() async {
         show(.running)
         let refresh = make()
         show(.idle)
-        for _ in 0..<2000 where refreshed.containers.isEmpty {
-            try await Task.sleep(for: .milliseconds(1))
-        }
+        await pollUntil(timeout: .seconds(30), interval: .milliseconds(1)) { !refreshed.containers.isEmpty }
         #expect(refreshed.containers == [container])
         _ = refresh
     }

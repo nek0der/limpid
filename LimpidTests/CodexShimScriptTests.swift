@@ -250,8 +250,6 @@ struct CodexShimScriptTests {
         #expect(argv.suffix(3) == ["-c", value, "resume"])
     }
 
-    /// `PATH` still carries the shim directory inside the session, so
-    /// without this the shim would wrap itself without bound.
     /// A session created on a server that already exists inherits that
     /// server's environment for everything outside tmux's
     /// `update-environment` — measured 2026-09-06, a second session read

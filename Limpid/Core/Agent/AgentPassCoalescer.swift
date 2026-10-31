@@ -25,23 +25,27 @@ final class AgentPassCoalescer {
 
     private let window: TimeInterval
     private let now: () -> TimeInterval
+    private let timer: HoverDelayTimer
     private let run: () -> Void
     private var lastRunAt: TimeInterval = -.infinity
-    /// The pass that will close the current window, when one is owed.
-    private var trailing: Task<Void, Never>?
-    /// The pass the rules asked for at a later moment, when a finished
+    /// What cancels the pass that will close the current window, when one
+    /// is owed.
+    private var trailing: (@MainActor () -> Void)?
+    /// What cancels the pass the rules asked for at a later moment, when a finished
     /// turn's notice is held (`AgentProjection.nextPassInMs`): nothing
     /// watched changes when the hold ends, and the sweep may be seconds
     /// away or not running.
-    private var due: Task<Void, Never>?
+    private var due: (@MainActor () -> Void)?
 
     init(
         window: TimeInterval = AgentPassCoalescer.defaultWindow,
         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+        timer: HoverDelayTimer = .live,
         run: @escaping () -> Void
     ) {
         self.window = window
         self.now = now
+        self.timer = timer
         self.run = run
     }
 
@@ -55,11 +59,8 @@ final class AgentPassCoalescer {
         }
         guard trailing == nil else { return }
         let delay = window - elapsed
-        trailing = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(delay))
-            guard let self, !Task.isCancelled else { return }
-            trailing = nil
-            fire()
+        trailing = timer.schedule(.seconds(delay)) { [weak self] in
+            self?.fire()
         }
     }
 
@@ -69,7 +70,7 @@ final class AgentPassCoalescer {
     /// it.
     func didRun() {
         lastRunAt = now()
-        trailing?.cancel()
+        trailing?()
         trailing = nil
     }
 
@@ -78,19 +79,17 @@ final class AgentPassCoalescer {
     /// asked for. Unlike the trailing pass, a pass by another route does not
     /// settle it: that pass came before the moment it is for.
     func request(in delay: Duration?) {
-        due?.cancel()
+        due?()
         due = nil
         guard let delay else { return }
-        due = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: delay)
-            guard let self, !Task.isCancelled else { return }
-            due = nil
-            fire()
+        due = timer.schedule(delay) { [weak self] in
+            self?.due = nil
+            self?.fire()
         }
     }
 
     private func fire() {
-        trailing?.cancel()
+        trailing?()
         trailing = nil
         lastRunAt = now()
         run()

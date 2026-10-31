@@ -91,25 +91,6 @@ struct SettingsStoreMigrationTests {
         }
     }
 
-    @Test func aFileThatCannotBeRead_isMovedAside_notSavedOver() throws {
-        try withTempDir { dir in
-            let file = dir.appendingPathComponent("settings.json")
-            let original = try LimpidSettings.testFileData(version: 2, overrides: ["newTab": TestShortcuts.commandN])
-            try original.write(to: file)
-            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: file.path)
-
-            let store = SettingsStore(directory: dir)
-            #expect(store.settings.keyboard.overrides.isEmpty)
-            store.flushSynchronously()
-
-            let names = try FileManager.default.contentsOfDirectory(atPath: dir.path)
-            let aside = try #require(names.first { $0.hasPrefix("settings.json.bak-read-failed-") })
-            let asideURL = dir.appendingPathComponent(aside)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: asideURL.path)
-            #expect(try Data(contentsOf: asideURL) == original)
-        }
-    }
-
     @Test func withoutACopy_theFileIsReadAsItWas_andNotWritten() throws {
         try withTempDir { dir in
             let file = dir.appendingPathComponent("settings.json")

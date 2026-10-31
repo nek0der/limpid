@@ -199,6 +199,21 @@ struct WorktreeChangesTests {
         #expect(owner.outsideTurns["/repo"] == ["later.swift"], "what is unknown adds nothing")
     }
 
+    @Test func aGoneGap_marksTheCountIncomplete_onlyWhileAnUncommittedPathIsNotCounted() async throws {
+        let git = GitStub()
+        let owner = Self.owner(git)
+        let turns = try [Self.turn(1, start: 0, end: 10, endTree: Self.gone), Self.turn(2, start: 20, end: 30)]
+
+        await git.commit(leaving: ["later.swift", "unaccounted.swift"])
+        await owner.refresh(root: Self.root, turns: turns)
+        #expect(owner.outsideTurns["/repo"] == ["later.swift"])
+        #expect(owner.incompleteOutsideTurns.contains("/repo"), "the gone gap may hold the other path")
+
+        await git.commit(leaving: ["later.swift"])
+        await owner.refresh(root: Self.root, turns: turns)
+        #expect(!owner.incompleteOutsideTurns.contains("/repo"), "the gone gap could add nothing to this")
+    }
+
     @Test func whatWasCommittedSince_isNotOutsideTurns() async throws {
         let git = GitStub()
         let owner = Self.owner(git)

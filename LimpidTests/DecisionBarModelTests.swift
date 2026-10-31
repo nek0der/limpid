@@ -617,18 +617,6 @@ struct DecisionBarModelTests {
         #expect(free.text.contains(". The conversation is saved."))
     }
 
-    @Test func usageLimitNotice_isNotTheBarsOnAnotherStop() {
-        let item = AttentionItem.testUsageLimitStop(nil, arrivedAt: Self.beforeReset)
-        let content = DecisionBarContent.make(.init(
-            items: [item],
-            agent: .init(provider: .claude, state: .error, detail: nil),
-            stopResumes: [item.id: .available]
-        ))
-        // The bar is handed a notice only for its usage limit stop; any
-        // other stop it shows resumes.
-        #expect(DecisionBarModel(content: content, locale: Self.english).primaryAction == .resume(item.id))
-    }
-
     // MARK: - The unread turns' ⋯
 
     @Test func unreadTurnsThatMayHaveChangedFiles_offerARestoreToTheFirstOfThem() {

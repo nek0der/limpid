@@ -143,18 +143,22 @@ struct PaneStripAgentBadgeTests {
     // MARK: - An agent that is gone
 
     @Test func aRunWhoseProcessDied_isRetired_andTheTabIsAShellAgain() throws {
-        let (session, tab, pane) = WorkspaceSessionFixture.withLooseTab()
-        let run = "CCCCCCCC-3333-4333-8333-CCCCCCCCCCC3"
-        // As the hook helper writes it on SessionEnd, with the agent's pid.
-        let record = """
-        {"schemaVersion":3,"paneId":"\(pane.uuidString)","runId":"\(run)","revision":3,\
-        "stateEpisodeToken":"3","state":"unknown","runStartedAt":null,"updatedAt":"2026-10-20T06:40:00Z",\
-        "lastHookEvent":"session_ended","hasPrompt":true,"pid":"4242",\
-        "sessionId":"0aa15490-ade7-7223-a767-7eb22b5c69e1","sessionStartedAt":"2026-10-20T06:32:38Z"}
-        """
+        /// The agents on the tab after `passes` passes over the record.
+        func agents(after passes: Int) throws -> [AgentKind] {
+            let (session, tab, pane) = WorkspaceSessionFixture.withLooseTab()
+            let run = "CCCCCCCC-3333-4333-8333-CCCCCCCCCCC3"
+            // As the hook helper writes it on SessionEnd, with the agent's pid.
+            let record = """
+            {"schemaVersion":3,"paneId":"\(pane.uuidString)","runId":"\(run)","revision":3,\
+            "stateEpisodeToken":"3","state":"unknown","runStartedAt":null,"updatedAt":"2026-10-20T06:40:00Z",\
+            "lastHookEvent":"session_ended","hasPrompt":true,"pid":"4242",\
+            "sessionId":"0aa15490-ade7-7223-a767-7eb22b5c69e1","sessionStartedAt":"2026-10-20T06:32:38Z"}
+            """
+            let strip = try pass(provider: "codex", records: [run: record], session: session, isAlive: false, passes: passes).strip
+            return try #require(strip.item(for: tab)).agents.map(\.kind)
+        }
         // The pass that retires the run shows it once; the next has none.
-        let item = try pass(provider: "codex", records: [run: record], session: session, isAlive: false, passes: 2)
-            .strip.item(for: tab)
-        #expect(item?.agents.first?.kind == nil)
+        #expect(try agents(after: 1) == [.codex])
+        #expect(try agents(after: 2) == [])
     }
 }

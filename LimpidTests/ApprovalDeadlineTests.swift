@@ -59,7 +59,7 @@ struct ApprovalDeadlineTests {
         #expect(store.serviceDeadlines == [held.id: reading])
     }
 
-    @Test func aReadingThatLandsAfterStop_isDropped() async {
+    @Test func aReadingThatLandsAfterStop_isDropped() async throws {
         let epoch = UUID()
         let held = ApprovalPresentation.test(epoch: epoch)
         let reading = ServiceDeadline(deadlineMs: 20000, serviceNowMs: 5000, receivedAt: SuspendingClock.now)
@@ -67,15 +67,15 @@ struct ApprovalDeadlineTests {
         let store = ApprovalPresentationStore(serviceClockReader: { try await reader.read() })
         store.receive([held], epoch: epoch)
 
-        store.refreshServiceClock()
+        let refresh = try #require(store.refreshServiceClock())
         store.stop()
         // Back in the same epoch, so only the generation check can drop the
         // reading that was in flight across the stop.
         store.receive([held], epoch: epoch)
         await reader.release()
-        await reader.waitForReads(1)
-        await pollUntil(timeout: .milliseconds(300)) { !store.serviceDeadlines.isEmpty }
+        await refresh.value
 
+        #expect(await reader.reads == 1)
         #expect(store.serviceDeadlines.isEmpty)
     }
 
@@ -83,10 +83,9 @@ struct ApprovalDeadlineTests {
         let reader = ClockReader(ApprovalControllerConnection.ServiceClockReading(epoch: UUID(), deadlines: [:]))
         let store = ApprovalPresentationStore(serviceClockReader: { try await reader.read() })
 
-        store.refreshServiceClock()
-        await reader.release()
-        await reader.waitForReads(1, timeout: .milliseconds(300))
+        #expect(store.refreshServiceClock() == nil, "no read was started")
 
+        await reader.release()
         #expect(await reader.reads == 0)
     }
 
@@ -199,9 +198,5 @@ private actor ClockReader {
 
     func release() {
         released.open()
-    }
-
-    func waitForReads(_ count: Int, timeout: Duration = .seconds(2)) async {
-        await pollUntil(timeout: timeout) { reads >= count }
     }
 }

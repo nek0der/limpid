@@ -15,29 +15,32 @@ struct DebouncedSaveTests {
         var labels: [String] = []
     }
 
-    @Test func schedule_burst_runsOnlyTheLast() async {
-        let save = DebouncedSave(delay: .milliseconds(20))
+    @Test func schedule_burst_runsOnlyTheLast_onceTheChangesStop() {
+        let timer = ManualTimer()
+        let save = DebouncedSave(delay: .milliseconds(20), timer: timer.timer)
         let runs = Runs()
 
         save.schedule { runs.labels.append("first") }
+        timer.advance(by: .milliseconds(10))
         save.schedule { runs.labels.append("second") }
         #expect(save.hasPending)
 
-        await pollUntil(interval: .milliseconds(10)) { !runs.labels.isEmpty }
-        // We wait long enough for a first save that was not replaced to run too.
-        try? await Task.sleep(for: .milliseconds(60))
+        timer.advance(by: .milliseconds(19))
+        #expect(runs.labels.isEmpty, "the second change put the save off")
+        timer.advance(by: .milliseconds(1))
         #expect(runs.labels == ["second"])
     }
 
-    @Test func cancel_dropsThePendingSave() async throws {
-        let save = DebouncedSave(delay: .milliseconds(20))
+    @Test func cancel_dropsThePendingSave() {
+        let timer = ManualTimer()
+        let save = DebouncedSave(delay: .milliseconds(20), timer: timer.timer)
         let runs = Runs()
 
         save.schedule { runs.labels.append("canceled") }
         save.cancel()
 
         #expect(!save.hasPending)
-        try await Task.sleep(for: .milliseconds(80))
+        timer.advance(by: .milliseconds(20))
         #expect(runs.labels.isEmpty)
     }
 

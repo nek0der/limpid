@@ -255,15 +255,11 @@ struct DemoFixtureTests {
 
     // MARK: - Staged turns
 
-    private static func turns(of conversation: ConversationKey, now: Date = Date()) throws -> [TurnSummary] {
-        try #require(DemoFixture.conversations(now: now).first { $0.key == conversation }?.turns)
-    }
-
     /// The selected workspace's conversation: five turns in its worktree,
     /// T3 an answer and the others with changes, T4's check failing and
     /// T5's passing.
     @Test func theRemindersTurns_areOneConversation_inTheSelectedWorktree() throws {
-        let turns = try Self.turns(of: DemoFixture.remindersConversation)
+        let turns = try DemoFixture.stagedTurns(of: DemoFixture.remindersConversation)
         #expect(turns.map(\.displayNumber) == [1, 2, 3, 4, 5])
         #expect(turns.allSatisfy { $0.phase == .finished && $0.endTree?.root == DemoFixture.selectedWorktreeRoot.path })
         #expect(turns.allSatisfy { $0.paneID == DemoFixture.Slot.reminders.paneID.uuidString })
@@ -275,10 +271,10 @@ struct DemoFixtureTests {
     /// The other staged conversations: the review's two answers, and the
     /// stopped agent's interrupted turn with what it had changed.
     @Test func theOtherConversations_areTheReviewsAnswers_andTheStoppedAgentsTurn() throws {
-        let review = try Self.turns(of: DemoFixture.prReviewConversation)
+        let review = try DemoFixture.stagedTurns(of: DemoFixture.prReviewConversation)
         #expect(review.map(\.changes) == [.unchanged, .unchanged])
         #expect(review.allSatisfy { $0.conversation.provider == .codex })
-        let webhook = try Self.turns(of: DemoFixture.webhookConversation)
+        let webhook = try DemoFixture.stagedTurns(of: DemoFixture.webhookConversation)
         #expect(webhook.map(\.phase) == [.interrupted])
         #expect(webhook.first?.changes == .changed(files: 2, added: 18, removed: 3))
         #expect(DemoFixture.conversations().count == 4)
@@ -289,8 +285,8 @@ struct DemoFixtureTests {
     /// T1, T5.
     @Test func theCodexTurn_isInTheSelectedWorktree_betweenT4AndT5() throws {
         let now = Date()
-        let codex = try Self.turns(of: DemoFixture.remindersCodexConversation, now: now)
-        let reminders = try Self.turns(of: DemoFixture.remindersConversation, now: now)
+        let codex = try DemoFixture.stagedTurns(of: DemoFixture.remindersCodexConversation, now: now)
+        let reminders = try DemoFixture.stagedTurns(of: DemoFixture.remindersConversation, now: now)
         #expect(codex.map(\.displayNumber) == [1])
         #expect(codex.first?.conversation.provider == .codex)
         #expect(codex.first?.changes == .changed(files: 1, added: 24, removed: 0))

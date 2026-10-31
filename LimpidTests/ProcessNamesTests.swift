@@ -90,10 +90,21 @@ struct ProcessNamesTests {
     /// The tmux poll runs against pids libghostty reported a tick ago, so a
     /// process that has since exited is the ordinary case rather than an
     /// error. It has to come back `nil` and not as a stale name.
-    @Test("returns nil for a pid that is not ours to see")
-    func processName_ofDeadPID_isNil() {
-        // Pid 0 is the kernel's swapper: never a tmux client, and never
-        // something `proc_name` hands back a name for.
+    @Test("returns nil for a process that has exited")
+    func processName_ofDeadPID_isNil() throws {
+        let pid = try spawnProcessGroup(["/bin/sleep", "30"])
+        var isStopped = false
+        defer {
+            if !isStopped {
+                Self.stop(pid)
+            }
+        }
+        #expect(ProcessNames.accountingName(of: pid) == "sleep")
+
+        Self.stop(pid)
+        isStopped = true
+        #expect(ProcessNames.accountingName(of: pid) == nil)
+        // Pid 0 is the kernel's swapper: there, but not ours to see.
         #expect(ProcessNames.accountingName(of: 0) == nil)
     }
 }

@@ -127,11 +127,7 @@ struct PromptCacheStatusTests {
 
 struct PromptCacheDecodingTests {
     private func badge(cacheWindow: String?) throws -> AgentBadge {
-        let field = cacheWindow.map { ",\"cacheWindow\":\($0)" } ?? ""
-        let json = """
-        {"state":"finished","updatedAt":"2026-10-07T12:05:00Z"\(field)}
-        """
-        return try JSONDecoder().decode(AgentProjectedBadge.self, from: Data(json.utf8)).asAgentBadge
+        try AgentBadge.decoded(field: "cacheWindow", value: cacheWindow, updatedAt: "2026-10-07T12:05:00Z")
     }
 
     @Test func projectedBadge_withWindow_carriesIt() throws {

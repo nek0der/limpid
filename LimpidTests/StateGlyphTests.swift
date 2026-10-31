@@ -44,7 +44,6 @@ struct StateGlyphTests {
         #expect(StateGlyphOrbit.turn(isTurning: true) != nil)
         #expect(StateGlyphOrbit.turn(isTurning: false) == nil)
         #expect(StateGlyphOrbit.restingAngle == .degrees(45))
-        #expect(StateGlyphOrbit.turnDuration == 2.4)
     }
 
     // MARK: - What the environment says

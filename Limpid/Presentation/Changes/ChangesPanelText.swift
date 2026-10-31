@@ -75,7 +75,7 @@ enum ChangesPanelText {
             parts.append([ReceiptRun(text: LocalizedStringResource(
                 "changes.outsideTurnsIncomplete",
                 defaultValue: "Changed outside turns: incomplete record",
-                comment: "Changes panel: none was counted outside turns, but some could not be, as two agents' turns ended in one second"
+                comment: "Changes panel: none was counted outside turns, but some could not be, so the count may be short"
             ).resolved(in: locale), role: .plain)])
         }
         return parts

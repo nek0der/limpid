@@ -428,6 +428,8 @@ struct ReviewCommentHeldTests {
         let message = LocalizedStringResource(
             "The comment you were writing couldn’t be put back where it was. Copy it to write it again."
         )
+        #expect(message.resolved(in: Locale(identifier: "en"))
+            == "The comment you were writing couldn’t be put back where it was. Copy it to write it again.")
         #expect(message.resolved(in: Locale(identifier: "ja")) == "入力中のコメントを元の場所に戻せませんでした。コピーして書き直してください。")
     }
 
@@ -657,6 +659,23 @@ struct ReviewCommentHeldTests {
 
         #expect(!review.stackLoader.stale.contains(Self.other.id))
         #expect(review.composer.text == "Why this?")
+    }
+
+    @Test func aReadWhileHeld_isWithheld_untilLetGo() async throws {
+        let mine = try ReviewDiffFixture.diff(of: Self.file, fingerprint: "a", patch: Self.written)
+        let theirs = try ReviewDiffFixture.diff(of: Self.other, fingerprint: "b", patch: Self.written)
+        let (review, _) = try await Self.review([mine, theirs])
+        Self.hold(review, isComposingInputMethodText: true)
+
+        review.loadStacked(window: [Self.file.id, Self.other.id])
+        await pollUntil(timeout: .seconds(5), interval: .milliseconds(5)) { review.stackLoader.isWaitingToPublish(Self.other.id) }
+
+        #expect(review.stackLoader.isWaitingToPublish(Self.other.id), "read")
+        #expect(review.stackLoader.entries[Self.other.id] == nil, "and not published")
+
+        Self.hold(review, isComposingInputMethodText: false)
+
+        #expect(review.stackLoader.entries[Self.other.id]?.diff != nil)
     }
 
     @Test func onlyAnInputMethodsText_holdsTheStack_andADrawingAgainLetsGo() async throws {

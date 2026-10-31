@@ -196,16 +196,20 @@ enum LimpidMotion {
     /// motion ten times as long), for stepping through a recording of a
     /// surface opening frame by frame (CONTRIBUTING.md). A factor that is
     /// not a finite number of at least 1 leaves the pace at 1.
-    static let pace: Double = {
+    static let pace = pace(environment: ProcessInfo.processInfo.environment)
+
+    /// The pace `environment` asks for, read apart from the process's own
+    /// so a test does not depend on the shell it was started from.
+    static func pace(environment: [String: String]) -> Double {
         #if DEBUG
-            guard let factor = ProcessInfo.processInfo.environment["LIMPID_SLOW_MOTION"].flatMap(Double.init),
+            guard let factor = environment["LIMPID_SLOW_MOTION"].flatMap(Double.init),
                   factor.isFinite
             else { return 1 }
             return max(factor, 1)
         #else
             return 1
         #endif
-    }()
+    }
 
     private static func paced(_ animation: Animation) -> Animation {
         pace == 1 ? animation : animation.speed(1 / pace)

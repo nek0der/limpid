@@ -95,9 +95,13 @@ struct StopLedgerStoreTests: StopLedgerFixture {
             let store = StopLedgerStore(directory: dir, resumeTimeout: .seconds(30))
             _ = store.update(runtimes: [Self.run("a", .error)], paneExists: Self.always)
             let id = StopLedger.itemID(of: Self.run("a", .error))
-            await pollUntil(interval: .milliseconds(20)) {
+            // The file itself is the signal. The deadline is only for a save
+            // that never comes: the save waits on the main queue, which a
+            // parallel run can stall.
+            await pollUntil(timeout: .seconds(30), interval: .milliseconds(20)) {
                 StopLedgerStore(directory: dir, resumeTimeout: .seconds(30)).ledger.record(id) != nil
             }
+            #expect(StopLedgerStore(directory: dir, resumeTimeout: .seconds(30)).ledger.record(id) != nil)
 
             // The conversation came back: the stop ends, on disk too.
             _ = store.update(runtimes: [Self.run("b", .running, at: 30)], paneExists: Self.always)
@@ -144,13 +148,17 @@ struct StopLedgerStoreTests: StopLedgerFixture {
             let id = StopLedger.itemID(of: Self.run("a", .error))
             store.flushSynchronously()
             let file = dir.appendingPathComponent("stops.json")
-            var text = try String(contentsOf: file, encoding: .utf8)
-            // One record this build cannot read, beside the known one.
-            text = text.replacingOccurrences(of: "\"records\" : [", with: "\"records\" : [{\"kind\":\"later\"},")
+            let written = try String(contentsOf: file, encoding: .utf8)
+            // One record this build cannot read, beside the known one. The
+            // edits match the encoder's spacing: one that matched nothing
+            // would leave a file with nothing unreadable or newer in it.
+            let text = written.replacingOccurrences(of: "\"records\" : [", with: "\"records\" : [{\"kind\":\"later\"},")
+            #expect(text != written)
             try text.data(using: .utf8).map { try $0.write(to: file) }
             #expect(StopLedgerStore(directory: dir, resumeTimeout: .seconds(30)).ledger.record(id) != nil)
 
             let newer = text.replacingOccurrences(of: "\"schemaVersion\" : 1", with: "\"schemaVersion\" : 2")
+            #expect(newer != text)
             try newer.data(using: .utf8).map { try $0.write(to: file) }
             let later = StopLedgerStore(directory: dir, resumeTimeout: .seconds(30))
             #expect(later.ledger.record(id) != nil)

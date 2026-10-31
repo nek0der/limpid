@@ -1,12 +1,13 @@
 // HoverDelayTimer.swift
-// Limpid — runs a hover's delayed step unless it is canceled first, so the surfaces that wait on a pointer share one timer a test can step.
+// Limpid — runs a delayed step unless it is canceled first, so what waits on a pointer or a burst shares one timer a test can step.
 
 import Foundation
 
 /// Runs a hover's delayed steps (the PR card's open delay and dismiss
 /// grace, the conversation highlight's rest on a tab) and hands back what
-/// cancels a step that has not run. Tests pass a timer they step by hand,
-/// so they check the order of the transitions without sleeping for them.
+/// cancels a step that has not run. `AgentPassCoalescer` and `DebouncedSave`
+/// wait on it too. Tests pass a timer they step by hand, so they check the
+/// order of the transitions without sleeping for them.
 struct HoverDelayTimer: Sendable {
     /// Runs the action once the delay has passed, unless the returned
     /// cancel runs first.

@@ -21,11 +21,7 @@ struct RestoreOutcomePresentationTests {
     }
 
     private static func turn(_ number: Int, root: String = "/repo", conversationID: String = "s1") throws -> TurnSummary {
-        var extras = TurnSummaryFixture.Extras()
-        extras.beginTree = SnapshotTree(tree: TurnSummaryFixture.tree("b", number), root: root)
-        extras.conversationID = conversationID
-        extras.startedAt = String(format: "2026-10-12T00:%02d:00Z", number)
-        return try TurnSummaryFixture.turn("\(conversationID)-T\(number)", number: number, extras: extras)
+        try TurnSummaryFixture.restorable(number, root: root, conversationID: conversationID)
     }
 
     private static func isRoot(_ root: String) -> (String) -> Bool {
@@ -121,19 +117,20 @@ struct RestoreOutcomePresentationTests {
     @Test func partial_keepsTheStrip_sayingWhatStayed() throws {
         let journal = try Self.journal(#"{"kind":"partiallyApplied","reason":"writeFailed","currentTree":"c"}"#)
         let finish = try Self.finish(.partial(journal, kept: ["a.txt"], failed: ["b"]))
-        #expect(finish == .explain(
-            "Restored only part of the code. Kept the files changed meanwhile: a.txt. Couldn’t write: b."
-        ))
+        #expect(finish == .explain(RestoreText.ended(.partial(kept: ["a.txt"], failed: ["b"]), locale: Self.english)))
         // Recorded or not, a partial restore's strip says what it left.
         #expect(try Self.finish(.partial(journal, kept: ["a.txt"], failed: ["b"]), recordedOpIDs: [Self.opID]) == finish)
     }
 
+    /// The words themselves are `RestorePresentationTests`'s; here, that the
+    /// strip says them for this reason, in the language asked for.
     @Test func refused_keepsTheStrip_sayingWhy() throws {
         #expect(try Self.finish(.canceled(.refused(.mergeInProgress)))
-            == .explain("Restore canceled. A merge, a rebase, or a conflict is in progress."))
+            == .explain(RestoreText.ended(.canceled(.refused(.mergeInProgress)), locale: Self.english)))
         #expect(try Self.finish(.canceled(.otherChanges), locale: Self.japanese)
-            == .explain("復元を中止しました。ほかの変更が見つかったため、ファイルは変更していません。"))
-        #expect(try Self.finish(.canceled(.unknown)) == .explain("Restore canceled. No files were changed."))
+            == .explain(RestoreText.ended(.canceled(.otherChanges), locale: Self.japanese)))
+        #expect(try Self.finish(.canceled(.unknown))
+            == .explain(RestoreText.ended(.canceled(.unknown), locale: Self.english)))
     }
 
     /// The bridge failed or the journal was read before it settled: the
@@ -149,7 +146,7 @@ struct RestoreOutcomePresentationTests {
 
     // MARK: - An undo's end
 
-    @Test func anUndoTakenBackWhole_takesBackTheLines_theDoneLines_andTheToast() throws {
+    @Test func anUndoTakenBackWhole_namesTheRestore_andItsToast_withNothingNewToTell() throws {
         let journal = try Self.journal(Self.applied)
         let undoJournal = try Self.journal(Self.applied, opID: "U")
         let undone = try #require(RestoreOutcomePresentation.undo(.finished(undoJournal), of: journal, locale: Self.english))

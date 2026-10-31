@@ -22,7 +22,9 @@ struct UpdateStateTests {
         #expect(UpdateState.idle.progressValueText(locale: Locale(identifier: "en")).isEmpty)
     }
 
-    @Test("state carries presentation values without retaining a manufactured appcast item")
+    /// `UpdateDisplayItem` holds no appcast item by its type, which needs no
+    /// test here.
+    @Test("the driver reads the update's version from the state")
     func updateStateCarriesDisplayItem() {
         let item = UpdateDisplayItem(displayVersion: "v1.2.3")
         let reply = OneShot<SPUUserUpdateChoice> { _ in }

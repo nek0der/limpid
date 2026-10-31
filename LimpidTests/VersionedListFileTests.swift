@@ -30,7 +30,8 @@ struct VersionedListFileTests {
     func write_emptyRemovesFile() throws {
         try withTempDir { root in
             let url = root.appendingPathComponent("names.json")
-            file.write(["a"], to: url)
+            #expect(file.write(["a"], to: url))
+            #expect(FileManager.default.fileExists(atPath: url.path))
             #expect(file.write([], to: url))
             #expect(!FileManager.default.fileExists(atPath: url.path))
             #expect(file.write([], to: url), "nothing to remove is not a failure")

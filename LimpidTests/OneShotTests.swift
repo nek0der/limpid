@@ -36,16 +36,19 @@ struct OneShotTests {
     func closure_releasedAfterFiring() {
         final class Sink {}
         weak var weakSink: Sink?
-        autoreleasepool {
+        /// Made in a function of its own, so the shot's closure is all that
+        /// holds the sink once it returns.
+        func makeShot() -> OneShot<Void> {
             let sink = Sink()
             weakSink = sink
-            let shot = OneShot<Void> { _ = sink }
-            #expect(weakSink != nil)
-            shot.call()
+            return OneShot<Void> { _ = sink }
         }
-        // After firing + autoreleasepool drain, the captured Sink
-        // should be deallocated because OneShot nils out its
-        // callback reference.
+        let shot = makeShot()
+        #expect(weakSink != nil)
+        shot.call()
+        // The shot is still held here, so only its dropping the callback
+        // lets the sink go.
         #expect(weakSink == nil)
+        withExtendedLifetime(shot) {}
     }
 }

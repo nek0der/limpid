@@ -7,10 +7,6 @@ import Testing
 
 @MainActor
 struct DemoIsolationTests {
-    private static func turns(of conversation: ConversationKey, now: Date = Date()) throws -> [TurnSummary] {
-        try #require(DemoFixture.conversations(now: now).first { $0.key == conversation }?.turns)
-    }
-
     /// The staged lines leave Claude's T4 and T5, Codex's T1, and the
     /// review's second answer unread, and only them: every other staged turn
     /// reads as viewed. The store is a demo run's, which writes nothing.
@@ -19,13 +15,13 @@ struct DemoIsolationTests {
             let store = ViewedLineStore(directory: directory, writesFiles: false)
             DemoFixture.stagedProjection.markViewedLines(in: store)
 
-            let reminders = try Self.turns(of: DemoFixture.remindersConversation)
+            let reminders = try DemoFixture.stagedTurns(of: DemoFixture.remindersConversation)
             #expect(reminders.map(store.isViewed) == [true, true, true, false, false])
-            let review = try Self.turns(of: DemoFixture.prReviewConversation)
+            let review = try DemoFixture.stagedTurns(of: DemoFixture.prReviewConversation)
             #expect(review.map(store.isViewed) == [true, false])
-            let webhook = try Self.turns(of: DemoFixture.webhookConversation)
+            let webhook = try DemoFixture.stagedTurns(of: DemoFixture.webhookConversation)
             #expect(webhook.map(store.isViewed) == [true])
-            let codex = try Self.turns(of: DemoFixture.remindersCodexConversation)
+            let codex = try DemoFixture.stagedTurns(of: DemoFixture.remindersCodexConversation)
             #expect(codex.map(store.isViewed) == [false], "unread beside Claude's T4 and T5")
             store.flushSynchronously()
             #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).isEmpty)
@@ -120,7 +116,7 @@ struct DemoIsolationTests {
         #expect(try bridge.restore(root, TurnID("T"), "P", []) == .refused(.unknown))
         #expect(try bridge.undo(root, "OP", []) == .refused(.unknown))
         #expect(try bridge.recover(root) == RestoreRecovery(journals: [], settled: []))
-        let turns = try Self.turns(of: DemoFixture.remindersConversation).suffix(2)
+        let turns = try DemoFixture.stagedTurns(of: DemoFixture.remindersConversation).suffix(2)
         let range = try #require(ReviewTurnRange(turns: Array(turns)))
         let call = RestoreCoordinator.DiscardCall(range: range, lastTurnNumber: 5, paneID: "P", files: [])
         #expect(try bridge.discard(call, []) == .refused(.unknown))
@@ -136,7 +132,7 @@ struct DemoIsolationTests {
         // A staged turn's own files are unknown, never "none": the panel
         // keeps the turns' lines rather than say they changed no file.
         await #expect(throws: ReviewError.gitFailed) { try await git.pathsBetween(root, "a", "b") }
-        let turns = try Self.turns(of: DemoFixture.remindersConversation)
+        let turns = try DemoFixture.stagedTurns(of: DemoFixture.remindersConversation)
         let changes = WorktreeChanges(git: git)
         await changes.loadTurnPaths(turns, root: root)
         #expect(turns.allSatisfy { changes.paths(of: $0.turnID) == nil })

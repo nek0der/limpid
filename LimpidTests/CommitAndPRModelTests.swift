@@ -32,6 +32,26 @@ struct CommitAndPRModelTests {
             == "An agent is waiting for approval, an answer, or a response, or has stopped.")
         #expect(CommitAndPRText.blocker(.waiting, locale: Self.japanese)
             == "承認待ち、回答待ち、応答待ち、または停止したエージェントがあります。")
+
+        // And the sentence says what the blocker reads: every one of these.
+        let key = ApprovalKey(epoch: UUID(), runID: UUID(), requestID: UUID())
+        let approval = ApprovalFact(key: key, provider: .claude, isQuestion: false, supportsNativeAnswer: true, state: .held, deadline: nil)
+        let question = ApprovalFact(key: key, provider: .claude, isQuestion: true, supportsNativeAnswer: true, state: .held, deadline: nil)
+        func items(_ kind: AttentionItemKind) -> [AttentionItem] {
+            var queue = AttentionQueue()
+            queue.insert(
+                id: .stop(EpisodeKey(origin: .runtime("r"), episodeToken: "1")),
+                kind: kind,
+                subject: .runtime(id: "r", provider: .claude, paneID: UUID(), tabID: nil, projectID: nil),
+                arrivedAt: Date(timeIntervalSince1970: 0)
+            )
+            return queue.items
+        }
+        #expect(CommitAndPRModel.isWaiting(items(.approval(approval))))
+        #expect(CommitAndPRModel.isWaiting(items(.question(question))))
+        #expect(CommitAndPRModel.isWaiting(items(.prompt(PromptWait(detail: "Allow network access?")))))
+        #expect(CommitAndPRModel.isWaiting(items(.stop(.processExited))))
+        #expect(!CommitAndPRModel.isWaiting(items(.unread(UnreadTurn(turnID: TurnID("t"), changes: .unchanged)))))
     }
 
     @Test func theLines_leaveOutCommitsThatProposeNothing() {
@@ -250,24 +270,6 @@ struct CommitAndPRModelTests {
         #expect(Self.create(Fixture.input(pullRequest: PRInfoFixture.make(state: .merged))) == nil)
         // A closed request may be proposed again.
         #expect(Self.create(Fixture.input(pullRequest: PRInfoFixture.make(state: .closed))) == .available([]))
-    }
-
-    @Test func waitingAndRunning_readTheSessionsItemsAndAgents() {
-        let key = ApprovalKey(epoch: UUID(), runID: UUID(), requestID: UUID())
-        let fact = ApprovalFact(key: key, provider: .claude, isQuestion: false, supportsNativeAnswer: true, state: .held, deadline: nil)
-        func items(_ kind: AttentionItemKind) -> [AttentionItem] {
-            var queue = AttentionQueue()
-            queue.insert(
-                id: .stop(EpisodeKey(origin: .runtime("r"), episodeToken: "1")),
-                kind: kind,
-                subject: .runtime(id: "r", provider: .claude, paneID: UUID(), tabID: nil, projectID: nil),
-                arrivedAt: Date(timeIntervalSince1970: 0)
-            )
-            return queue.items
-        }
-        #expect(CommitAndPRModel.isWaiting(items(.approval(fact))))
-        #expect(CommitAndPRModel.isWaiting(items(.stop(.processExited))))
-        #expect(!CommitAndPRModel.isWaiting(items(.unread(UnreadTurn(turnID: TurnID("t"), changes: .unchanged)))))
     }
 
     @Test func eachReason_readsInBothLanguages() {

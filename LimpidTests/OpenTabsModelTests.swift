@@ -94,10 +94,10 @@ struct OpenTabsModelTests {
 
     /// VoiceOver hears what the strip's tab says, then the panes the line
     /// shows; the review's row, its scope and that it is the review.
-    @Test func aRowsSpokenLabel_isTheTabs_withTheSplitTabsPanes() {
+    @Test func aRowsSpokenLabel_isTheTabs_withTheSplitTabsPanes() throws {
         let model = Self.model([Self.input(title: "Two shells", paneCount: 2)], reviewTab: .behind)
-        let item = model.terminalRows[0].item
-        let tabs = item.map { $0.spokenLabel(locale: Self.english) } ?? ""
+        let item = try #require(model.terminalRows[0].item)
+        let tabs = item.spokenLabel(locale: Self.english)
         #expect(model.terminalRows[0].spokenLabel.hasPrefix(tabs))
         #expect(model.terminalRows[0].spokenLabel.hasSuffix("2 panes"))
         #expect(model.reviewRow?.spokenLabel.hasPrefix("T12") == true)

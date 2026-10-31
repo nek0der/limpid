@@ -27,10 +27,13 @@ struct GitProcessSmokeTests {
         #expect(isRepo)
     }
 
+    /// A folder of its own: a stray `.git` in `/tmp` on the machine must not
+    /// decide this.
     @Test
-    func isGitRepository_returnsFalse_forTmpDirectory() async {
-        let isRepo = await GitProcess.isGitRepository(URL(fileURLWithPath: "/tmp"))
-        #expect(isRepo == false)
+    func isGitRepository_returnsFalse_forAPlainFolder() async throws {
+        try await withTempDir { directory in
+            #expect(await GitProcess.isGitRepository(directory) == false)
+        }
     }
 
     @Test
@@ -97,7 +100,7 @@ struct GitProcessSmokeTests {
         #expect(!FileManager.default.fileExists(atPath: submoduleGitDirectory))
     }
 
-    @Test(.disabled(if: !RepoFixture.hasLocalRepo, "no local git"))
+    @Test
     func gitBranch_takesANameThatLooksLikeAnOption_asAName() async throws {
         let repo = try await TempGitRepo.make()
         defer { repo.cleanup() }

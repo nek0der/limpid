@@ -150,8 +150,12 @@ struct ReviewTurnsGitTests {
             Self.turn(2, begin: TurnSummaryFixture.tree("b", 2), end: TurnSummaryFixture.tree("e", 2), root: repo.url)
         ]
 
-        let outside = await Self.outsideTurns(turns, in: repo)
-        #expect(outside.isEmpty)
+        let owner = WorktreeChanges(git: .live)
+        await owner.refresh(root: repo.url, turns: turns)
+
+        // A failure would leave no count at all, which reads as "being counted".
+        #expect(owner.outsideTurns[repo.url.path] == [])
+        #expect(owner.incompleteOutsideTurns.contains(repo.url.path), "a.swift is uncommitted and may be in the gap")
     }
 
     @MainActor

@@ -56,7 +56,9 @@ struct HotKeyMappingTests {
     @Test func keyCode_currentLayout_resolvesLettersWhenAvailable() throws {
         // Runs against the machine's real input source. A layout without
         // Unicode data has no translator; there is nothing to check then.
-        guard let translate = StoredShortcut.currentLayoutTranslator() else { return }
+        guard let translate = StoredShortcut.currentLayoutTranslator() else {
+            try Test.cancel("the current input source has no Unicode layout data")
+        }
         let code = try #require(HotKeyMapping.keyCodeRange.first { code in
             NamedKey(keyCode: code) == nil && translate(code)?.isEmpty == false
         })

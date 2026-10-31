@@ -71,10 +71,22 @@ struct ModalMotionTests {
         #expect(ChangesPanelMotion.animation(isFloating: false, reduceMotion: true) == nil)
     }
 
-    /// The test run sets no `LIMPID_SLOW_MOTION`, so the tokens run at
-    /// their own pace, as a release does, and the durations the tests
-    /// compare are the ones shipped.
-    @Test func theTokens_runAtTheirOwnPace() {
-        #expect(LimpidMotion.pace == 1)
+    /// Without `LIMPID_SLOW_MOTION` the tokens run at their own pace; a
+    /// factor slows them, and one that is not a finite number of at least 1
+    /// leaves them alone. Read from a handed-in environment, so a developer's
+    /// shell does not decide this.
+    @Test(arguments: [
+        (nil, 1),
+        ("10", 10),
+        ("1", 1),
+        ("0.5", 1),
+        ("-3", 1),
+        ("inf", 1),
+        ("nan", 1),
+        ("fast", 1)
+    ] as [(String?, Double)])
+    func thePace_comesFromAFactorOfAtLeastOne(_ factor: String?, _ pace: Double) {
+        let environment = factor.map { ["LIMPID_SLOW_MOTION": $0] } ?? [:]
+        #expect(LimpidMotion.pace(environment: environment) == pace)
     }
 }

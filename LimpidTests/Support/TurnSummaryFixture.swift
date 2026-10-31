@@ -53,6 +53,23 @@ enum TurnSummaryFixture {
 
     /// A turn of `conversation`, decoded from the JSON the projection sends
     /// so the test goes through the same reader as the app.
+    /// Turn `number` of a conversation, with the begin tree a restore goes
+    /// back to, started `number` minutes into the hour unless given.
+    static func restorable(
+        _ number: Int,
+        changes: String = #"{"kind":"unchanged"}"#,
+        hasPrompt: Bool = true,
+        root: String = "/repo",
+        conversationID: String = "s1",
+        startedAt: String? = nil
+    ) throws -> TurnSummary {
+        var extras = Extras()
+        extras.beginTree = SnapshotTree(tree: tree("b", number), root: root)
+        extras.conversationID = conversationID
+        extras.startedAt = startedAt ?? String(format: "2026-10-12T00:%02d:00Z", number)
+        return try turn("\(conversationID)-T\(number)", changes: changes, hasPrompt: hasPrompt, number: number, extras: extras)
+    }
+
     static func turn(
         _ id: String,
         phase: String = "finished",

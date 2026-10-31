@@ -58,12 +58,12 @@ enum MenuBarApprovalRule {
         case .held, .sendFailed, .withdrawn, .unknownResult:
             break
         }
+        // A request no longer taking a decision (withdrawn, its result not
+        // known) is only opened, a question as much as a command.
+        guard state.acceptsDecision else { return .openPane }
         if isQuestion {
             return supportsNativeAnswer ? .answerInLimpid : .openPane
         }
-        // A request no longer taking a decision (withdrawn, its result not
-        // known) is only opened.
-        guard state.acceptsDecision else { return .openPane }
         // An empty command runs nothing the menu could show, and has no
         // characters to hide: it reads as a tool that runs no command.
         guard let command, !command.isEmpty else { return .notACommand }

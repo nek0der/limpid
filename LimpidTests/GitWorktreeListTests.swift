@@ -102,6 +102,19 @@ struct GitWorktreeListParserTests {
         let repo = try await TempGitRepo.make()
         defer { repo.cleanup() }
         let worktrees = try await GitWorktreeList.fetch(repoRoot: repo.url)
-        #expect(worktrees.count >= 1)
+        let head = try await repo.git(["rev-parse", "HEAD"])
+        // Git prints the real path: `/private/var`, where the temporary
+        // directory is spelled `/var`. Foundation's symlink resolving drops
+        // that `/private`, so the top comes from Git too.
+        let top = try await repo.git(["rev-parse", "--show-toplevel"])
+        #expect(worktrees == [GitWorktreeInfo(
+            path: URL(fileURLWithPath: top),
+            headSHA: head,
+            branch: "main",
+            isDetached: false,
+            isBare: false,
+            isLocked: false,
+            isPrunable: false
+        )])
     }
 }

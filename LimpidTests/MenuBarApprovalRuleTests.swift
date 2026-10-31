@@ -38,6 +38,9 @@ struct MenuBarApprovalRuleTests {
         "echo a\recho b",
         "echo a\u{2028}echo b",
         "echo a\u{85}echo b",
+        "echo a\u{0B}echo b",
+        "echo a\u{0C}echo b",
+        "echo a\u{2029}echo b",
     ])
     func offer_commandOnSeveralLines_isTooLong(_ command: String) {
         #expect(Self.offer(command) == .tooLong)
@@ -95,9 +98,12 @@ struct MenuBarApprovalRuleTests {
     @Test func offer_requestTakingNoDecision_onlyOpens() {
         #expect(Self.offer("make test", state: .withdrawn) == .openPane)
         #expect(Self.offer("make test", state: .unknownResult) == .openPane)
+        #expect(Self.offer(nil, isQuestion: true, state: .withdrawn) == .openPane)
+        #expect(Self.offer(nil, isQuestion: true, state: .unknownResult) == .openPane)
     }
 
     @Test func offer_failedSend_offersTheDecisionAgain() {
         #expect(Self.offer("make test", state: .sendFailed(.allowOnce, error: "x")) == .allowOrDeny)
+        #expect(Self.offer(nil, isQuestion: true, state: .sendFailed(.allowOnce, error: "x")) == .answerInLimpid)
     }
 }

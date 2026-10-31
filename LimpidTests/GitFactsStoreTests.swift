@@ -33,6 +33,11 @@ struct GitFactsStoreTests {
         let front = Recorded(false)
         // Not in front yet, as at launch: the clock reads nothing.
         store.start(session: session) { front.value }
+        // Nothing marks a reading that did not happen: the shortest wait
+        // that would let one start.
+        await pollUntil(timeout: .milliseconds(200)) { reads.value > 0 }
+        #expect(reads.value == 0)
+        #expect(store.facts(for: .project(project.id)) == nil)
 
         // The first coming to the front reads, as every later one does.
         front.value = true

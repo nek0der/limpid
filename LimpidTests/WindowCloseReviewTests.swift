@@ -65,6 +65,11 @@ extension WindowCloseTests {
     @Test func aClosedWindow_isMarkedClosed_andHoldsNoReview() throws {
         let fixture = try Fixture()
         let closed = fixture.other
+        let (tab, _) = try ProjectWindowsFixture.reviewAndHunk()
+        closed.review = tab
+        closed.writeComment()
+        #expect(closed.review != nil)
+        #expect(closed.reviewSession != nil)
 
         fixture.close(closed)
 

@@ -409,7 +409,10 @@ struct OpenInNewWindowTests {
         let navigator = SessionAttentionNavigator(session: fixture.session, registry: fixture.registry)
         store.navigator = navigator
         store.apply(
-            .init(runtimes: [Self.stop("b", in: fixture.bTab, of: fixture.b), Self.stop("c", in: fixture.cTab, of: fixture.c)]),
+            .init(runtimes: [
+                RuntimeFact.stopped("b", in: fixture.bTab, of: fixture.b),
+                RuntimeFact.stopped("c", in: fixture.cTab, of: fixture.c)
+            ]),
             announces: false
         )
         let itemB = try #require(store.queue.items.first { $0.subject.projectID == fixture.b.id })
@@ -434,9 +437,9 @@ struct OpenInNewWindowTests {
         let other = try fixture.window(showing: fixture.c)
         let store = AttentionQueueStore()
         store.apply(.init(runtimes: [
-            Self.stop("a", in: fixture.aTab, of: fixture.a),
-            Self.stop("b", in: fixture.bTab, of: fixture.b),
-            Self.stop("c", in: fixture.cTab, of: fixture.c)
+            RuntimeFact.stopped("a", in: fixture.aTab, of: fixture.a),
+            RuntimeFact.stopped("b", in: fixture.bTab, of: fixture.b),
+            RuntimeFact.stopped("c", in: fixture.cTab, of: fixture.c)
         ]), announces: false)
 
         let model = NeedsAttentionListModel(
@@ -508,10 +511,4 @@ struct OpenInNewWindowTests {
         #expect(commands.performed.count == 2)
     }
 
-    static func stop(_ name: String, in tab: Tab, of project: Project) -> RuntimeFact {
-        RuntimeFact(
-            runtimeID: name, provider: .claude, paneIDs: tab.splitTree.allLeafIDs(), tabID: tab.id, projectID: project.id,
-            state: .error, updatedAt: Date(), episodeToken: "1", isEpisodeRead: false, detail: nil
-        )
-    }
 }

@@ -33,22 +33,19 @@ struct WindowRegistryTests {
         }
     }
 
-    @Test func aProjectNoWindowShows_switchesTheWindowAskedInPlace_onItsFolder() {
+    /// Switching in place itself is `choosingAnotherProjectFromTheMenu_switchesThisWindow_andOpensNone`,
+    /// on a project with a session. This one has none: it opens with nothing
+    /// open, not a tab made for it.
+    @Test func aProjectWithNoSessionYet_opensOnItsFolder_withNoTabMadeForIt() {
         let fixture = Fixture()
         fixture.registry.connectProjectSwitching(of: fixture.session)
-        fixture.presenter.shown = []
 
-        let window = fixture.registry.show(project: fixture.second.id, in: fixture.session, from: fixture.registry.primary, intent: .person)
+        fixture.registry.show(project: fixture.second.id, in: fixture.session, from: fixture.registry.primary, intent: .person)
 
-        #expect(window === fixture.registry.primary)
-        #expect(fixture.registry.windows.count == 1)
         let selection = fixture.session.primarySelection
         #expect(selection.shownProjectID == fixture.second.id)
-        // No session yet: the project with nothing open, not a tab made for it.
         #expect(selection.activeContainerID == .project(fixture.second.id))
         #expect(selection.activeTabID == nil)
-        // Shown already: nothing to bring back.
-        #expect(fixture.presenter.shown.isEmpty)
         // The project left keeps what the window showed of it.
         #expect(fixture.session.projectViews[fixture.first.id] != nil)
     }
@@ -69,7 +66,9 @@ struct WindowRegistryTests {
         #expect(fixture.registry.windows.count == 1)
     }
 
-    @Test func theProjectOfTheWindowAskedFrom_raisesThatWindow() {
+    /// The window is where the person asked from, so there is nothing to
+    /// bring forward (`bringOnScreen`), and nothing switches.
+    @Test func theProjectOfTheWindowAskedFrom_leavesThatWindowAsItIs() {
         let fixture = Fixture()
         fixture.registry.connectProjectSwitching(of: fixture.session)
         fixture.presenter.shown = []
@@ -77,6 +76,7 @@ struct WindowRegistryTests {
         let window = fixture.registry.show(project: fixture.first.id, in: fixture.session, from: fixture.registry.primary, intent: .person)
 
         #expect(window === fixture.registry.primary)
+        #expect(fixture.presenter.shown.isEmpty)
         #expect(fixture.registry.windows.count == 1)
         #expect(fixture.session.projectViews.isEmpty)
     }

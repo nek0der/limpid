@@ -9,10 +9,8 @@ import Foundation
 /// It spawns processes and opens a pty, and the suite runs in parallel: the
 /// descriptors it takes reuse the numbers `SettingsFileWatcherTests` asserts
 /// are closed, failing a test that is correct about its own subject. So this
-/// runs from `scripts/validate-review-core.sh` instead, which is also why it
-/// lives apart from the scenarios that do run in the suite — the script then
-/// compiles the terminal probe and its two dependencies rather than the whole
-/// review core.
+/// runs from `scripts/validate-review-core.sh` instead, which compiles the
+/// terminal probe and its two dependencies rather than the whole review core.
 enum ReviewProbeScenarios {
     static func require(_ condition: Bool, _ message: String) throws {
         if !condition {

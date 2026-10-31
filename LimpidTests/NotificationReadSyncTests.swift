@@ -7,7 +7,7 @@ import Foundation
 import Testing
 @testable import Limpid
 
-@Suite("NotificationReadSync")
+@Suite("NotificationReadSync", .timeLimit(.minutes(1)))
 @MainActor
 struct NotificationReadSyncTests {
     /// A ledger holding no request: these rows are joined to their runs.
@@ -131,7 +131,7 @@ struct NotificationReadSyncTests {
             #expect(store.unreadCount == 1)
 
             attention.replaceRuntimes([runtime(.running, runID: runID)], kind: .codex)
-            await pollUntil(timeout: .seconds(1), interval: .milliseconds(10)) { store.unreadCount == 0 }
+            await untilObserved { store.unreadCount == 0 }
             #expect(store.unreadCount == 0)
             store.flushSynchronously()
             _ = sync
@@ -401,7 +401,7 @@ struct NotificationReadSyncTests {
             let sync = NotificationReadSync(historyStore: store, attention: attention, requests: requests)
             attention.replaceRuntimes([current], kind: .codex)
 
-            await pollUntil(timeout: .seconds(1), interval: .milliseconds(10)) { attention.isViewed(current) }
+            await untilObserved { attention.isViewed(current) }
             #expect(attention.isViewed(current))
             _ = sync
         }

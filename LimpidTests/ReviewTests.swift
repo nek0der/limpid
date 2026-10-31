@@ -1,6 +1,5 @@
 // ReviewTests.swift
-// Limpid — the review core's scenarios (all but the terminal probe, which only `make review-core` runs), the row
-// list, and the keys review takes from the terminal.
+// Limpid — which comments the row list leaves out, and the keys review takes from the terminal.
 
 import AppKit
 import Foundation
@@ -50,81 +49,6 @@ struct ReviewTests {
         #expect(bodies == ["still current"])
     }
 
-    @Test func commentCoversARunOfLinesEndToEnd() throws {
-        try ReviewValidationScenarios.ranges()
-    }
-
-    @Test func sideBySidePairsTheSameLinesTheUnifiedLayoutShows() throws {
-        try ReviewValidationScenarios.sideBySide()
-    }
-
-    @Test func rowListDropsFileMetadataAndPlacesCommentsOnTheirLine() throws {
-        try ReviewValidationScenarios.rows()
-    }
-
-    @Test func numstatParsesRenamesAndBinaryCounts() throws {
-        try ReviewValidationScenarios.numstat()
-    }
-
-    @Test func composerDoesNotCarryAnAbandonedEditIntoTheNextComment() throws {
-        try ReviewValidationScenarios.composer()
-    }
-
-    @Test func unifiedDiffPreservesBothSidesAndUnusualPaths() throws {
-        try ReviewValidationScenarios.parser()
-    }
-
-    @Test func reviewPromptQuotesPathsAndRejectsControlSequences() throws {
-        try ReviewValidationScenarios.prompt()
-    }
-
-    @Test func gitSeparatesStagedUnstagedAndUntrackedChanges() async throws {
-        try await withTempDir { @Sendable directory in try await ReviewValidationScenarios.git(at: directory) }
-    }
-
-    @Test func aCommitAgesOutStagedFingerprintsOnly() async throws {
-        try await withTempDir { @Sendable directory in try await ReviewValidationScenarios.fingerprints(at: directory) }
-    }
-
-    @Test func branchViewCarriesCommittedAndUncommittedWorkTogether() async throws {
-        try await withTempDir { @Sendable directory in try await ReviewValidationScenarios.branchScope(at: directory) }
-    }
-
-    @MainActor
-    @Test func sendingAndResolvingAreSeparateStates() async throws {
-        try await withTempDir { @Sendable directory in try await ReviewValidationScenarios.lifecycle(at: directory) }
-    }
-
-    @Test func conflictsAndSizeLimitsAreSaidOutright() async throws {
-        try await withTempDir { directory in
-            try await ReviewValidationScenarios.conflictAndLimits(at: directory)
-        }
-    }
-
-    @Test func diagnosticsDoNotConsumeThePayloadBudget() async throws {
-        try await withTempDir { directory in
-            try await ReviewValidationScenarios.noisyDiagnostics(at: directory)
-        }
-    }
-
-    @Test func theLexerColorsWholeWordsOnly() throws {
-        try ReviewValidationScenarios.syntax()
-    }
-
-    @Test func gapsUnfoldWithoutMovingThePatch() throws {
-        try ReviewValidationScenarios.expansion()
-    }
-
-    @MainActor
-    @Test func aReadMarkComesOffWhenTheFileChanges() async throws {
-        try await withTempDir { @Sendable directory in try await ReviewValidationScenarios.viewMarks(at: directory) }
-    }
-
-    @MainActor
-    @Test func draftsSurviveRestartAndRejectStaleSnapshots() async throws {
-        try await withTempDir { @Sendable directory in try await ReviewValidationScenarios.persistence(at: directory) }
-    }
-
     // The terminal probe — which process is in front of the pane review writes
     // to — is `ReviewProbeScenarios.foreground()`, and it runs in
     // `scripts/validate-review-core.sh` rather than here. It spawns processes,
@@ -170,17 +94,33 @@ struct ReviewKeyboardRoutingTests {
     }
 
     @Test func reviewInsertShortcutRequiresCommandReturn() throws {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 100, height: 100), styleMask: [], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        let table = ReviewTableView(frame: .zero, menuLocale: Locale(identifier: "en"))
+        window.contentView = table
+        var keys: [ReviewTableKey] = []
+        table.onKey = { key in
+            keys.append(key)
+            return true
+        }
         let combinations: [NSEvent.ModifierFlags] = [.command, [.command, .shift], [.command, .option], [], .option]
         for modifiers in combinations {
             let event = try NSEvent.testKeyDown(keyCode: 36, modifiers: modifiers, characters: "\r")
-            #expect((ReviewTableKey(event: event) == .insert) == (modifiers == .command))
-            let table = ReviewTableView(frame: .zero, menuLocale: Locale(identifier: "en"))
-            var handled = false
-            table.onKey = { _ in handled = true
-                return true
-            }
+            let isInsert = modifiers == .command
+            #expect((ReviewTableKey(event: event) == .insert) == isInsert)
+
+            // Not the first responder: the key goes on to whatever has the keyboard.
+            window.makeFirstResponder(nil)
             _ = table.performKeyEquivalent(with: event)
-            #expect(!handled)
+            #expect(keys.isEmpty)
+
+            try #require(window.makeFirstResponder(table))
+            let isHandled = table.performKeyEquivalent(with: event)
+            #expect(keys == (isInsert ? [.insert] : []))
+            if isInsert {
+                #expect(isHandled)
+            }
+            keys = []
         }
     }
 }
