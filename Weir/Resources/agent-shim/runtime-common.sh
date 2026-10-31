@@ -105,6 +105,75 @@ case $lpr_text in
 esac
 exec "$@" -- "$lpr_text"'
 
+# Hands off to the agent, which is every argument after the first three, inside
+# a tmux session of its own when $1 is 1. $2 names the variables the session
+# gets from this pane, and $3 is 1 when a one-word instruction gets a trailing
+# space (`weir_prompt_reader`). Each shim says its own; the rest is the same
+# for every agent.
+weir_exec_agent() {
+  lea_hosts_in_tmux=$1
+  lea_hosted_env_names=$2
+  lea_pad_lone_word=$3
+  shift 3
+  # The first instruction goes last, after `--`, as one argument whatever
+  # it holds: quotes and `$(...)` reach the agent as typed. A reader in
+  # front of the agent passes it, inside tmux as outside
+  # (`weir_prompt_reader`).
+  if command -v weir_take_initial_prompt >/dev/null 2>&1 && weir_take_initial_prompt; then
+    set -- /bin/sh -c "$weir_prompt_reader" weir-prompt "$weir_initial_prompt_file" "$lea_pad_lone_word" "$@"
+  fi
+  [ "$lea_hosts_in_tmux" = 1 ] || exec "$@"
+  # Unique per invocation. `-A` is deliberately absent: with the name
+  # already taken it attaches and silently drops the command, handing
+  # back the running agent instead of starting the one that was asked
+  # for.
+  lea_session="weir-$(printf '%s' "$WEIR_PANE_ID" | tr -cd 'A-Za-z0-9' | cut -c1-8)-$$"
+  # The agent command is in "$@" and the tmux command line has to come
+  # before it. We append the tmux side after it and then rotate the
+  # agent command to the end, which is how a list whose values may hold
+  # spaces is built in POSIX sh.
+  lea_count=$#
+  set -- "$@" -L "${WEIR_AGENT_TMUX_SOCKET:-weir}" -f /dev/null \
+    set -s escape-time 10 ";" \
+    set -s default-terminal tmux-256color ";" \
+    set -sa terminal-overrides ",*:RGB" ";" \
+    set -g prefix None ";" \
+    new-session -s "$lea_session"
+  # A variable set to empty is passed on empty: a session on a server that
+  # already runs takes every variable not given here from the server's
+  # environment, and a demo pane empties the record directories precisely
+  # so the agent writes no records into another build's.
+  # One this pane does not set is unset in the session, for the same
+  # reason: left out, the session would take the server's value, which
+  # is the pane's that started the server (another pane's home, another
+  # run's id). tmux's `-e` only sets (`NAME=value`), so `/usr/bin/env -u`
+  # takes it out as the agent starts.
+  lea_unset=""
+  for lea_name in $lea_hosted_env_names; do
+    eval "lea_is_set=\${$lea_name+set}"
+    if [ -z "$lea_is_set" ]; then
+      lea_unset="$lea_unset $lea_name"
+      continue
+    fi
+    eval "lea_value=\${$lea_name}"
+    set -- "$@" -e "$lea_name=$lea_value"
+  done
+  # `/usr/bin/env` guarantees more than one argument after the options,
+  # which is what makes tmux exec our argv directly rather than passing
+  # a single string to `sh -c` — so nothing here needs quoting.
+  set -- "$@" /usr/bin/env
+  for lea_name in $lea_unset; do
+    set -- "$@" -u "$lea_name"
+  done
+  while [ "$lea_count" -gt 0 ]; do
+    lea_arg="$1"
+    shift
+    set -- "$@" "$lea_arg"
+    lea_count=$((lea_count - 1))
+  done
+  exec "$WEIR_AGENT_TMUX" "$@"
+}
+
 # Whether the user's arguments (after $1 and $2) start an agent the shim
 # hosts in a tmux session of Weir's own (Settings > Advanced > tmux).
 # $1 is the shim's first arguments that begin an interactive session, $2
