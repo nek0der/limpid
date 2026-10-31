@@ -421,6 +421,18 @@ struct SupervisionTokensTests {
         }
     }
 
+    /// A button inside a state's soft fill keeps its words readable at its
+    /// strongest step, and each step moves further from the rest face.
+    @Test(arguments: [false, true])
+    func stateFillButton_keepsTextContrastAndStepsAwayFromRest(isDark: Bool) {
+        let rest = Tokens.stateFillButton.value(isDark: isDark)
+        let hover = Tokens.stateFillButtonHover.value(isDark: isDark)
+        let pressed = Tokens.stateFillButtonPressed.value(isDark: isDark)
+        #expect(ContrastRatio.between(rest, hover) > 1)
+        #expect(ContrastRatio.between(rest, pressed) > ContrastRatio.between(rest, hover))
+        #expect(ContrastRatio.between(Tokens.text.value(isDark: isDark), pressed) >= ContrastRatio.text)
+    }
+
     /// A token's color is one value, the same each time it is asked for: a
     /// new dynamic color each time compared unequal to the last, so every
     /// view handed one read as changed on every pass, and SwiftUI drew it
