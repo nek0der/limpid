@@ -225,6 +225,7 @@ targets:
           - "Resources/claude-shim"
           - "Resources/codex-shim"
           - "Resources/agent-shim"
+          - "Resources/cli"
       - path: AgentIntegrationService/Shared
       - path: AgentIntegrationService/ProviderBridge
       - path: AgentIntegrationService/Service/RustApprovalHost.swift
@@ -265,6 +266,10 @@ targets:
       # Shared POSIX helpers sourced by both agent integrations. Kept as a
       # folder resource so the relative path from each hook stays stable.
       - path: Weir/Resources/agent-shim
+        type: folder
+      # The `weir` shell command. `type: folder` keeps its executable bit, and
+      # `ShellCommandInstaller` links to it at this path.
+      - path: Weir/Resources/cli
         type: folder
       # Ship the license + third-party attribution inside the app bundle so
       # the MIT / GPL notices travel with the distributed .app, satisfying the

@@ -23125,6 +23125,312 @@
           }
         }
       }
+    },
+    "The shell command couldn’t be installed.": {
+      "comment": "Settings, Integrations: installing the shell command failed",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The shell command couldn’t be installed."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェルコマンドをインストールできませんでした。"
+          }
+        }
+      }
+    },
+    "The shell command couldn’t be uninstalled.": {
+      "comment": "Settings, Integrations: uninstalling the shell command failed",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The shell command couldn’t be uninstalled."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェルコマンドをアンインストールできませんでした。"
+          }
+        }
+      }
+    },
+    "Install": {
+      "comment": "Settings, Integrations: button that installs the shell command",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "インストール"
+          }
+        }
+      }
+    },
+    "Install shell command": {
+      "comment": "Settings, Integrations: VoiceOver name of Install, and the settings search entry",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Install shell command"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェルコマンドをインストール"
+          }
+        }
+      }
+    },
+    "Repair": {
+      "comment": "Settings, Integrations: button that points a stale shell command link at this app",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repair"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "修復"
+          }
+        }
+      }
+    },
+    "Repair shell command": {
+      "comment": "Settings, Integrations: VoiceOver name of Repair",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Repair shell command"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェルコマンドを修復"
+          }
+        }
+      }
+    },
+    "Uninstall": {
+      "comment": "Settings, Integrations: button that removes the shell command",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uninstall"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アンインストール"
+          }
+        }
+      }
+    },
+    "Uninstall shell command": {
+      "comment": "Settings, Integrations: VoiceOver name of Uninstall",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uninstall shell command"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェルコマンドをアンインストール"
+          }
+        }
+      }
+    },
+    "Shell Command": {
+      "comment": "Settings, Integrations: section header",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Shell Command"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェルコマンド"
+          }
+        }
+      }
+    },
+    "Not installed": {
+      "comment": "Settings, Integrations: the shell command's status",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not installed"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未インストール"
+          }
+        }
+      }
+    },
+    "Installed at %@": {
+      "comment": "Settings, Integrations: the shell command's status; argument: the path",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Installed at %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ にインストール済み"
+          }
+        }
+      }
+    },
+    "The link at %@ doesn’t lead to this copy of Weir.": {
+      "comment": "Settings, Integrations: the shell command's status; argument: the path",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The link at %@ doesn’t lead to this copy of Weir."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ のリンクは、この Weir を指していません。"
+          }
+        }
+      }
+    },
+    "Another file is already at %@. Weir leaves it as it is.": {
+      "comment": "Settings, Integrations: the shell command's status; argument: the path",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Another file is already at %@. Weir leaves it as it is."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ にはすでに別のファイルがあります。Weir はこのファイルを変更しません。"
+          }
+        }
+      }
+    },
+    "Open from the terminal": {
+      "comment": "Settings search: keyword for the shell command",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open from the terminal"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルから開く"
+          }
+        }
+      }
+    },
+    "Show the existing file in Finder": {
+      "comment": "Settings, Integrations: VoiceOver name of Show in Finder for a file in the shell command's place",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show the existing file in Finder"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "既存のファイルを Finder で表示"
+          }
+        }
+      }
+    },
+    "Adds the `%@` command to the terminal: `%@ .` opens the current folder in Weir as a project. Installing or uninstalling may ask for an administrator password.": {
+      "comment": "Settings, Integrations: footer of the shell command section; arguments: the command's name, twice",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adds the `%1$@` command to the terminal: `%2$@ .` opens the current folder in Weir as a project. Installing or uninstalling may ask for an administrator password."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ターミナルに `%1$@` コマンドを追加します。`%2$@ .` で現在のフォルダーを Weir のプロジェクトとして開きます。インストールやアンインストールの際に、管理者パスワードを求められる場合があります。"
+          }
+        }
+      }
+    },
+    "Move Weir to Applications to install the shell command.": {
+      "comment": "Settings, Integrations: the shell command's status while the app runs from a disk image or other read-only volume",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move Weir to Applications to install the shell command."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェルコマンドをインストールするには、Weir を「アプリケーション」フォルダーに移動してください。"
+          }
+        }
+      }
+    },
+    "Weir needs an administrator password to change its shell command.": {
+      "comment": "The system's administrator password prompt when installing or uninstalling the shell command",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Weir needs an administrator password to change its shell command."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シェルコマンドを変更するため、Weir に管理者パスワードが必要です。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

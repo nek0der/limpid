@@ -308,6 +308,8 @@ encoding.
   by state, since the sidebar keeps your order. **Notification History**
   (⇧⌘N) keeps the notifications Weir sent. The menu bar icon shows the
   attention state.
+- **Shell command.** **Settings → Integrations → Shell Command** adds a `weir`
+  command to the terminal: `weir .` opens the current folder as a project.
 - **Updates and languages.** Weir checks for updates once a day through
   Sparkle and installs one when you choose to. The interface is in English and Japanese; choose one in
   **Settings → General → Display Language**.
