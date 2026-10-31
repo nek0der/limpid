@@ -4,6 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The release pull request skips the builds, tests, and Swift lint below. It
+  # changes only version numbers and the changelog on top of code `main` already
+  # checked, and every merge to `main` updates it, so its runs kept other pull
+  # requests waiting for a runner. Dispatching this workflow on its branch runs
+  # everything. GitHub shows those results only in the Actions tab: they do not
+  # appear among the pull request's checks or count as its required checks.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,10 +33,11 @@ jobs:
   # running a pull request's code should not hold. A run that goes on only costs
   # time, so a failure here does not fail the run. The job polls every 30 seconds
   # because all of this repository's runs share the token's limit of 1,000
-  # requests an hour.
+  # requests an hour. The release pull request is left out: it has little to
+  # stop, and this would poll for as long as `main-ci-passed` waits.
   stop-on-failure:
     name: Stop the run on a failure
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'release-please--')
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     continue-on-error: true
@@ -54,6 +62,44 @@ jobs:
             sleep 30
           done
 
+  # Merging the release pull request creates the tag, and with its builds skipped
+  # nothing else stops that merge while `main` is red or still running. So this
+  # waits for the run on the newest commit of `main` and takes its result. It
+  # waits rather than failing early because nothing would start it again when
+  # that run ends. After a failed run on `main` is re-run and passes, this job
+  # needs a re-run too; a new commit on `main` updates the pull request and
+  # starts it anyway. That holds for every commit because of `always-update` in
+  # the release-please config: by default, one that leaves the pull request's
+  # text the same, such as a hidden `chore`, does not update it.
+  main-ci-passed:
+    name: Main CI passed
+    if: github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Wait for the run on the newest commit of main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          while true; do
+            # A failed read says nothing about the run, so the loop waits for the next one.
+            if sha=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha) &&
+              result=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$sha&event=push&per_page=1" \
+                --jq '.workflow_runs[0] | .status + " " + (.conclusion // "")'); then
+              case "$result" in
+                "completed success") exit 0 ;;
+                completed*)
+                  echo "::error::The CI run on main ($sha) ended as: ${result#completed }"
+                  exit 1
+                  ;;
+              esac
+            fi
+            sleep 60
+          done
+
   rust:
     name: Rust (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -64,22 +110,34 @@ jobs:
       matrix:
         os: [macos-26, ubuntu-24.04, windows-2025]
 
+    # The release pull request skips the steps here, not the job: a skipped
+    # matrix job reports under its unexpanded name, and the required checks
+    # for each OS would then wait forever.
+    env:
+      IS_RELEASE_PR: ${{ github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.head_ref, 'release-please--') }}
+
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        if: env.IS_RELEASE_PR != 'true'
       - name: Install pinned Rust toolchain
+        if: env.IS_RELEASE_PR != 'true'
         run: rustup toolchain install --no-self-update
       - name: Check formatting
+        if: env.IS_RELEASE_PR != 'true'
         run: cargo fmt --all --check
       # The bridge build script rewrites the committed header; any diff means
       # the header in git no longer matches the exported Rust items. The
       # Windows runner compares cleanly because .gitattributes pins LF endings.
       - name: Check generated header
+        if: env.IS_RELEASE_PR != 'true'
         run: |
           cargo build --locked --package weir-rust-bridge
           git diff --exit-code -- rust/weir-rust-bridge/include/weir_rust_bridge.h
       - name: Run Clippy
+        if: env.IS_RELEASE_PR != 'true'
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Run tests
+        if: env.IS_RELEASE_PR != 'true'
         run: cargo test --locked --workspace --all-targets
 
   # The two build jobs do not wait for SwiftFormat and SwiftLint: those take
@@ -91,6 +149,7 @@ jobs:
   # this one.
   build:
     name: Build (macOS 26)
+    if: github.event.pull_request.head.repo.full_name != github.repository || !startsWith(github.head_ref, 'release-please--')
     runs-on: macos-26
 
     steps:
@@ -351,6 +410,7 @@ jobs:
   # release.yml.
   release-archive:
     name: Release archive (macOS 26)
+    if: github.event.pull_request.head.repo.full_name != github.repository || !startsWith(github.head_ref, 'release-please--')
     runs-on: macos-26
 
     steps:
@@ -406,13 +466,13 @@ jobs:
       # Whole-module optimization is most of this job's time, and one changed
       # file means redoing all of it, so a cache cannot help. A pull request
       # skips it: the archive's layout and the `#if DEBUG` branches do not
-      # depend on the optimizer. `main` and the release pull request still
-      # optimize as a release does, so a failure only the optimizer hits shows
-      # up before the tag exists: merging the release pull request is what
-      # creates the tag.
+      # depend on the optimizer. `main` and a dispatched run still optimize as
+      # a release does. Merging the release pull request is what creates the
+      # tag, and `main-ci-passed` holds that merge until `main` has passed, so
+      # a failure only the optimizer hits shows up before the tag exists.
       - name: Archive Release unsigned and check it can be distributed
         env:
-          RELEASE_CHECK_BUILD_SETTINGS: ${{ github.event_name == 'pull_request' && !startsWith(github.head_ref, 'release-please--') && 'SWIFT_OPTIMIZATION_LEVEL=-Onone SWIFT_COMPILATION_MODE=singlefile' || '' }}
+          RELEASE_CHECK_BUILD_SETTINGS: ${{ github.event_name == 'pull_request' && 'SWIFT_OPTIMIZATION_LEVEL=-Onone SWIFT_COMPILATION_MODE=singlefile' || '' }}
         run: make release-check
 
       # The guardrail job has no build, so the notices check proves what the
@@ -422,6 +482,7 @@ jobs:
 
   format:
     name: SwiftFormat
+    if: github.event.pull_request.head.repo.full_name != github.repository || !startsWith(github.head_ref, 'release-please--')
     runs-on: macos-26
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
@@ -469,6 +530,7 @@ jobs:
 
   lint:
     name: SwiftLint
+    if: github.event.pull_request.head.repo.full_name != github.repository || !startsWith(github.head_ref, 'release-please--')
     runs-on: macos-26
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
