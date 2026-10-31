@@ -103,8 +103,8 @@ struct CodexUsageReader: CodexUsageReading {
         var environment = ProcessInfo.processInfo.environment
         environment["PATH"] = path
         process.environment = environment
-        let input = Pipe()
-        let output = Pipe()
+        let input = Pipe.forChildProcess()
+        let output = Pipe.forChildProcess()
         process.standardInput = input
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice

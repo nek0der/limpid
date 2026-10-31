@@ -44,8 +44,8 @@ enum TestProcess {
         if let environment {
             process.environment = environment
         }
-        let stdout = Pipe()
-        let stderr = Pipe()
+        let stdout = Pipe.forChildProcess()
+        let stderr = Pipe.forChildProcess()
         defer {
             try? stdout.fileHandleForReading.close()
             try? stderr.fileHandleForReading.close()

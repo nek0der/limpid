@@ -43,6 +43,25 @@ final class ProcessStopRequest: @unchecked Sendable {
     }
 }
 
+extension Pipe {
+    /// A pipe for one child, whose ends no other process inherits.
+    ///
+    /// Foundation leaves a pipe's descriptors open across `exec`, and a
+    /// `fork` on another thread (a terminal's shell) copies every descriptor
+    /// the process holds. A copy of the write end keeps the pipe from ever
+    /// reaching EOF for as long as that process lives, so a Git that has
+    /// finished reads as one that timed out. The child still gets its end:
+    /// `dup2` onto its standard streams clears the flag on the copy. macOS has
+    /// no `pipe2`, so a fork between the pipe's creation and these calls can
+    /// still copy it; the window is what is left, not the whole run.
+    static func forChildProcess() -> Pipe {
+        let pipe = Pipe()
+        _ = fcntl(pipe.fileHandleForReading.fileDescriptor, F_SETFD, FD_CLOEXEC)
+        _ = fcntl(pipe.fileHandleForWriting.fileDescriptor, F_SETFD, FD_CLOEXEC)
+        return pipe
+    }
+}
+
 /// How a run handed to `drainAndWait` ended. The first reason found to
 /// end it is the one reported.
 enum ProcessEnding: Equatable {

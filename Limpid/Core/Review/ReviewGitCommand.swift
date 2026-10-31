@@ -32,19 +32,15 @@ private enum ReviewGitCommand {
         stop: ProcessStopRequest
     ) throws -> Data {
         let process = Process()
-        let stdout = Pipe()
+        let stdout = Pipe.forChildProcess()
         // Paths handed over on standard input rather than as arguments, which
         // run out (E2BIG) for a range of thousands of files. A Git that exits
         // before it has read them all must not take the app down with
         // SIGPIPE: the write then fails, and the exit status answers.
-        let stdin = input.map { _ in Pipe() }
+        let stdin = input.map { _ in Pipe.forChildProcess() }
         if let stdin {
             let writer = stdin.fileHandleForWriting.fileDescriptor
             _ = fcntl(writer, F_SETNOSIGPIPE, 1)
-            // Not inherited by a process another thread starts meanwhile (a
-            // terminal's shell): one holding the write end open would keep
-            // Git waiting for the end of its input until the timeout.
-            _ = fcntl(writer, F_SETFD, FD_CLOEXEC)
         }
         guard !stop.isRequested else { throw CancellationError() }
         // `env` so a Homebrew git on `PATH` wins, the same way `GitProcess`

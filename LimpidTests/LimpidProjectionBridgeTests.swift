@@ -242,7 +242,7 @@ struct LimpidProjectionBridgeTests {
         #expect(tmux.sessionID == "00000000-0000-4000-8000-000000000001")
         #expect(tmux.tmuxEndpoint == TmuxRuntimeEndpoint(
             socketPath: "/tmp/limpid-corpus-socket",
-            serverPID: "4242",
+            serverPID: "2147483647",
             serverStartedAt: "",
             paneID: "%3"
         ))

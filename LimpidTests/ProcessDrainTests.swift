@@ -71,4 +71,40 @@ struct ProcessDrainTests {
             #expect(!output.hasStdoutReadFailed)
         }
     }
+
+    /// Both ends are closed on `exec`, so a process another thread starts
+    /// holds neither, and the child the pipe is for still writes to it.
+    @Test func aPipeForAChild_staysOutOfOtherProcesses_andStillCarriesItsChildsOutput() throws {
+        let pipe = Pipe.forChildProcess()
+        #expect(fcntl(pipe.fileHandleForReading.fileDescriptor, F_GETFD) & FD_CLOEXEC != 0)
+        #expect(fcntl(pipe.fileHandleForWriting.fileDescriptor, F_GETFD) & FD_CLOEXEC != 0)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "printf abc"]
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
+        try process.run()
+        let output = drainAndWait(process, stdout: pipe, stderr: nil, timeout: .seconds(30))
+        #expect(output.stdout == Data("abc".utf8))
+        #expect(output.isStdoutComplete)
+    }
+
+    /// A long-lived process a test starts must not hold another test's pipe:
+    /// that made a Git query running beside it read as timed out on CI.
+    @Test(.timeLimit(.minutes(1)))
+    func aProcessGroupATestStarts_holdsNoPipeOfTheTestHost() throws {
+        // A plain pipe on purpose: its descriptors stay open across `exec`.
+        let pipe = Pipe()
+        let group = try spawnProcessGroup(["/bin/sleep", "30"])
+        defer {
+            kill(group, SIGKILL)
+            var status: Int32 = 0
+            waitpid(group, &status, 0)
+        }
+        try pipe.fileHandleForWriting.close()
+        var descriptor = pollfd(fd: pipe.fileHandleForReading.fileDescriptor, events: Int16(POLLIN), revents: 0)
+        #expect(poll(&descriptor, 1, 5000) == 1, "the pipe stayed open while the process ran")
+    }
 }

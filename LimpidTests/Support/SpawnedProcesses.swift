@@ -10,16 +10,26 @@ import Testing
 /// is, so a test can signal or wait for the group. The process is not
 /// reaped here: a test that needs it gone once it ends calls
 /// `reapWhenItEnds(_:)`, and one that looks at the zombie reaps it itself.
+///
+/// It inherits no descriptor of the test host. Tests run in parallel, so
+/// without this the process copies the pipes of whatever child another test is
+/// starting, and that test's run reads as timed out until this one ends.
 func spawnProcessGroup(_ arguments: [String]) throws -> pid_t {
     var attributes: posix_spawnattr_t?
     posix_spawnattr_init(&attributes)
     defer { posix_spawnattr_destroy(&attributes) }
-    posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP))
+    posix_spawnattr_setflags(&attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT))
     posix_spawnattr_setpgroup(&attributes, 0)
+    var actions: posix_spawn_file_actions_t?
+    posix_spawn_file_actions_init(&actions)
+    defer { posix_spawn_file_actions_destroy(&actions) }
+    posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
+    posix_spawn_file_actions_addopen(&actions, 1, "/dev/null", O_WRONLY, 0)
+    posix_spawn_file_actions_addopen(&actions, 2, "/dev/null", O_WRONLY, 0)
     var argv: [UnsafeMutablePointer<CChar>?] = arguments.map { strdup($0) } + [nil]
     defer { argv.forEach { free($0) } }
     var pid: pid_t = 0
-    let status = posix_spawn(&pid, arguments[0], nil, &attributes, &argv, environ)
+    let status = posix_spawn(&pid, arguments[0], &actions, &attributes, &argv, environ)
     try #require(status == 0, "posix_spawn failed: \(status)")
     return pid
 }

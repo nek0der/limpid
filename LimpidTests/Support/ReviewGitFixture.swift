@@ -24,8 +24,8 @@ enum ReviewGitFixture {
                     environment["LC_ALL"] = "C"
                     process.environment = environment
                     process.standardInput = FileHandle.nullDevice
-                    let stdout = Pipe()
-                    let stderr = Pipe()
+                    let stdout = Pipe.forChildProcess()
+                    let stderr = Pipe.forChildProcess()
                     process.standardOutput = stdout
                     process.standardError = stderr
                     try process.run()

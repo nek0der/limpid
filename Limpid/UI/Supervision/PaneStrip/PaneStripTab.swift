@@ -89,7 +89,7 @@ struct PaneStripTab: View {
         // tab's line sits evenly between the strip's top and the rule.
         .padding(.bottom, layout.paneStripRuleWidth)
         .frame(height: layout.paneStripHeight)
-        .folderTabFace(isSelected: item.isActive, isHovering: isHovering, scrolls: true, meetsPaneHeader: true)
+        .folderTabFace(isSelected: item.isActive, isHovering: isHovering, meetsPaneHeader: true)
         .contentShape(Rectangle())
         // The tab marks the cards of every conversation it runs while the
         // pointer rests on it, and, while its panes are out of sight, is
@@ -312,7 +312,7 @@ extension View {
     /// as the rows' hover and selection do: the tab's text is held at 4.5:1
     /// on that fill, which a fill mixed with the glass behind it could
     /// not promise.
-    func folderTabFace(isSelected: Bool, isHovering: Bool, scrolls: Bool, meetsPaneHeader: Bool = false) -> some View {
+    func folderTabFace(isSelected: Bool, isHovering: Bool, meetsPaneHeader: Bool = false) -> some View {
         let layout = LimpidLayout.Supervision.self
         return background {
             // The focused header's wash, over the same ground as a header's. Down to the tab's bottom: no rule runs under it.
@@ -342,7 +342,7 @@ extension View {
                     .allowsHitTesting(false)
             }
         }
-        .stripTabSelection(isSelected, scrolls: scrolls)
+        .stripTabSelection(isSelected)
     }
 }
 
@@ -381,9 +381,6 @@ struct FolderTabEdge: Shape {
 struct SelectedStripTab: Equatable {
     /// The tab's frame in the strip's own space.
     let frame: CGRect
-    /// Whether the tab is one of the tabs that scroll (the terminal tabs
-    /// and the review's), and so can be seen only within the scroll view.
-    let scrolls: Bool
 }
 
 struct SelectedStripTabKey: PreferenceKey {
@@ -396,13 +393,13 @@ struct SelectedStripTabKey: PreferenceKey {
 
 extension View {
     /// Reports this strip tab's frame while it is the selected one.
-    func stripTabSelection(_ isSelected: Bool, scrolls: Bool) -> some View {
+    func stripTabSelection(_ isSelected: Bool) -> some View {
         background {
             if isSelected {
                 GeometryReader { proxy in
                     Color.clear.preference(
                         key: SelectedStripTabKey.self,
-                        value: SelectedStripTab(frame: proxy.frame(in: .named(PaneStripView.coordinateSpace)), scrolls: scrolls)
+                        value: SelectedStripTab(frame: proxy.frame(in: .named(PaneStripView.coordinateSpace)))
                     )
                 }
             }

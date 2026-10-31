@@ -134,8 +134,8 @@ enum GitProcess {
         env["LANG"] = "C"
         env.merge(environment) { _, given in given }
 
-        let stdoutPipe = Pipe()
-        let stderrPipe = Pipe()
+        let stdoutPipe = Pipe.forChildProcess()
+        let stderrPipe = Pipe.forChildProcess()
         // We start git in a process group of its own: a run past its deadline is ended
         // with the hooks it started, which would otherwise go on writing in
         // a worktree the caller clears and may make again at the same path.
