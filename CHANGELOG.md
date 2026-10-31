@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.1.15](https://github.com/nek0der/weir/compare/v0.1.14...v0.1.15) (2026-10-31)
+
+
+### Bug Fixes
+
+* **worktree:** name an agent's worktree folder after the whole branch, as the app does ([#219](https://github.com/nek0der/weir/issues/219)) ([aa6dba0](https://github.com/nek0der/weir/commit/aa6dba03c1d0ad7d0d4e2984ba118877b13a4ea7))
+
+
+### Refactors
+
+* **agent:** share the shims' handoff to the agent ([#226](https://github.com/nek0der/weir/issues/226)) ([4e17947](https://github.com/nek0der/weir/commit/4e179478b230081011248e378eaadfd1e3b07346))
+* **codex:** read a failed turn in the Codex crate ([#223](https://github.com/nek0der/weir/issues/223)) ([495187a](https://github.com/nek0der/weir/commit/495187a5240578798c00a43d085fe538806a5ce7))
+* **codex:** read the hook events from the Codex crate ([#220](https://github.com/nek0der/weir/issues/220)) ([ac457f1](https://github.com/nek0der/weir/commit/ac457f1bc388d13a910f6fa0bf8315aa6a190724))
+* **core:** stop Core naming the UI types ContainerSymbol and DropPosition ([#218](https://github.com/nek0der/weir/issues/218)) ([1800d73](https://github.com/nek0der/weir/commit/1800d732e1acfa7eab26816cd49aa5d13618069f))
+* **domain:** move Domain into its own static module ([#216](https://github.com/nek0der/weir/issues/216)) ([1e12843](https://github.com/nek0der/weir/commit/1e12843a35a04ba07349b08b4d55a75d75bf1c88))
+
 ## [0.1.14](https://github.com/nek0der/weir/compare/v0.1.13...v0.1.14) (2026-10-31)
 
 
