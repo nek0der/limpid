@@ -13,6 +13,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 enum WorktreeFixture {
     static func make(

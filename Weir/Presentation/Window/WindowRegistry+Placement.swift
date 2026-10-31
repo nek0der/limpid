@@ -2,6 +2,7 @@
 // Weir — which window shows a project, and which one news, a pane's request, or a result is told in.
 
 import Foundation
+import WeirDomain
 
 extension WindowRegistry {
     /// The window that shows `projectID`: the first, in the windows'

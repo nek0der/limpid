@@ -13,6 +13,7 @@
 
 import Sparkle
 import SwiftUI
+import WeirDomain
 
 extension EnvironmentValues {
     /// We share open drafts through the app-owned pool to avoid concurrent writers.

@@ -3,6 +3,7 @@
 
 import AppKit
 import UserNotifications
+import WeirDomain
 
 @MainActor
 final class WeirNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {

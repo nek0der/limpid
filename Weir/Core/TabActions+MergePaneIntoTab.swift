@@ -4,6 +4,7 @@
 // leaf id flows through, so libghostty keeps the surface and its PTY.
 
 import Foundation
+import WeirDomain
 
 @MainActor
 extension TabActions {

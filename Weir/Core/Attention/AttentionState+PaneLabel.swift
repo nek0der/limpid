@@ -7,6 +7,7 @@
 // panel both read it, so the panel names a pane exactly as its header does.
 
 import Foundation
+import WeirDomain
 
 @MainActor
 extension AttentionState {

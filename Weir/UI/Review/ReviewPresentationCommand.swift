@@ -2,6 +2,7 @@
 // Weir — Find routed to the review or the terminal, and the review's menu items.
 
 import SwiftUI
+import WeirDomain
 
 /// What the menus do around the review: Find goes to the review while it is
 /// in front, and the panes it put to sleep wake before the layout swaps.

@@ -2,6 +2,7 @@
 // Weir — the all projects sheet: every project's sessions as cards, in three sections, filtered and walked by keys.
 
 import Foundation
+import WeirDomain
 
 /// Every session of every project as a card, under "Needs Attention",
 /// "Running", and "Idle", the three layers of a session's state.

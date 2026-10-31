@@ -3,6 +3,7 @@
 // comparisons.
 
 import Foundation
+import WeirDomain
 
 /// What "Review Scope" lists, in one menu that also chooses the
 /// conversation, so what the tab reads is said in one place: the

@@ -2,6 +2,7 @@
 // Weir — hands the keyboard back to the window's terminal as a sheet over it closes.
 
 import SwiftUI
+import WeirDomain
 
 extension View {
     /// Gives the keyboard back to the focused pane of `window` once a sheet

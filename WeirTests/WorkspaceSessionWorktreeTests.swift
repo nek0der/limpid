@@ -11,6 +11,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @Suite("WorkspaceSession +Worktree pipelines")
 @MainActor

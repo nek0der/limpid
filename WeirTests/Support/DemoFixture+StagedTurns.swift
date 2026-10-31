@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 extension DemoFixture {
     static func stagedTurns(of conversation: ConversationKey, now: Date = Date()) throws -> [TurnSummary] {

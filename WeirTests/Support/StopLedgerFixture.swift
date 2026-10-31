@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 /// One pane holding a Claude conversation, and the runs of it a stop is
 /// about. A suite conforms to read them as its own (`Self.run`).

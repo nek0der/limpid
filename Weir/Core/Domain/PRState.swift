@@ -9,7 +9,7 @@ import Foundation
 ///
 /// GitLab's `locked` maps to `.open`: it means the discussion is
 /// locked, not that the request is finished.
-enum PRState {
+package enum PRState {
     case open
     case closed
     case merged

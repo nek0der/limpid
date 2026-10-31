@@ -2,6 +2,7 @@
 // Weir — what the work tree and the index are, read in a few commands for any number of files.
 
 import Foundation
+import WeirDomain
 
 extension ReviewGit {
     /// How many paths `hash-object` is handed at a time: a few hundred

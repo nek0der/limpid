@@ -11,16 +11,30 @@ import Foundation
 /// A turn that only answered, or whose changes could not be taken, is its
 /// own item, read by opening its pane. A turn still running is not unread
 /// yet, and an end nobody prompted never is.
-enum UnreadTurnRules {
+package enum UnreadTurnRules {
     /// A runtime as these rules see it.
-    struct Run: Equatable, Sendable {
-        let runtimeID: String
+    package struct Run: Equatable, Sendable {
+        package let runtimeID: String
         /// The hook's run ID, which each turn record names.
-        let runID: String
-        let conversation: ConversationKey?
+        package let runID: String
+        package let conversation: ConversationKey?
         /// Whether it shows in a pane, where its items can be listed.
-        let hasPane: Bool
-        let updatedAt: Date
+        package let hasPane: Bool
+        package let updatedAt: Date
+
+        package init(
+            runtimeID: String,
+            runID: String,
+            conversation: ConversationKey?,
+            hasPane: Bool,
+            updatedAt: Date
+        ) {
+            self.runtimeID = runtimeID
+            self.runID = runID
+            self.conversation = conversation
+            self.hasPane = hasPane
+            self.updatedAt = updatedAt
+        }
     }
 
     /// Each runtime's unread items, by runtime ID. A conversation's items go
@@ -31,7 +45,7 @@ enum UnreadTurnRules {
     /// turn, then the one updated last. A runtime whose conversation the
     /// history does not have yet is left out, and its finished episode is
     /// the unread item (`RuntimeFact.isEpisodeRead`).
-    static func byRuntime(
+    package static func byRuntime(
         _ runs: [Run],
         history: [ConversationKey: [TurnSummary]],
         isRead: (TurnSummary) -> Bool
@@ -65,7 +79,7 @@ enum UnreadTurnRules {
         return (lhs.updatedAt, lhs.runtimeID) > (rhs.updatedAt, rhs.runtimeID)
     }
 
-    static func entries(
+    package static func entries(
         of conversation: ConversationKey,
         turns: [TurnSummary],
         isRead: (TurnSummary) -> Bool
@@ -93,7 +107,7 @@ enum UnreadTurnRules {
     }
 
     /// One turn as a receipt.
-    static func receipt(of turn: TurnSummary) -> UnreadTurn {
+    package static func receipt(of turn: TurnSummary) -> UnreadTurn {
         UnreadTurn(
             turnID: turn.turnID,
             numbers: turn.displayNumber...turn.displayNumber,
@@ -105,7 +119,7 @@ enum UnreadTurnRules {
 
     /// The latest turn someone prompted that has ended, which the bar at
     /// rest reports.
-    static func latestPrompted(in turns: [TurnSummary]) -> TurnSummary? {
+    package static func latestPrompted(in turns: [TurnSummary]) -> TurnSummary? {
         turns.last { $0.hasPrompt && $0.phase != .started }
     }
 
@@ -138,7 +152,7 @@ enum UnreadTurnRules {
     /// The record's time, which the hook writes in RFC 3339 with or without
     /// fractional seconds. A format style rather than a formatter: it is a
     /// value, cheap enough to make on every pass.
-    static func date(_ text: String?) -> Date? {
+    package static func date(_ text: String?) -> Date? {
         guard let text else { return nil }
         return (try? Date.ISO8601FormatStyle().parse(text))
             ?? (try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(text))

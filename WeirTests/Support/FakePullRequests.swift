@@ -4,6 +4,7 @@
 import Foundation
 import os
 @testable import Weir
+@testable import WeirDomain
 
 /// Answers what a suite scripts: the availability, each number's lookup,
 /// and the open requests; records the numbers asked.

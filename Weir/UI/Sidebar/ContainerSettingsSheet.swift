@@ -7,6 +7,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 struct ContainerSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss

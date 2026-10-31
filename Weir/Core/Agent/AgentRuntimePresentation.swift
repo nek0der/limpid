@@ -2,6 +2,7 @@
 // Weir — lossless runtime facts consumed before reducing surface badges.
 
 import Foundation
+import WeirDomain
 
 struct AgentRuntimePresentation: Equatable {
     let kind: AgentKind

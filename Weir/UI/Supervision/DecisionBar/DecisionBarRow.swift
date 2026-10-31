@@ -2,6 +2,7 @@
 // Weir — what the decision bar shows, drawn from its model alone, and the bar it stands in.
 
 import SwiftUI
+import WeirDomain
 
 /// The decision bar of a pane in its foot bar: the row on the tone's fill
 /// under the tone's rule, on the line the sidebar's and the changes panel's

@@ -2,6 +2,7 @@
 // Weir — the line under a new worktree's terminal from its copy to its agent's start, a failed stage, and notes.
 
 import SwiftUI
+import WeirDomain
 
 /// What a new worktree's row shows between its making and what it opens,
 /// in the decision bar's place: the files being copied, the setup

@@ -2,6 +2,7 @@
 // Weir — each session container's identity colors, worked out from the app's stores only when what decides them changes.
 
 import Foundation
+import WeirDomain
 
 /// The identity color of each conversation of a session container (a
 /// project's folder or a worktree), as every surface that shows one reads

@@ -2,6 +2,7 @@
 // Weir — the settings the supervision window adds: menu bar, usage limit, the new worktree sheet's choices, turn history.
 
 import Foundation
+import WeirDomain
 
 /// The General pane's settings that came with the supervision window.
 /// Each key is read on its own with its default, so a file written before

@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 extension ApprovalEpisodeEndTests {
     /// A Claude run of the fixture's conversation in `state`, having taken

@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 /// A pane set up as a restore leaves one the projection named a resume
 /// candidate for: a remembered session for each provider, and each one in

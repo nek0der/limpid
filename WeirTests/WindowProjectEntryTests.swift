@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// Every entry point to another project goes through one
 /// decision: project ▾, the palette's rows, a folder opened, a card,

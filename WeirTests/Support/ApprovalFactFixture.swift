@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 extension ApprovalFact {
     /// A request, with a fresh key unless one is given: Claude's held

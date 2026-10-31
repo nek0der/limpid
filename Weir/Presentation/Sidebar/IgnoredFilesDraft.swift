@@ -2,6 +2,7 @@
 // Weir — a project's files to copy into new worktrees as the list the person edits in Project Settings.
 
 import Foundation
+import WeirDomain
 
 /// The list form of `Project.ignoredFilesToCopy`: one row per path or
 /// pattern, added with ＋, from the files Git ignores, or removed with −,

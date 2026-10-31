@@ -5,6 +5,7 @@ import Foundation
 import GhosttyKit
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// GOTO_TAB arrives from libghostty, not through the menu, so it carries no
 /// window of the menu's. It is resolved from the pane the key went to.

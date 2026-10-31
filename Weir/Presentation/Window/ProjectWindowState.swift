@@ -4,6 +4,7 @@
 import CoreGraphics
 import Foundation
 import Observation
+import WeirDomain
 
 /// What one window shows that is never saved. The saved part (the selected
 /// tab, the sidebar width, the frame) lives on `WindowSelection` in Core,

@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct StopLedgerTests: StopLedgerFixture {
     /// A session never prompted has no transcript, so its stop offers no

@@ -2,6 +2,7 @@
 // Weir — the session's tabs and the attention list's items by row, gathered once for every project the sidebar places and builds.
 
 import Foundation
+import WeirDomain
 
 /// What placing and building the sidebar's rows reads of the session and
 /// the attention list, by row, gathered once a draw. The sidebar lists

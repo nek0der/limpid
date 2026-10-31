@@ -2,6 +2,7 @@
 // Weir — which section each of a project's rows is listed in, and in what order.
 
 import Foundation
+import WeirDomain
 
 /// The section each row is listed in, every project's rows, as the
 /// window's sidebar shows them: what it draws, and, of the window's

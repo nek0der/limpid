@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 extension ApprovalPresentation {
     /// A pending Claude `Bash` request with fresh ids and ten minutes left,

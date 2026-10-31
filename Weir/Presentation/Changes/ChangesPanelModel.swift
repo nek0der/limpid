@@ -2,6 +2,7 @@
 // Weir — what the changes panel says of a worktree's turns: one timeline, each row's viewed state, and what each row offers.
 
 import Foundation
+import WeirDomain
 
 /// The changes panel's table of contents: every conversation's turns
 /// in the session's worktree as one timeline, oldest at the top as in the

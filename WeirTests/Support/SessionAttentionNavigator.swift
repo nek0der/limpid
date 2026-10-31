@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 /// Goes to items as the app does (`AppState.presentWindow(for:from:)`,
 /// `AppState.go(to:opensTurnReview:in:)`): the window the registry presents for the item's

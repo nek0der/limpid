@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @Suite("Pane header ownership rules")
 struct PaneHeaderOwnershipRulesTests {

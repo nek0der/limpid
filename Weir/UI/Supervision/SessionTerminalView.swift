@@ -2,6 +2,7 @@
 // Weir — the session area's terminal region, or its guide while no tab is open.
 
 import SwiftUI
+import WeirDomain
 
 /// The session area's terminal region: the active tab's panes, or the
 /// commands to start from when no tab is active. `SurfaceRegistry` keeps `SurfaceView`

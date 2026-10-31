@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 /// Stands in for the app's navigator so a test reads what the attention
 /// list asked of it: each item gone to, in which window, whether its turn's

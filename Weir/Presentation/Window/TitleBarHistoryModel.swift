@@ -1,6 +1,8 @@
 // TitleBarHistoryModel.swift
 // Weir — whether the title bar's back and forward buttons can be pressed in a window.
 
+import WeirDomain
+
 /// The title bar's back and forward buttons as one window has them:
 /// each can be pressed while its side of the window's own history has a
 /// place, as Go Back and Go Forward in the menu can

@@ -2,6 +2,7 @@
 // Weir — what the usage panel and its rail button say: each agent's section, each window's row, the rail's mark.
 
 import Foundation
+import WeirDomain
 
 /// One agent's part of the usage panel, worded.
 struct PlanUsageSection: Equatable {

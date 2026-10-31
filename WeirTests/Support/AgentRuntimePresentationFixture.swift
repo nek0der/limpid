@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 extension AgentRuntimePresentation {
     /// A Claude run named "run" at revision 1, running a turn, attached to

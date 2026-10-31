@@ -8,6 +8,7 @@
 
 import Foundation
 import GhosttyKit
+import WeirDomain
 
 extension Notification.Name {
     /// Posted by `SearchActions.beginSearch` carrying the pane id as

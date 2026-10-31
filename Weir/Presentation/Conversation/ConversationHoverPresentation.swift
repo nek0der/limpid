@@ -3,6 +3,7 @@
 
 import Foundation
 import Observation
+import WeirDomain
 
 /// The conversations under the pointer in one window, and where the pointer
 /// is: on a tab in the pane strip, on a pane's header, or on a turn card in

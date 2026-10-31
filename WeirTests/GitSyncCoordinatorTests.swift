@@ -5,6 +5,7 @@ import Foundation
 import os
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// What `GitSyncCoordinatorTests.ChangingRepository` holds: its worktrees,
 /// and the listings begun and done.

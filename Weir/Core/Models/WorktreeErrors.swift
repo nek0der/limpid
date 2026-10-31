@@ -6,6 +6,7 @@
 // error and draw its `message` in the window's locale.
 
 import Foundation
+import WeirDomain
 
 // Each error's catalog text comes from a plain, non-optional `switch` over
 // literals: the string catalog's extraction reads those, and misses a

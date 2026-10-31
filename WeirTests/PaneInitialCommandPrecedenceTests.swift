@@ -8,6 +8,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @Suite("Pane initial command precedence")
 @MainActor

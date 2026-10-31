@@ -2,6 +2,7 @@
 // Weir — the notification history's notice when a banner may not reach the person.
 
 import Foundation
+import WeirDomain
 
 /// The notice the notification history shows when a banner may not reach
 /// the person.

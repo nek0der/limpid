@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct AttentionQueueReducerTests {
     private static let start = Date(timeIntervalSince1970: 1000)

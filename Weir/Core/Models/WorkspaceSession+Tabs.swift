@@ -7,6 +7,7 @@
 // everything that lives _inside_ the flat `tabs` array belongs here.
 
 import Foundation
+import WeirDomain
 
 extension WorkspaceSession {
 

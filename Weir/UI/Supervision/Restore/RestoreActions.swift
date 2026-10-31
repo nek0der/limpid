@@ -3,6 +3,7 @@
 
 import Foundation
 import SwiftUI
+import WeirDomain
 
 /// What every restore entry does. Each opens the same strip, in the
 /// decision bar of the pane whose agent ran the turn, so the question is

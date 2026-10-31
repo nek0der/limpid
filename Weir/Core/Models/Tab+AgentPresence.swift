@@ -2,6 +2,7 @@
 // Weir — whether an agent has a session in a tab, and whether the tab runs inside tmux.
 
 import Foundation
+import WeirDomain
 
 extension Tab {
     /// The kinds of agent the tab's panes are for, each once, in

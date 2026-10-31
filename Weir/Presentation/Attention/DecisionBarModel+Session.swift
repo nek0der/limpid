@@ -2,6 +2,7 @@
 // Weir — reads one pane's decision bar from the attention list, its agent, and the window.
 
 import Foundation
+import WeirDomain
 
 extension DecisionBarModel {
     /// What decides the bar, read from the app's state.

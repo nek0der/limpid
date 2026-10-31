@@ -2,6 +2,7 @@
 // Weir — what the review tab's actions read and change, handed over by the app.
 
 import Foundation
+import WeirDomain
 
 /// The stores and the ways out the review tab's actions use
 /// (`ReviewTabActions`), and nothing else of the app. The app builds it

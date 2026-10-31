@@ -2,6 +2,7 @@
 // Weir — every project under its own header in the sidebar: the header's model, and every line of the list the sidebar draws.
 
 import Foundation
+import WeirDomain
 
 /// A project's header in the sidebar: `[mark] name ─── count ▽`.
 struct SidebarProjectHeader: Identifiable, Equatable {

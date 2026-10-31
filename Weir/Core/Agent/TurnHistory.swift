@@ -3,6 +3,7 @@
 
 import Foundation
 import Observation
+import WeirDomain
 
 /// The recorded turns of every conversation the hooks have written.
 ///

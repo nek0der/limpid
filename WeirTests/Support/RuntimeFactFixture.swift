@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 extension RuntimeFact {
     /// A Claude run `name` that stopped on an error in every pane of `tab`.

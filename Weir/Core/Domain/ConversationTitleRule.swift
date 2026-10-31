@@ -14,8 +14,8 @@ import Foundation
 /// is gone; and last the first thing it was asked. A value of spaces says
 /// nothing and is passed over, and only a value's first line is taken, as
 /// a name stands on one line.
-enum ConversationTitleRule {
-    static func title(
+package enum ConversationTitleRule {
+    package static func title(
         tabName: String?,
         rememberedTabName: String?,
         liveTitle: String?,

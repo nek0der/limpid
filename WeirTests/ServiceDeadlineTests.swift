@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct ServiceDeadlineTests {
     private static let received = SuspendingClock().now

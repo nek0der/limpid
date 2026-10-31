@@ -106,6 +106,14 @@ The Rust crates keep the rules that several processes share (the Hook Helper
 and the service read and write the same files). Swift Domain keeps the rules
 that need this process's facts, such as which window shows which pane.
 
+Domain is a static module of its own, `WeirDomain` (`project.yml`), so the
+compiler refuses a Domain file that names anything above it. What the layers
+above read is `package`; what only Domain and its tests read stays internal, and
+tests reach it with `@testable import WeirDomain`. Only the app links the
+module: a test bundle that linked it too would hold a second copy of every type.
+A static module has no resources, so its strings live in the app's catalog.
+`scripts/check-module-strings.sh` fails the build when one is missing from it.
+
 `make lint` enforces the part a pattern can see (`.swiftlint.yml`):
 
 - `layer_ui_framework_import` keeps AppKit, SwiftUI, and the modules that
@@ -117,8 +125,6 @@ that need this process's facts, such as which window shows which pane.
   per-window display types or the models that word what the window shows.
 - `core_names_ui_type` catches Core code that names the UI's sizes, tokens,
   and glyphs.
-- `domain_names_core_type` catches Domain code that names the stores,
-  settings, and wire types of the Core around it.
 
 Design and review, not a checker, keep the type dependencies beyond that.
 
@@ -129,7 +135,6 @@ stated condition:
 |---|---|---|
 | `core_names_ui_type` | `Core/CommandPalette/CommandPaletteCatalog.swift` (`ContainerSymbol`) | the symbol moves below UI, or the catalog takes a Core value the palette maps |
 | `core_names_ui_type` | `Core/Models/WorkspaceSession.swift`, `WorkspaceSession+Worktree.swift` (`DropPosition`) | the drop position moves below UI, or the moves take a Core value |
-| `domain_names_core_type` | `Core/Domain/TurnRetention.swift` (`TurnRetentionSettings`, `ReviewTurnRange`) | the rule takes the days and turns as its own value, and its protection takes turn ids |
 | none (kept by review) | Core naming UI's `SurfaceView`: `GhosttyActionRouter`, `GhosttyEventCoordinator`, `SurfaceRegistry`, `GhosttyApp`, `SecureInputManager`, `ClipboardConfirmationCoordinator`, `GhosttyConfigBridge`, `WeirNotificationDelegate` | each reaches the terminal through `SurfaceViewProviding` or a port App implements, as the scrollback capture does (`ScrollbackWriting`, `App/SurfaceRegistry+Scrollback.swift`) |
 
 One edge goes up rather than down: UI views read `AppState`, the composition

@@ -2,6 +2,7 @@
 // Weir — what a window's review tab reads, where it goes back to, and what its bar offers.
 
 import Foundation
+import WeirDomain
 
 /// How the review tab was asked for. Every entry opens the same tab;
 /// each names the comparison it is about.

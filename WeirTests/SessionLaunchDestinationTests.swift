@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// Where a setup that ends lands: decided once, in the
 /// launch's window while it shows the session's project, and in no shown

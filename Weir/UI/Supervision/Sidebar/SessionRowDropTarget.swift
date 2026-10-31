@@ -2,6 +2,7 @@
 // Weir — the sidebar's lines as drop targets: their names, what each takes, and the project's mark behind them.
 
 import SwiftUI
+import WeirDomain
 
 /// The piece of a project's mark behind one of its lines, while a dragged
 /// tab is over the project (`SupervisionProjectDropMark`); nothing behind

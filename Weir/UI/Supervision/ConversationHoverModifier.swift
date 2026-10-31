@@ -2,6 +2,7 @@
 // Weir — a tab's, card's, or heading's conversation hover: reported to the window, and marked from the other surface.
 
 import SwiftUI
+import WeirDomain
 
 extension View {
     /// Makes this view one surface of the window's conversation hover

@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct RestoreGateTests {
     private static func turn(phase: String = "finished", isRecorded: Bool = true) throws -> TurnSummary {

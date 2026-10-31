@@ -3,6 +3,7 @@
 
 import Foundation
 import Observation
+import WeirDomain
 
 /// One owner per app for what each worktree's turns do not account for
 /// and the files each turn changed: the changes panel and the

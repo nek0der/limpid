@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct UncommittedCarryRulesTests {
     @Test func theFirstRefusal_inOrder() {

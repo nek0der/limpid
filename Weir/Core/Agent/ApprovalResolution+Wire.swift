@@ -2,6 +2,7 @@
 // Weir — an approval decision as the broker reads and writes it, and the size it accepts.
 
 import Foundation
+import WeirDomain
 
 extension ApprovalResolution {
     /// Reads a decision as the broker reports it (`state.result`). `nil` for

@@ -5,11 +5,11 @@ import Foundation
 
 /// The items ⌘J walks together: one project's, or those in no project (a
 /// scratch tab, a request no pane is known for).
-enum AttentionCursorGroup: Hashable, Sendable {
+package enum AttentionCursorGroup: Hashable, Sendable {
     case project(UUID)
     case noProject
 
-    init(_ projectID: UUID?) {
+    package init(_ projectID: UUID?) {
         self = projectID.map(Self.project) ?? .noProject
     }
 }
@@ -18,29 +18,45 @@ enum AttentionCursorGroup: Hashable, Sendable {
 ///
 /// Each window walks the list on its own, so ⌘J in one window does not move
 /// another's place.
-struct AttentionCursorState: Equatable, Sendable {
+package struct AttentionCursorState: Equatable, Sendable {
     /// The item the cursor is on. It may have left the list since.
-    var current: AttentionItemID?
+    package var current: AttentionItemID?
     /// Where `current` sat in the list, so the walk can continue from its
     /// place after it leaves.
     var currentSequence: UInt64?
     /// The group being walked. Usually the window's project, but not after
     /// ⌘J reached a request no pane is known for: the window stays where it
     /// was, and the walk has to remember it moved on.
-    var group: AttentionCursorGroup?
+    package var group: AttentionCursorGroup?
     /// The window's project once the cursor last moved there (recorded
     /// after the move, `AttentionQueueStore`). A different one now means
     /// the person switched projects themselves, and the walk starts over in
     /// the project they chose.
-    var windowGroup: AttentionCursorGroup?
+    package var windowGroup: AttentionCursorGroup?
     /// The items of `group` this round has visited.
-    var visited: Set<AttentionItemID> = []
+    package var visited: Set<AttentionItemID> = []
     /// Whether the last step was ⌘J rather than ⇧⌘J; `nil` before the
     /// first step, or after the person chose an item from a list.
     var isWalkingForward: Bool?
+
+    package init(
+        current: AttentionItemID? = nil,
+        currentSequence: UInt64? = nil,
+        group: AttentionCursorGroup? = nil,
+        windowGroup: AttentionCursorGroup? = nil,
+        visited: Set<AttentionItemID> = [],
+        isWalkingForward: Bool? = nil
+    ) {
+        self.current = current
+        self.currentSequence = currentSequence
+        self.group = group
+        self.windowGroup = windowGroup
+        self.visited = visited
+        self.isWalkingForward = isWalkingForward
+    }
 }
 
-enum AttentionCursor {
+package enum AttentionCursor {
     /// The next item for ⌘J (`forward`) or ⇧⌘J, and the state after moving
     /// there. `nil` when the list is empty.
     ///
@@ -54,7 +70,7 @@ enum AttentionCursor {
     ///
     /// The state returned records the window's project as it was before the
     /// move; the caller sets `windowGroup` again once the move is done.
-    static func step(
+    package static func step(
         _ state: AttentionCursorState,
         queue: AttentionQueue,
         currentProjectID: UUID?,
@@ -115,7 +131,7 @@ enum AttentionCursor {
 
     /// The cursor after the person chose `item` from a list, in a window
     /// showing `currentProjectID`. The next ⌘J continues from it.
-    static func land(
+    package static func land(
         _ state: AttentionCursorState,
         on item: AttentionItem,
         currentProjectID: UUID?

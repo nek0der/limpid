@@ -9,18 +9,18 @@ import Foundation
 /// only compares it: a turn written by a newer helper with another format
 /// must still be readable. The display number (T7) is not an identity; it
 /// lives on the turn record.
-struct TurnID: Hashable, Codable, Sendable {
-    let rawValue: String
+package struct TurnID: Hashable, Codable, Sendable {
+    package let rawValue: String
 
-    init(_ rawValue: String) {
+    package init(_ rawValue: String) {
         self.rawValue = rawValue
     }
 
-    init(from decoder: any Decoder) throws {
+    package init(from decoder: any Decoder) throws {
         rawValue = try decoder.singleValueContainer().decode(String.self)
     }
 
-    func encode(to encoder: any Encoder) throws {
+    package func encode(to encoder: any Encoder) throws {
         var container = encoder.singleValueContainer()
         try container.encode(rawValue)
     }
@@ -32,10 +32,20 @@ struct TurnID: Hashable, Codable, Sendable {
 /// `isFallback` is part of the identity so a run ID can never be mistaken
 /// for a session ID that happens to have the same text. The coding keys use
 /// the camelCase spelling the Rust side writes into its records.
-struct ConversationKey: Hashable, Codable, Sendable {
-    let provider: AgentKind
-    let conversationID: String
-    let isFallback: Bool
+package struct ConversationKey: Hashable, Codable, Sendable {
+    package let provider: AgentKind
+    package let conversationID: String
+    package let isFallback: Bool
+
+    package init(
+        provider: AgentKind,
+        conversationID: String,
+        isFallback: Bool
+    ) {
+        self.provider = provider
+        self.conversationID = conversationID
+        self.isFallback = isFallback
+    }
 
     private enum CodingKeys: String, CodingKey {
         case provider
@@ -49,10 +59,20 @@ struct ConversationKey: Hashable, Codable, Sendable {
 /// The epoch is part of the key because a restarted service numbers runs
 /// and requests again; without it, a decision for a request from before the
 /// restart could land on a new one.
-struct ApprovalKey: Hashable, Codable, Sendable {
-    let epoch: UUID
-    let runID: UUID
-    let requestID: UUID
+package struct ApprovalKey: Hashable, Codable, Sendable {
+    package let epoch: UUID
+    package let runID: UUID
+    package let requestID: UUID
+
+    package init(
+        epoch: UUID,
+        runID: UUID,
+        requestID: UUID
+    ) {
+        self.epoch = epoch
+        self.runID = runID
+        self.requestID = requestID
+    }
 }
 
 /// One state episode of an agent or a session row: where it happened, and
@@ -62,8 +82,8 @@ struct ApprovalKey: Hashable, Codable, Sendable {
 /// The episode token makes a second stop of the same runtime a new item
 /// rather than the old one coming back, so an item the person already dealt
 /// with does not return when the agent fails again.
-struct EpisodeKey: Hashable, Codable, Sendable {
-    enum Origin: Hashable, Codable, Sendable {
+package struct EpisodeKey: Hashable, Codable, Sendable {
+    package enum Origin: Hashable, Codable, Sendable {
         /// A running agent, by its runtime ID.
         case runtime(String)
         /// A session row whose agent never started, or whose worktree is
@@ -74,7 +94,7 @@ struct EpisodeKey: Hashable, Codable, Sendable {
         /// `sessionRow(worktreeRoot:)`, the one place that standardizes.
         case sessionRow(worktreePath: String)
 
-        static func sessionRow(worktreeRoot: URL) -> Origin {
+        package static func sessionRow(worktreeRoot: URL) -> Origin {
             var path = worktreeRoot.standardizedFileURL.path
             while path.count > 1, path.hasSuffix("/") {
                 path.removeLast()
@@ -83,6 +103,6 @@ struct EpisodeKey: Hashable, Codable, Sendable {
         }
     }
 
-    let origin: Origin
-    let episodeToken: String
+    package let origin: Origin
+    package let episodeToken: String
 }

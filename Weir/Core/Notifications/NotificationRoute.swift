@@ -2,6 +2,7 @@
 // Weir — where opening a notification, or its history row, takes the person.
 
 import Foundation
+import WeirDomain
 
 /// What a notification or a history row points at, from most to least
 /// specific. Every field is optional because the notification can outlive

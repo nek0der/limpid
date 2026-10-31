@@ -2,6 +2,7 @@
 // Weir — the pane strip's "+" menu: a Claude, Codex, or shell tab in this session.
 
 import SwiftUI
+import WeirDomain
 
 /// What the strip's "+" adds to the session it heads: a tab running Claude
 /// or Codex, or a shell. An agent added here works in the same folder as

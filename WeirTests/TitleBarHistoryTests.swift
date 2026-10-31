@@ -5,6 +5,7 @@ import AppKit
 import SwiftUI
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @MainActor
 @Suite("Title bar back and forward")

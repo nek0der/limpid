@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// Claude sends no hook when the person declines its question or permission
 /// prompt with Esc. The bar's line after the wait leaves says what happened,

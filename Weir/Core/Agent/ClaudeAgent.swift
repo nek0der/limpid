@@ -3,6 +3,7 @@
 // case and the arguments that resume one of its sessions.
 
 import Foundation
+import WeirDomain
 
 enum ClaudeAgent: AgentSpec {
     static var kind: AgentKind {

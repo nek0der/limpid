@@ -214,6 +214,8 @@ Short index of load-bearing files. Skim these before touching their domain.
 - **Localization is a hard requirement**: any new user-facing string must be
   added to `Localizable.xcstrings` with both `en` and `ja` translations. An
   English-only entry is considered incomplete.
+  `WeirDomain` is a static module whose strings live in the app's catalog, and
+  the build fails until a new string in `Weir/Core/Domain` is there.
 - **Never edit `project.pbxproj` by hand**: add files via `project.yml`, then
   run `make xcodegen` to regenerate the project.
 - **Tests**: every test file uses Swift Testing (`@Test`, `#expect`);

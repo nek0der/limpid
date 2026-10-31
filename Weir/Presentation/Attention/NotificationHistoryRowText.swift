@@ -2,6 +2,7 @@
 // Weir — a notification history row's two lines: what it is about, then what came of it; and where it came from.
 
 import Foundation
+import WeirDomain
 
 /// A history row in two lines: what it is about first (the instruction a
 /// turn answered, the command an approval asks about), then what came of

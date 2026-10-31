@@ -8,11 +8,11 @@ import Foundation
 /// on them, so the header about to be pressed does not slip away. A
 /// project the order does not name yet (one just opened) goes at the
 /// bottom, never in between.
-enum ProjectOrder {
+package enum ProjectOrder {
     /// `projects` (in the session's order) laid out by `saved`: those it
     /// names first, in its order, then the rest in the session's order. An
     /// ID of a project that is gone is passed by.
-    static func ordered(saved: [UUID], projects: [UUID]) -> [UUID] {
+    package static func ordered(saved: [UUID], projects: [UUID]) -> [UUID] {
         let present = Set(projects)
         var seen = Set<UUID>()
         let known = saved.filter { present.contains($0) && seen.insert($0).inserted }
@@ -21,7 +21,7 @@ enum ProjectOrder {
 
     /// `order` with `id` moved `offset` places down (negative: up), held at
     /// the ends; unchanged when `order` does not hold `id`.
-    static func moved(_ id: UUID, by offset: Int, in order: [UUID]) -> [UUID] {
+    package static func moved(_ id: UUID, by offset: Int, in order: [UUID]) -> [UUID] {
         guard let index = order.firstIndex(of: id) else { return order }
         let target = min(max(index + offset, 0), order.count - 1)
         guard target != index else { return order }
@@ -32,14 +32,14 @@ enum ProjectOrder {
     }
 
     /// `order` with `id` first.
-    static func movedToTop(_ id: UUID, in order: [UUID]) -> [UUID] {
+    package static func movedToTop(_ id: UUID, in order: [UUID]) -> [UUID] {
         moved(id, before: order.first, in: order)
     }
 
     /// `order` with `id` just before `target`, or last when `target` is
     /// `nil`: where a header dropped on another lands. Unchanged when
     /// `order` does not hold `id`, or holds no `target`.
-    static func moved(_ id: UUID, before target: UUID?, in order: [UUID]) -> [UUID] {
+    package static func moved(_ id: UUID, before target: UUID?, in order: [UUID]) -> [UUID] {
         guard order.contains(id), id != target else { return order }
         var next = order.filter { $0 != id }
         if let target {
@@ -53,7 +53,7 @@ enum ProjectOrder {
 
     /// Whether `id` can move up (`offset` −1) or down (+1) in `order`: the
     /// menu's Move Up on the first header is off.
-    static func canMove(_ id: UUID, by offset: Int, in order: [UUID]) -> Bool {
+    package static func canMove(_ id: UUID, by offset: Int, in order: [UUID]) -> Bool {
         moved(id, by: offset, in: order) != order
     }
 }

@@ -3,6 +3,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 private struct ApprovalCardMeasurement: Equatable {
     let approvalID: String

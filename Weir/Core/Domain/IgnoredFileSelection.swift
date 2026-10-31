@@ -25,24 +25,24 @@ import Foundation
 /// listed path that starts at the home folder (`~`), steps out with `..`,
 /// or names `.git` is never used: the copy goes into the new worktree and
 /// nowhere else, and never over Git's own files.
-enum IgnoredFileSelection {
+package enum IgnoredFileSelection {
     /// Why a pattern is never used, said beside its row in Project Settings.
-    enum Problem: Equatable, Sendable {
+    package enum Problem: Equatable, Sendable {
         case homeFolder
         case leavesFolder
         case namesGitFolder
     }
 
     /// A pattern as it is matched.
-    struct Pattern: Equatable, Sendable {
+    package struct Pattern: Equatable, Sendable {
         /// The pattern with its leading `./` or `/` and trailing `/` taken off.
-        let body: String
+        package let body: String
         /// Matched against the whole path from the project's folder, not
         /// only its last part.
         let isAnchored: Bool
         let isFolderOnly: Bool
 
-        init(_ text: String) {
+        package init(_ text: String) {
             var body = text.trimmingCharacters(in: .whitespaces)
             while body.hasPrefix("./") {
                 body.removeFirst(2)
@@ -64,7 +64,7 @@ enum IgnoredFileSelection {
 
         /// Whether the pattern names `path`, which is a folder when
         /// `isFolder`.
-        func matches(_ path: String, isFolder: Bool) -> Bool {
+        package func matches(_ path: String, isFolder: Bool) -> Bool {
             guard !isFolderOnly || isFolder else { return false }
             if isAnchored {
                 return IgnoredFileSelection.glob(Array(body), Array(path))
@@ -81,13 +81,13 @@ enum IgnoredFileSelection {
     /// The pattern a path Git listed is saved as when the person picks it
     /// from the ignored files: anchored, so it names that one path and no
     /// other of the same name deeper down.
-    static func pattern(forListed path: String) -> String {
+    package static func pattern(forListed path: String) -> String {
         "/" + path
     }
 
     /// Why `pattern` is never used; `nil` for one that is (an empty one
     /// is the list's own problem, not this one's).
-    static func problem(of pattern: String) -> Problem? {
+    package static func problem(of pattern: String) -> Problem? {
         let text = pattern.trimmingCharacters(in: .whitespaces)
         if text.hasPrefix("~") {
             return .homeFolder
@@ -109,7 +109,7 @@ enum IgnoredFileSelection {
     /// wildcard inside such a folder is not looked for: Git does not list
     /// the folder's files, and walking a `node_modules` to match one would
     /// take long. A path inside another picked folder goes with it.
-    static func select(patterns: [String], ignored: [String]) -> [String] {
+    package static func select(patterns: [String], ignored: [String]) -> [String] {
         let usable = patterns
             .filter { problem(of: $0) == nil }
             .map(Pattern.init)

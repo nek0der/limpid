@@ -10,17 +10,25 @@ import Foundation
 /// without this a Codex typed into a shell would wear the shell's glyph
 /// until then. Only that it is there: what the agent is doing is the record's
 /// to say, and a record, once there, wins (`Tab.agentKind(inPane:)`).
-struct PaneAgentInFront: Equatable, Sendable {
-    let kind: AgentKind
+package struct PaneAgentInFront: Equatable, Sendable {
+    package let kind: AgentKind
     /// Staged by the pane strip's "+" (or a new session) as the tab opened,
     /// and not seen in front yet: the command is typed once the terminal
     /// starts, so a shell in front until then is the agent still to come,
     /// not one that left.
-    let isStaged: Bool
+    package let isStaged: Bool
+
+    package init(
+        kind: AgentKind,
+        isStaged: Bool
+    ) {
+        self.kind = kind
+        self.isStaged = isStaged
+    }
 }
 
 /// What one reading of a pane's job in front says about its agent.
-enum AgentInFrontReading: Equatable, Sendable {
+package enum AgentInFrontReading: Equatable, Sendable {
     case agent(AgentKind)
     /// No agent in front: a shell, or another program.
     case none
@@ -30,10 +38,10 @@ enum AgentInFrontReading: Equatable, Sendable {
     case undetermined
 }
 
-enum PaneAgentInFrontRules {
+package enum PaneAgentInFrontRules {
     /// When a pane's job in front is read: the events that mark a command
     /// starting or ending, which is when it can change.
-    enum Boundary: Equatable, Sendable {
+    package enum Boundary: Equatable, Sendable {
         /// The terminal's title changed: the shell's preexec names the
         /// command it starts, its precmd the directory it is back at, and
         /// an agent may name its conversation.
@@ -47,7 +55,7 @@ enum PaneAgentInFrontRules {
     /// names its directory as it first starts, before the staged command
     /// runs. Only the command's end lets it go, which is also how one that
     /// never started (not installed, say) goes back to the shell.
-    static func next(
+    package static func next(
         _ current: PaneAgentInFront?,
         after reading: AgentInFrontReading,
         at boundary: Boundary

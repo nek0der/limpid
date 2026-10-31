@@ -5,6 +5,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @Suite("Notification request live status", .timeLimit(.minutes(1)))
 @MainActor

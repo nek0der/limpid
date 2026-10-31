@@ -2,6 +2,7 @@
 // Weir — builds the sidebar's headers and rows for every project from the session, the attention list, and the window's arrangement.
 
 import Foundation
+import WeirDomain
 
 extension SidebarListModel {
     /// What the list is read from besides the session: the stores every

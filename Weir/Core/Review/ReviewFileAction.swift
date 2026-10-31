@@ -3,6 +3,7 @@
 
 import AppKit
 import Foundation
+import WeirDomain
 
 /// The boundary between Review's Git-relative paths and macOS file actions.
 /// Opening goes through `FileOpener`, shared with terminal links.

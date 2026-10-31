@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct StopLedgerLaunchResumeTests: StopLedgerFixture {
     /// The resume Weir types at launch is no stop while it is on its way

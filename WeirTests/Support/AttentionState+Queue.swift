@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 extension AttentionState {
     /// The attention list the app would build from these runtimes alone:

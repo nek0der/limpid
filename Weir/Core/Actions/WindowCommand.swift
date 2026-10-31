@@ -2,6 +2,7 @@
 // Weir — what one main window is asked to do by its menus, the palette, and its rails, and the port that delivers it.
 
 import Foundation
+import WeirDomain
 
 /// A command for one main window's views to carry out: what the menu
 /// bar, the palette, the keyboard shortcuts, and the window's own rails ask

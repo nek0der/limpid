@@ -6,6 +6,7 @@
 
 import Foundation
 import OSLog
+import WeirDomain
 
 private let log = Logger.weir("claude.shim.locator")
 

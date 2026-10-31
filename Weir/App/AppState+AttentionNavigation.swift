@@ -2,6 +2,7 @@
 // Weir — takes the person to an attention item: its pane, or the approval card.
 
 import Foundation
+import WeirDomain
 
 extension AppState: AttentionNavigating {
     /// The window's project, kept while a scratch tab is selected, so ⌘J

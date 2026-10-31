@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// The pane strip's tabs for the agent in front of a pane with no record
 /// yet: Codex typed into a shell writes its record at its first prompt, so

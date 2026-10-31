@@ -2,6 +2,7 @@
 // Weir — stands the demo fixture's badges and turns in for what a pass would report.
 
 import Foundation
+import WeirDomain
 
 /// What demo mode shows in place of a projection pass: the turns it
 /// stages, the conversation each staged agent's pane runs, and how far each

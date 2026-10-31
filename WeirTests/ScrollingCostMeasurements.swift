@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// The times behind what SupervisionTokensTests, ReviewRailLayoutTests and
 /// ResolvedStringCacheTests check, printed for a person to compare before and after a change.

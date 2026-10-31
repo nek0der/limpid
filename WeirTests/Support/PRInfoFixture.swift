@@ -14,6 +14,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 enum PRInfoFixture {
     static func make(

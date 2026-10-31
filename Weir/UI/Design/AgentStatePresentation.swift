@@ -8,6 +8,7 @@
 // shows.
 
 import SwiftUI
+import WeirDomain
 
 extension SessionRowFact.Glyph? {
     /// The words beside a state: amber for a wait, red for a stop, and muted

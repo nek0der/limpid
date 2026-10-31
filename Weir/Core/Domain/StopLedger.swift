@@ -16,28 +16,54 @@ import Foundation
 /// record and nothing else says the pane holds a conversation that stopped.
 /// A stop whose run was cleaned up before the launch that would have seen
 /// it is not known.
-struct StopLedger: Equatable, Sendable {
-    struct Record: Equatable, Sendable {
-        let itemID: AttentionItemID
-        let runtimeID: String
-        let provider: AgentKind
-        let paneID: UUID
-        var conversation: ConversationKey?
+package struct StopLedger: Equatable, Sendable {
+    package struct Record: Equatable, Sendable {
+        package let itemID: AttentionItemID
+        package let runtimeID: String
+        package let provider: AgentKind
+        package let paneID: UUID
+        package var conversation: ConversationKey?
         /// The provider's session id, which "Resume Same Conversation"
         /// resumes; `nil` when the run never reported one, or when its
         /// session was never prompted and has nothing to resume
         /// (`RuntimeFact.resumableSessionID`).
-        var sessionID: String?
+        package var sessionID: String?
         /// The folder the conversation was in, which the resume runs in.
-        var cwd: String?
+        package var cwd: String?
         /// The turn the run stopped in, for "Show Partial Changes".
-        var turnID: TurnID?
-        var reason: StopReason
-        let stoppedAt: Date
-        var resume: Resume = .none
+        package var turnID: TurnID?
+        package var reason: StopReason
+        package let stoppedAt: Date
+        package var resume: Resume = .none
+
+        package init(
+            itemID: AttentionItemID,
+            runtimeID: String,
+            provider: AgentKind,
+            paneID: UUID,
+            conversation: ConversationKey? = nil,
+            sessionID: String? = nil,
+            cwd: String? = nil,
+            turnID: TurnID? = nil,
+            reason: StopReason,
+            stoppedAt: Date,
+            resume: Resume = .none
+        ) {
+            self.itemID = itemID
+            self.runtimeID = runtimeID
+            self.provider = provider
+            self.paneID = paneID
+            self.conversation = conversation
+            self.sessionID = sessionID
+            self.cwd = cwd
+            self.turnID = turnID
+            self.reason = reason
+            self.stoppedAt = stoppedAt
+            self.resume = resume
+        }
     }
 
-    enum Resume: Equatable, Sendable {
+    package enum Resume: Equatable, Sendable {
         case none
         /// "Resume Same Conversation" typed the resume into the pane's shell
         /// at `since`, asked from `window`; `nil` when no window asked, so no
@@ -51,25 +77,33 @@ struct StopLedger: Equatable, Sendable {
 
     /// A stop that ended with a resume: its pane, and the window that asked,
     /// whose bar says it is back (`nil`: none asked, and no bar says so).
-    struct Resumed: Equatable, Sendable {
-        let paneID: UUID
-        let window: WindowID?
+    package struct Resumed: Equatable, Sendable {
+        package let paneID: UUID
+        package let window: WindowID?
         /// Whether the run it came back in already began a turn since the
         /// stop: a new run with a turn, or the stopped run in a later one.
         /// The person has typed on, so "Type your next instruction" is late.
-        var hasBegunATurn = false
+        package var hasBegunATurn = false
     }
 
     /// What the stops that ended in one `update` say of their panes.
-    struct Ended: Equatable, Sendable {
+    package struct Ended: Equatable, Sendable {
         /// The stops a resume brought back.
-        var resumed: [Resumed] = []
+        package var resumed: [Resumed] = []
         /// The panes whose stop ended as the person moved on to another
         /// conversation there (`hasMovedOn`): what was said in them while
         /// stopped is past. Only the stop can tell this from its
         /// conversation coming back in a new run, which `PaneRunLedger`
         /// sees as the same arrival.
-        var movedOn: Set<UUID> = []
+        package var movedOn: Set<UUID> = []
+
+        package init(
+            resumed: [Resumed] = [],
+            movedOn: Set<UUID> = []
+        ) {
+            self.resumed = resumed
+            self.movedOn = movedOn
+        }
     }
 
     /// The resume Weir typed into a restored pane at launch: its
@@ -79,36 +113,36 @@ struct StopLedger: Equatable, Sendable {
     /// run of the conversation, or its deadline passes with no agent in
     /// front of the pane, and is forgotten once a run of the session
     /// reports or the agent is in front at the deadline.
-    struct LaunchResume: Equatable, Sendable {
-        let paneID: UUID
-        let provider: AgentKind
-        let sessionID: String
-        let cwd: String?
-        let since: Date
+    package struct LaunchResume: Equatable, Sendable {
+        package let paneID: UUID
+        package let provider: AgentKind
+        package let sessionID: String
+        package let cwd: String?
+        package let since: Date
     }
 
-    private(set) var records: [AttentionItemID: Record] = [:]
+    package private(set) var records: [AttentionItemID: Record] = [:]
     /// The resumes typed at launch, by pane (`markResumingAtLaunch`).
-    private(set) var launchResumes: [UUID: LaunchResume] = [:]
+    package private(set) var launchResumes: [UUID: LaunchResume] = [:]
     /// Stops that ended while their run still says so (an agent killed
     /// outright, or left in its error in one pane while its conversation
     /// was resumed in another, stays in error until its record is cleaned
     /// up): the person moved on, or the conversation is back. Neither kept
     /// here again nor listed.
-    private(set) var dismissed: Set<AttentionItemID> = []
+    package private(set) var dismissed: Set<AttentionItemID> = []
 
-    init() {}
+    package init() {}
 
     /// The ledger as the last launch left it (`StopLedgerStore`): its
     /// stops and the ones the person moved on from. A stop whose pane the
     /// session did not restore ends at the first `update`, as any whose
     /// pane is closed does.
-    init(restoring records: [Record], dismissed: Set<AttentionItemID>) {
+    package init(restoring records: [Record], dismissed: Set<AttentionItemID>) {
         self.records = Dictionary(records.map { ($0.itemID, $0) }, uniquingKeysWith: { _, last in last })
         self.dismissed = dismissed
     }
 
-    func record(_ itemID: AttentionItemID) -> Record? {
+    package func record(_ itemID: AttentionItemID) -> Record? {
         records[itemID]
     }
 
@@ -117,7 +151,7 @@ struct StopLedger: Equatable, Sendable {
     /// another conversation (`hasMovedOn`), or whose pane is gone, ends.
     /// `cwd` is the folder a run's conversation was in, when known. Returns
     /// what the stops that ended say of their panes.
-    mutating func update(
+    package mutating func update(
         runtimes: [RuntimeFact],
         paneExists: (UUID) -> Bool,
         cwd: (RuntimeFact) -> String? = { _ in nil }
@@ -217,7 +251,7 @@ struct StopLedger: Equatable, Sendable {
     /// A stopped run still in its error keeps its stop beside the new one:
     /// two runs in one pane are two tmux sessions, and the stopped one is
     /// still there to type on (`StopLedgerTests`).
-    static func hasMovedOn(_ record: Record, to runtime: RuntimeFact) -> Bool {
+    package static func hasMovedOn(_ record: Record, to runtime: RuntimeFact) -> Bool {
         guard runtime.paneIDs.contains(record.paneID), runtime.updatedAt > record.stoppedAt else { return false }
         switch runtime.state {
         case .error, .unknown: return false
@@ -228,7 +262,7 @@ struct StopLedger: Equatable, Sendable {
     /// The stops whose run no longer says so (it exited, or its record was
     /// cleaned up): the attention list keeps them from here. A run still
     /// in the same error lists its stop itself.
-    func retained(besides runtimes: [RuntimeFact]) -> [Record] {
+    package func retained(besides runtimes: [RuntimeFact]) -> [Record] {
         let listed = Set(runtimes.filter { $0.state == .error }.map(Self.itemID(of:)))
         return records.values
             .filter { !listed.contains($0.itemID) }
@@ -236,18 +270,18 @@ struct StopLedger: Equatable, Sendable {
     }
 
     /// Ends a stop the person moved on from: "Start New Conversation".
-    mutating func dismiss(_ itemID: AttentionItemID) {
+    package mutating func dismiss(_ itemID: AttentionItemID) {
         guard records.removeValue(forKey: itemID) != nil else { return }
         dismissed.insert(itemID)
     }
 
-    mutating func markResuming(_ itemID: AttentionItemID, at date: Date, window: WindowID?) {
+    package mutating func markResuming(_ itemID: AttentionItemID, at date: Date, window: WindowID?) {
         records[itemID]?.resume = .resuming(since: date, window: window)
     }
 
     /// Weir typed the resume of `sessionID` into the restored `paneID` at
     /// `date`. A resume typed again into the pane is the later one.
-    mutating func markResumingAtLaunch(paneID: UUID, provider: AgentKind, sessionID: String, cwd: String?, at date: Date) {
+    package mutating func markResumingAtLaunch(paneID: UUID, provider: AgentKind, sessionID: String, cwd: String?, at date: Date) {
         launchResumes[paneID] = LaunchResume(paneID: paneID, provider: provider, sessionID: sessionID, cwd: cwd, since: date)
         // The pane's own stop of this session (kept from the last launch)
         // is the launch's to resume now: its bar says so rather than
@@ -269,7 +303,7 @@ struct StopLedger: Equatable, Sendable {
     /// The stop a resume typed at launch becomes when it fails: one per
     /// pane and session, so a resume typed again from its bar and failing
     /// again is the same stop.
-    static func launchResumeItemID(paneID: UUID, sessionID: String) -> AttentionItemID {
+    package static func launchResumeItemID(paneID: UUID, sessionID: String) -> AttentionItemID {
         .stop(EpisodeKey(origin: .runtime("launch-resume:" + sessionID), episodeToken: paneID.uuidString))
     }
 
@@ -291,7 +325,7 @@ struct StopLedger: Equatable, Sendable {
     /// lost. A resume that failed (no transcript, a bad id) exits to the
     /// shell within seconds, so the agent still there at the deadline is
     /// the conversation on screen, not a failure under way.
-    mutating func launchResumeTimedOut(paneID: UUID, since: Date, isAgentInFront: Bool) {
+    package mutating func launchResumeTimedOut(paneID: UUID, since: Date, isAgentInFront: Bool) {
         guard let launch = launchResumes[paneID], launch.since == since else { return }
         guard isAgentInFront else {
             failLaunchResume(launch)
@@ -353,7 +387,7 @@ struct StopLedger: Equatable, Sendable {
     /// until its first prompt. Its old run may still say error; the stop
     /// is not made again from it (`dismissed`). Otherwise the resume
     /// failed, which the stop's bar says.
-    mutating func resumeTimedOut(_ itemID: AttentionItemID, since: Date, isAgentInFront: Bool) {
+    package mutating func resumeTimedOut(_ itemID: AttentionItemID, since: Date, isAgentInFront: Bool) {
         guard case let .resuming(started, _) = records[itemID]?.resume, started == since else { return }
         if isAgentInFront {
             dismiss(itemID)
@@ -369,7 +403,7 @@ struct StopLedger: Equatable, Sendable {
     static let failedResumeRunTime: TimeInterval = 10
 
     /// What a resume's command coming back to the shell made of it.
-    enum ResumeCommandEnd: Equatable, Sendable {
+    package enum ResumeCommandEnd: Equatable, Sendable {
         /// Back within `failedResumeRunTime`: the resume failed, and this
         /// stop says so.
         case failed(AttentionItemID)
@@ -378,7 +412,7 @@ struct StopLedger: Equatable, Sendable {
         /// front); the stop, or the launch resume's clock, is this one.
         case cameBack(AttentionItemID)
 
-        var itemID: AttentionItemID {
+        package var itemID: AttentionItemID {
             switch self {
             case let .failed(itemID), let .cameBack(itemID): itemID
             }
@@ -399,7 +433,7 @@ struct StopLedger: Equatable, Sendable {
     /// never have said it was back, and a resume that came back is not a
     /// stop. A command that began before the resume was typed is an
     /// earlier one. Returns what came of the resume; `nil` when none waited.
-    mutating func resumeCommandFinished(inPane paneID: UUID, startedAt: Date, runTime: TimeInterval) -> ResumeCommandEnd? {
+    package mutating func resumeCommandFinished(inPane paneID: UUID, startedAt: Date, runTime: TimeInterval) -> ResumeCommandEnd? {
         let isFailure = runTime < Self.failedResumeRunTime
         if let launch = launchResumes[paneID], startedAt >= launch.since {
             let itemID = Self.launchResumeItemID(paneID: paneID, sessionID: launch.sessionID)
@@ -456,7 +490,7 @@ struct StopLedger: Equatable, Sendable {
     }
 
     /// The stop item a run in error lists, as the attention list keys it.
-    static func itemID(of runtime: RuntimeFact) -> AttentionItemID {
+    package static func itemID(of runtime: RuntimeFact) -> AttentionItemID {
         .stop(EpisodeKey(origin: .runtime(runtime.runtimeID), episodeToken: runtime.episodeToken))
     }
 }

@@ -12,16 +12,22 @@ import Foundation
 /// any window says so. Taking the last report instead would let a window
 /// going behind another stop the terminal that the front window still
 /// shows.
-struct PaneVisibility: Equatable, Sendable {
+package struct PaneVisibility: Equatable, Sendable {
     private(set) var visibleByWindow: [WindowID: Set<UUID>] = [:]
+
+    package init(
+        visibleByWindow: [WindowID: Set<UUID>] = [:]
+    ) {
+        self.visibleByWindow = visibleByWindow
+    }
 
     /// Replaces `window`'s set. An empty set removes the window, so a closed
     /// or hidden window leaves nothing behind.
-    mutating func report(window: WindowID, visiblePaneIDs: Set<UUID>) {
+    package mutating func report(window: WindowID, visiblePaneIDs: Set<UUID>) {
         visibleByWindow[window] = visiblePaneIDs.isEmpty ? nil : visiblePaneIDs
     }
 
-    var union: Set<UUID> {
+    package var union: Set<UUID> {
         visibleByWindow.values.reduce(into: Set()) { $0.formUnion($1) }
     }
 }

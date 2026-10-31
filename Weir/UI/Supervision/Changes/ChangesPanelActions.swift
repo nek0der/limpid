@@ -2,6 +2,7 @@
 // Weir — what the changes panel reads from the app and what its rows and line do.
 
 import Foundation
+import WeirDomain
 
 /// The changes panel's way to the app: the agents of the window's session
 /// and their turns, read into `ChangesPanelModel`, and the moves its rows

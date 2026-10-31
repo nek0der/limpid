@@ -5,6 +5,7 @@ import AppKit
 import SwiftUI
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// The window is shown for real (transparent): the hosting view writes the
 /// window's minimum in its constraints pass once the window is on screen,

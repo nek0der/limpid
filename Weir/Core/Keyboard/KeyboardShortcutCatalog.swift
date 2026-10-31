@@ -8,6 +8,7 @@
 // config can change them and Weir does not own that table.
 
 import Foundation
+import WeirDomain
 
 /// One row: a localized title and the keycap tokens to draw next to it.
 struct KeyboardShortcutEntry: Identifiable, Equatable {

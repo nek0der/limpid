@@ -2,6 +2,7 @@
 // Weir — Swift entry point for restoring a worktree to the start of a turn through the Rust bridge.
 
 import Foundation
+import WeirDomain
 import WeirRustBridge
 
 /// One provider's state directory, where Rust reads the run records again

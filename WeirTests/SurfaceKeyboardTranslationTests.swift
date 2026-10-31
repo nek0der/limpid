@@ -7,6 +7,7 @@ import Carbon.HIToolbox
 import GhosttyKit
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @Suite("Surface keyboard translation")
 @MainActor

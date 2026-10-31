@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 enum ChangesPanelFixture {
     /// Turn `number` of `extras`' conversation (id `T<number>-<conversation>`),

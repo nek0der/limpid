@@ -2,6 +2,7 @@
 // Weir — jump-to-pane and flash helpers shared across views
 
 import Foundation
+import WeirDomain
 
 @MainActor
 func jumpToPane(

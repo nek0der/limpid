@@ -4,6 +4,7 @@
 // so the palette re-uses the same dispatch chain the menu bar runs.
 
 import Foundation
+import WeirDomain
 
 extension Notification.Name {
     /// Posted when the command palette opens so the overlay grabs focus. A

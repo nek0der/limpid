@@ -2,6 +2,7 @@
 // Weir — opening, showing, and closing a supervision window's review tab.
 
 import Foundation
+import WeirDomain
 
 /// The one way the supervision window's review tab changes. The tab's state
 /// (`ProjectWindowState.review`) and what draws it (the window's

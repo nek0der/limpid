@@ -2,6 +2,7 @@
 // Weir — carries out what an attention change asks for: the VoiceOver announcement, and a request's banner.
 
 import SwiftUI
+import WeirDomain
 
 /// Performs the attention list's effects. In the app layer because they
 /// speak through VoiceOver and post notifications, which the rules below

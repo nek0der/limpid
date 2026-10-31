@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct IgnoredFileSelectionTests {
     @Test func aPlainName_matchesAtAnyDepth_andALeadingSlash_onlyAtTheTop() {

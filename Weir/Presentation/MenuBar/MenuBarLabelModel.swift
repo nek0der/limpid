@@ -2,6 +2,7 @@
 // Weir — what the menu bar extra's icon shows: which lamp the attention state lights, and what VoiceOver says.
 
 import Foundation
+import WeirDomain
 
 /// The menu bar extra's icon: a lamp that shows the state alone,
 /// in the title bar pill's tone, and no count, since the menu bar is

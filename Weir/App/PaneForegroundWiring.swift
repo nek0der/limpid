@@ -2,6 +2,7 @@
 // Weir — which reading of a pane's job in front a resume's deadline, a launch, and a pane's badge are each handed.
 
 import Foundation
+import WeirDomain
 
 /// The three readings of the job in front of a pane that the app holds the
 /// terminals for (`AppState`).

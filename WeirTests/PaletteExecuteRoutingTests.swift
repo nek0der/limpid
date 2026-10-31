@@ -5,6 +5,7 @@ import Combine
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @MainActor
 struct PaletteExecuteRoutingTests {

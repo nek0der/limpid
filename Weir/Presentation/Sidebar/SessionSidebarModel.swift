@@ -2,6 +2,7 @@
 // Weir — one project's rows in the supervision sidebar, and the scratch row's state.
 
 import Foundation
+import WeirDomain
 
 /// One project's rows in the sidebar, under its header
 /// (`SidebarListModel`): a row for each place to work in the project, each

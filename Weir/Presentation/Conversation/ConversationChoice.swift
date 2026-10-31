@@ -2,6 +2,7 @@
 // Weir — one conversation of a worktree, named as the changes panel and the review name it, with what it has left to read.
 
 import Foundation
+import WeirDomain
 
 /// One agent's conversation in a worktree, as every surface that offers a
 /// choice of conversations names it: the changes panel's filter and

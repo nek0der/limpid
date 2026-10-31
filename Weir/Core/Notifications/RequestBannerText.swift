@@ -2,6 +2,7 @@
 // Weir — the words on a request's banner.
 
 import Foundation
+import WeirDomain
 
 /// The title, subtitle, and body of the banner a request posts as it arrives.
 enum RequestBannerText {

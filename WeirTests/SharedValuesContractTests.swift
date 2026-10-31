@@ -8,6 +8,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @MainActor
 @Suite(.disabled(if: !RepoFixture.hasLocalRepo, "the shared fixtures are in the source tree"))

@@ -4,6 +4,7 @@
 // requests made from a stop and the moments a reset passes, which the views redraw at.
 
 import Foundation
+import WeirDomain
 
 /// One notification pending per provider at its usage limit, set for when
 /// the limit resets: for every limit while the person asked for that in

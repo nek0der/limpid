@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 extension PaneRunLedger.Run {
     /// Run `id` in `panes`, in `turn`, `state` (finished unless a test says).

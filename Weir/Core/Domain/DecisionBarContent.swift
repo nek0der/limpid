@@ -8,8 +8,8 @@ import Foundation
 /// on the person, or, right after an item was handled, what became of it
 /// and what ⌘J goes to next. It never answers a request itself: approvals
 /// and questions are answered in the terminal or on the approval card.
-struct DecisionBarContent: Equatable, Sendable {
-    enum Body: Equatable, Sendable {
+package struct DecisionBarContent: Equatable, Sendable {
+    package enum Body: Equatable, Sendable {
         /// Nothing waits on the person: what the agent is doing ("Bash:
         /// swift test"), or that it is idle.
         case summary(SessionRowFact.Fact)
@@ -37,7 +37,7 @@ struct DecisionBarContent: Equatable, Sendable {
     }
 
     /// Where a request is answered, and the time left while Weir holds it.
-    enum AnswerPlace: Equatable, Sendable {
+    package enum AnswerPlace: Equatable, Sendable {
         /// Weir still holds it, as while VoiceOver runs or after a failed
         /// send: the provider's prompt is not on screen, so the card is
         /// where to answer.
@@ -52,7 +52,7 @@ struct DecisionBarContent: Equatable, Sendable {
         case sending
     }
 
-    enum DoneResult: Equatable, Sendable {
+    package enum DoneResult: Equatable, Sendable {
         /// A request handed to the terminal was answered there.
         case answeredInTerminal
         /// A question or permission prompt at the terminal was declined
@@ -71,7 +71,7 @@ struct DecisionBarContent: Equatable, Sendable {
         case restored(RestoreDone)
 
         /// Whether this is the line after the restore `opID`.
-        func restores(_ opID: String) -> Bool {
+        package func restores(_ opID: String) -> Bool {
             if case let .restored(done) = self {
                 done.opID == opID
             } else {
@@ -84,7 +84,7 @@ struct DecisionBarContent: Equatable, Sendable {
         /// waits to be marked viewed. Never over a request, a prompt for
         /// input, or a stop, where Return would answer what is on screen
         /// (`shows(_:over:)`).
-        var showsOverItems: Bool {
+        package var showsOverItems: Bool {
             switch self {
             // The resumed conversation's unread turns come back to the list
             // with it, under the line that says it is back.
@@ -98,14 +98,14 @@ struct DecisionBarContent: Equatable, Sendable {
     /// ("1 / 2"), the order the Needs Attention list has them in, and the
     /// kind of a higher-ranked one the bar is not on ("Approval also
     /// pending"). `nil` while the pane has one item or none.
-    struct Position: Equatable, Sendable {
-        let index: Int
-        let count: Int
-        let higherKind: AlsoPending?
+    package struct Position: Equatable, Sendable {
+        package let index: Int
+        package let count: Int
+        package let higherKind: AlsoPending?
     }
 
     /// Whether a stop can be resumed in its conversation.
-    enum StopResume: Equatable, Sendable {
+    package enum StopResume: Equatable, Sendable {
         /// No session id to resume by, or the agent is still in front of
         /// its terminal, where the person carries on in the TUI.
         case unavailable
@@ -119,7 +119,7 @@ struct DecisionBarContent: Equatable, Sendable {
     }
 
     /// Why a resume is not typed now.
-    enum ResumeBlocker: Equatable, Sendable {
+    package enum ResumeBlocker: Equatable, Sendable {
         /// Something other than the shell is in front: an editor, a pager,
         /// a REPL, ssh, where the resume would be keys to that program.
         case notAtShell
@@ -128,7 +128,7 @@ struct DecisionBarContent: Equatable, Sendable {
         case draft
     }
 
-    enum AlsoPending: Equatable, Sendable {
+    package enum AlsoPending: Equatable, Sendable {
         case approval
         case question
         /// A wait at the agent's prompt we cannot name as either.
@@ -138,10 +138,10 @@ struct DecisionBarContent: Equatable, Sendable {
         case stop
     }
 
-    let body: Body
-    let position: Position?
+    package let body: Body
+    package let position: Position?
     /// The item shown, so a press acts on it and nothing else.
-    let itemID: AttentionItemID?
+    package let itemID: AttentionItemID?
     /// The work the run of the turns shown still has running, as its latest
     /// stop left it, said after their receipt: only beside `unread` and
     /// `lastTurn`, the bodies that say how a turn ended. An unread turn
@@ -149,9 +149,9 @@ struct DecisionBarContent: Equatable, Sendable {
     /// is what the run is doing now. Here rather than in the bar's words so
     /// the rule of where it shows is decided with the body it goes with, and
     /// `DecisionBarModel` only words what it is given.
-    let backgroundWork: BackgroundWork?
+    package let backgroundWork: BackgroundWork?
 
-    init(body: Body, position: Position?, itemID: AttentionItemID?, backgroundWork: BackgroundWork? = nil) {
+    package init(body: Body, position: Position?, itemID: AttentionItemID?, backgroundWork: BackgroundWork? = nil) {
         self.body = body
         self.position = position
         self.itemID = itemID
@@ -159,45 +159,81 @@ struct DecisionBarContent: Equatable, Sendable {
     }
 
     /// What decides the bar of one pane.
-    struct Input: Sendable {
+    package struct Input: Sendable {
         /// The pane's attention items.
-        var items: [AttentionItem] = []
+        package var items: [AttentionItem] = []
         /// The item chosen for this pane, from the bar's count button, the
         /// Needs Attention list, or ⌘J; the highest-ranked otherwise.
-        var selected: AttentionItemID?
+        package var selected: AttentionItemID?
         /// The pane's agent, for its summary at rest.
-        var agent: SessionRowFact.Agent?
+        package var agent: SessionRowFact.Agent?
         /// What each approval's tool does. One not here reads as a tool
         /// that neither changes files nor runs a command: nothing says it
         /// does either.
-        var approvalActions: [ApprovalKey: PromptApproval.Action] = [:]
+        package var approvalActions: [ApprovalKey: PromptApproval.Action] = [:]
         /// What was just handled in this pane, while the bar still says so.
-        var done: Done?
+        package var done: Done?
         /// The agent's latest ended turn, for the bar at rest.
-        var lastTurn: UnreadTurn?
+        package var lastTurn: UnreadTurn?
         /// How each of the pane's stops can be resumed; one not here
         /// cannot.
-        var stopResumes: [AttentionItemID: StopResume] = [:]
+        package var stopResumes: [AttentionItemID: StopResume] = [:]
         /// What the pane's agent left running in the background
         /// (`AgentBadge.backgroundWork`), with the run it belongs to.
-        var backgroundWork: RuntimeBackgroundWork?
+        package var backgroundWork: RuntimeBackgroundWork?
+
+        package init(
+            items: [AttentionItem] = [],
+            selected: AttentionItemID? = nil,
+            agent: SessionRowFact.Agent? = nil,
+            approvalActions: [ApprovalKey: PromptApproval.Action] = [:],
+            done: Done? = nil,
+            lastTurn: UnreadTurn? = nil,
+            stopResumes: [AttentionItemID: StopResume] = [:],
+            backgroundWork: RuntimeBackgroundWork? = nil
+        ) {
+            self.items = items
+            self.selected = selected
+            self.agent = agent
+            self.approvalActions = approvalActions
+            self.done = done
+            self.lastTurn = lastTurn
+            self.stopResumes = stopResumes
+            self.backgroundWork = backgroundWork
+        }
     }
 
     /// The work one runtime left running, named by its id
     /// (`AgentRuntimePresentation.id`) so it is said only beside that run's
     /// turns: a pane can hold more than one run, and its unread items need
     /// not be the run the bar reads the work from.
-    struct RuntimeBackgroundWork: Equatable, Sendable {
-        let runtimeID: String
-        let work: BackgroundWork
+    package struct RuntimeBackgroundWork: Equatable, Sendable {
+        package let runtimeID: String
+        package let work: BackgroundWork
+
+        package init(
+            runtimeID: String,
+            work: BackgroundWork
+        ) {
+            self.runtimeID = runtimeID
+            self.work = work
+        }
     }
 
-    struct Done: Equatable, Sendable {
-        let result: DoneResult
-        let next: AttentionItemID?
+    package struct Done: Equatable, Sendable {
+        package let result: DoneResult
+        package let next: AttentionItemID?
+
+        package init(
+            result: DoneResult,
+            next: AttentionItemID?
+        ) {
+            self.result = result
+            self.next = next
+        }
     }
 
-    static func make(_ input: Input) -> DecisionBarContent {
+    package static func make(_ input: Input) -> DecisionBarContent {
         // A turn that only answered is no item for the bar: opening the pane
         // reads it, and the bar at rest already gives its receipt.
         let arrived = arrivalOrder(input.items.filter { !isAnswerOnly($0) })
@@ -233,7 +269,7 @@ struct DecisionBarContent: Equatable, Sendable {
 
     /// The pane's item after `current` for the count button, in the order
     /// they arrived, wrapping.
-    static func next(after current: AttentionItemID?, in items: [AttentionItem]) -> AttentionItemID? {
+    package static func next(after current: AttentionItemID?, in items: [AttentionItem]) -> AttentionItemID? {
         let arrived = arrivalOrder(items.filter { !isAnswerOnly($0) })
         guard let index = arrived.firstIndex(where: { $0.id == current }) else { return arrived.first?.id }
         return arrived[(index + 1) % arrived.count].id
@@ -242,7 +278,7 @@ struct DecisionBarContent: Equatable, Sendable {
     /// Whether the bar of a pane with `items` takes a "Done" left for it
     /// (by the review tab): with nothing waiting, or one that shows over
     /// what waits.
-    static func takes(_ result: DoneResult, over items: [AttentionItem]) -> Bool {
+    package static func takes(_ result: DoneResult, over items: [AttentionItem]) -> Bool {
         items.isEmpty || shows(result, over: items)
     }
 
@@ -250,7 +286,7 @@ struct DecisionBarContent: Equatable, Sendable {
     /// line), over unread turns only. A request, a prompt for input
     /// (often a permission the terminal asks itself), and a stop each wait
     /// for an answer Return would give.
-    static func shows(_ result: DoneResult, over items: [AttentionItem]) -> Bool {
+    package static func shows(_ result: DoneResult, over items: [AttentionItem]) -> Bool {
         guard result.showsOverItems else { return false }
         return items.allSatisfy { item in
             if case .unread = item.kind {
@@ -341,10 +377,20 @@ struct DecisionBarContent: Equatable, Sendable {
 }
 
 /// A restore the bar's "Done" line names and offers to undo.
-struct RestoreDone: Equatable, Sendable {
-    let opID: String
+package struct RestoreDone: Equatable, Sendable {
+    package let opID: String
     /// The worktree, as the restore's journal names it.
-    let root: String
+    package let root: String
     /// `nil` for a journal from a build that did not name the turn.
-    let turnNumber: Int?
+    package let turnNumber: Int?
+
+    package init(
+        opID: String,
+        root: String,
+        turnNumber: Int?
+    ) {
+        self.opID = opID
+        self.root = root
+        self.turnNumber = turnNumber
+    }
 }

@@ -2,6 +2,7 @@
 // Weir — the notification history by day, then by source, with each source's read rows past the first few folded.
 
 import Foundation
+import WeirDomain
 
 /// Where a notification came from, for the history to gather its rows
 /// under one heading: the pane, and whether the agent in it or its shell

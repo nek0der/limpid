@@ -3,6 +3,7 @@
 
 import Foundation
 import Observation
+import WeirDomain
 
 @MainActor
 @Observable

@@ -10,6 +10,7 @@
 // number (`DockBadge`).
 
 import Foundation
+import WeirDomain
 
 @MainActor
 final class DockBadgeSync {

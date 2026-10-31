@@ -2,6 +2,7 @@
 // Weir — one conversation's section of the changes panel's list grouped by conversation: its heading, fold, cards, and line.
 
 import SwiftUI
+import WeirDomain
 
 /// One conversation's turns in the list grouped by conversation: its
 /// heading, then, while the section is open, its own fold, its cards

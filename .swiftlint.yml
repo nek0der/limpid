@@ -203,29 +203,6 @@ custom_rules:
       the caller, or keep a Core value the UI maps.
     severity: error
 
-  # Domain receives facts as its own small values (ARCHITECTURE.md), so it
-  # never names the stores, settings, or wire types of the Core around it.
-  # A name check of the types that would most tempt a shortcut. The excluded
-  # file predates the rule: it leaves the list when `TurnRetention` takes
-  # the days and turns as its own value instead of `TurnRetentionSettings`,
-  # and its protection takes turn ids instead of `ReviewTurnRange`.
-  domain_names_core_type:
-    name: "Domain names a Core type"
-    regex: '\b(?:TurnRetentionSettings|ReviewTurnRange|AgentIntegrationApprovalWire|PRInfo|WorkspaceSession|SettingsStore|WeirSettings|ApprovalPresentation|AgentRuntimePresentation)\b'
-    included: 'Weir/Core/Domain/'
-    excluded:
-      - 'Weir/Core/Domain/TurnRetention\.swift$'
-    excluded_match_kinds:
-      - comment
-      - comment.mark
-      - comment.url
-      - doccomment
-      - doccomment.field
-    message: >-
-      Domain does not depend on the rest of Core. Take the facts as a
-      Domain value and let the caller build it.
-    severity: error
-
   # US spelling in comments (AGENTS.md §3), which no compiler checks. Code
   # is left alone: an identifier or a label spelled otherwise is an API's
   # name, and one in backticks or after a dot in a comment names it too.

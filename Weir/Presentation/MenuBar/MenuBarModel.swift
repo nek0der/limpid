@@ -2,6 +2,7 @@
 // Weir — the menu bar extra: the Needs Attention rows, and what each lets the person do from there.
 
 import Foundation
+import WeirDomain
 
 /// The menu bar extra's items: the Needs Attention list's rows, in its
 /// order, each with what the menu lets the person do without opening

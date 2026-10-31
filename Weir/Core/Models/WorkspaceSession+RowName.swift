@@ -2,6 +2,7 @@
 // Weir — a project row's name, read from the row, its tabs, and its checkout by the one rule.
 
 import Foundation
+import WeirDomain
 
 extension WorkspaceSession {
     /// The name `container`'s row goes by (`RowName`), in the sidebar and

@@ -14,15 +14,25 @@ import Foundation
 /// We have not yet checked on a real machine whether the CLIs' own hook
 /// timeouts count sleep. If they do, it is the service's clock that has to
 /// change, and this one follows it.
-struct ServiceDeadline: Equatable, Sendable {
-    let deadlineMs: UInt64
-    let serviceNowMs: UInt64
+package struct ServiceDeadline: Equatable, Sendable {
+    package let deadlineMs: UInt64
+    package let serviceNowMs: UInt64
     /// When the reading arrived, on our clock.
-    let receivedAt: SuspendingClock.Instant
+    package let receivedAt: SuspendingClock.Instant
+
+    package init(
+        deadlineMs: UInt64,
+        serviceNowMs: UInt64,
+        receivedAt: SuspendingClock.Instant
+    ) {
+        self.deadlineMs = deadlineMs
+        self.serviceNowMs = serviceNowMs
+        self.receivedAt = receivedAt
+    }
 
     /// Never negative: a passed deadline is zero, and the broker decides
     /// whether a late decision still counts.
-    func remaining(at now: SuspendingClock.Instant) -> Duration {
+    package func remaining(at now: SuspendingClock.Instant) -> Duration {
         let leftAtReceipt = deadlineMs > serviceNowMs ? deadlineMs - serviceNowMs : 0
         let atReceipt = Duration.milliseconds(Int64(clamping: leftAtReceipt))
         let elapsed = receivedAt.duration(to: now)
@@ -36,7 +46,7 @@ struct ServiceDeadline: Equatable, Sendable {
 /// `already_terminal` errors carry only a code and a message, so the store
 /// asks `approval.get` again and maps the answer here rather than guessing
 /// from the error.
-enum BrokerTerminal: Equatable, Sendable {
+package enum BrokerTerminal: Equatable, Sendable {
     case resolved(ApprovalResolution)
     case canceled
     case expired
@@ -49,7 +59,7 @@ enum BrokerTerminal: Equatable, Sendable {
 /// a later tool hook with, and a denial in its own dialog sends no hook at
 /// all. Such a request leaves the ledger when its turn is over instead
 /// (`ApprovalPresentationStore.turnHasEnded`), which is not a transition.
-enum ApprovalEvent: Equatable, Sendable {
+package enum ApprovalEvent: Equatable, Sendable {
     /// The person chose an answer on the card or in the menu bar.
     case userDecided(ApprovalResolution)
     /// The request's pane became visible, so it goes to the TUI.
@@ -73,7 +83,7 @@ enum ApprovalEvent: Equatable, Sendable {
 /// The deadline is not part of the state: it belongs to the request
 /// (`ApprovalFact.deadline`), so it survives a send, a failure, and a hand-off,
 /// and a fresh reading after sleep replaces it without a transition.
-enum ApprovalRequestState: Equatable, Sendable {
+package enum ApprovalRequestState: Equatable, Sendable {
     /// The broker holds it and no one has acted.
     case held
     case sending(ApprovalResolution, since: SuspendingClock.Instant)
@@ -101,7 +111,7 @@ enum ApprovalRequestState: Equatable, Sendable {
     /// approval card and its time left is Weir's to show. Once handed to
     /// the terminal, the provider's own prompt keeps its time, which Weir
     /// cannot read.
-    var isHeldByWeir: Bool {
+    package var isHeldByWeir: Bool {
         switch self {
         case .held, .sending, .sendFailed: true
         case .handedToTerminal, .timedOut, .withdrawn, .unknownResult, .answered: false
@@ -112,7 +122,7 @@ enum ApprovalRequestState: Equatable, Sendable {
     /// nowhere else: handed to it, or left there when Weir's time ran
     /// out. The person answers it at that prompt, and Weir can only take
     /// them to its pane.
-    var isLeftToTerminal: Bool {
+    package var isLeftToTerminal: Bool {
         switch self {
         case .handedToTerminal, .timedOut: true
         case .held, .sending, .sendFailed, .withdrawn, .unknownResult, .answered: false
@@ -121,7 +131,7 @@ enum ApprovalRequestState: Equatable, Sendable {
 
     /// Whether the card or the menu bar may send a decision now. A failed
     /// send can be retried; anything in flight or settled cannot.
-    var acceptsDecision: Bool {
+    package var acceptsDecision: Bool {
         switch self {
         case .held, .sendFailed: true
         case .sending, .handedToTerminal, .timedOut, .withdrawn, .unknownResult, .answered: false
@@ -133,7 +143,7 @@ enum ApprovalRequestState: Equatable, Sendable {
     /// has it. A timed-out, settled, or lost request's banner is taken
     /// back, so Notification Center never offers an answer that cannot be
     /// given.
-    var keepsBanner: Bool {
+    package var keepsBanner: Bool {
         switch self {
         case .held, .sending, .sendFailed, .handedToTerminal: true
         case .timedOut, .withdrawn, .unknownResult, .answered: false
@@ -144,7 +154,7 @@ enum ApprovalRequestState: Equatable, Sendable {
     /// request, one handed to the TUI, and one with an unknown result stay
     /// until the broker settles them or the ledger lets them go with their
     /// turn.
-    var hasLeftTheQueue: Bool {
+    package var hasLeftTheQueue: Bool {
         switch self {
         case .withdrawn, .answered: true
         case .held, .sending, .handedToTerminal, .timedOut, .unknownResult, .sendFailed: false
@@ -161,7 +171,7 @@ enum ApprovalRequestState: Equatable, Sendable {
     /// race. A request whose send failed is open again, but nothing hands it
     /// over by itself: the failure stays for the person to see and retry,
     /// and resending on every change would retry a broken send forever.
-    static func transition(
+    package static func transition(
         _ state: Self,
         _ event: ApprovalEvent,
         now: SuspendingClock.Instant

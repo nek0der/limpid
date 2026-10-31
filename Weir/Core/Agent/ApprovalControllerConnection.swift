@@ -2,6 +2,7 @@
 // Weir — the app's exchanges with the approval service, apart from what it shows.
 
 import Foundation
+import WeirDomain
 
 /// What the controller asks the approval service and how it reads the
 /// answers. Kept out of `ApprovalPresentationStore`, which owns what the app

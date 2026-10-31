@@ -2,6 +2,7 @@
 // Weir — the instruction a turn shows for the prompt it began from.
 
 import Foundation
+import WeirDomain
 
 /// The one place a turn's prompt becomes the words the changes panel, the
 /// review's scope, and a finished turn's notification show for it. A prompt

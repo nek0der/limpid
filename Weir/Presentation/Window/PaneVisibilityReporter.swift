@@ -2,6 +2,7 @@
 // Weir — how a window's pane area says which panes it shows.
 
 import Foundation
+import WeirDomain
 
 /// Applies the set of panes on screen to the terminals, so each one draws
 /// only while it can be seen. Implemented by the surface registry in the

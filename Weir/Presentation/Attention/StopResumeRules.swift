@@ -2,6 +2,7 @@
 // Weir — whether a stop can be resumed or start a new conversation, and what the resume types.
 
 import Foundation
+import WeirDomain
 
 /// When a stop can be resumed in its conversation: it has the
 /// session id to resume by, and the pane is back at its shell's prompt with

@@ -3,6 +3,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 /// The badge every row draws for each agent, and the shell's mark, as
 /// images a menu's items can carry: an AppKit menu draws no SwiftUI view. A

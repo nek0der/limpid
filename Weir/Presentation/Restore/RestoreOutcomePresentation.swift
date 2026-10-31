@@ -2,6 +2,7 @@
 // Weir — what the window does once a restore or its undo ends.
 
 import Foundation
+import WeirDomain
 
 /// What the window does once a restore, or an "Undo Restore", ends,
 /// decided from how it ended and what the app holds then. The outcome

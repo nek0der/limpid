@@ -7,6 +7,7 @@ import AppKit
 import OSLog
 import Sparkle
 import SwiftUI
+import WeirDomain
 
 private let log = Logger.weir("boot")
 

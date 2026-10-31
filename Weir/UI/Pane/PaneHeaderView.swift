@@ -10,6 +10,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 struct PaneHeaderView: View {
     let paneID: UUID

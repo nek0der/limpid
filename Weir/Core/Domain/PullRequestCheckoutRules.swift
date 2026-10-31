@@ -6,22 +6,38 @@ import Foundation
 /// A pull request as the new worktree sheet makes a worktree of it:
 /// its number and title, whether it is still open, and the branch it comes
 /// from, which may be a fork's.
-struct PullRequestHead: Equatable, Hashable, Sendable {
-    let number: Int
-    let title: String
-    let state: PRState
+package struct PullRequestHead: Equatable, Hashable, Sendable {
+    package let number: Int
+    package let title: String
+    package let state: PRState
     /// The branch the request comes from, as the forge names it in the
     /// repository it lives in: a fork's `main` is named `main`.
-    let headBranch: String
+    package let headBranch: String
     /// The commit the forge says the branch is at; `nil` when it did not
     /// say. The fetch is what the worktree starts from either way: the
     /// branch can move between the lookup and the fetch.
-    let headCommit: String?
+    package let headCommit: String?
     /// The fork's owner when the branch lives in a fork; `nil` for a
     /// branch of the repository itself.
-    let forkOwner: String?
+    package let forkOwner: String?
 
-    var isFromFork: Bool {
+    package init(
+        number: Int,
+        title: String,
+        state: PRState,
+        headBranch: String,
+        headCommit: String?,
+        forkOwner: String?
+    ) {
+        self.number = number
+        self.title = title
+        self.state = state
+        self.headBranch = headBranch
+        self.headCommit = headCommit
+        self.forkOwner = forkOwner
+    }
+
+    package var isFromFork: Bool {
         forkOwner != nil
     }
 }
@@ -29,8 +45,8 @@ struct PullRequestHead: Equatable, Hashable, Sendable {
 /// What the typed pull request number reads as: `12`, `#12`, `!12`, or a link to
 /// the request (`…/pull/12`, `…/merge_requests/12`), so a number copied
 /// from either forge's page or a chat works as it is.
-enum PullRequestNumber {
-    static func parse(_ text: String) -> Int? {
+package enum PullRequestNumber {
+    package static func parse(_ text: String) -> Int? {
         var trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if let range = trimmed.range(of: #"/(pull|pulls|merge_requests)/[0-9]+"#, options: .regularExpression) {
             trimmed = String(trimmed[range].split(separator: "/").last ?? "")
@@ -49,7 +65,7 @@ enum PullRequestNumber {
     /// `nil` for a number, or text that is no such link. A link to another
     /// repository's request must not be checked out as this one's of the
     /// same number.
-    static func repository(in text: String) -> String? {
+    package static func repository(in text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let components = URLComponents(string: trimmed), let host = components.host, !host.isEmpty,
               let range = components.path.range(of: #"(/-)?/(pull|pulls|merge_requests)/[0-9]+"#, options: .regularExpression)
@@ -69,7 +85,7 @@ enum PullRequestNumber {
 /// (a fork's `main` meets the local `main`), which a checkout must never
 /// move. Then the branch is `pr/<number>`, and `pr/<number>-2` and on while
 /// those are taken by other commits.
-enum PullRequestBranchChoice: Equatable, Sendable {
+package enum PullRequestBranchChoice: Equatable, Sendable {
     /// A new branch of this name, made at the fetched commit.
     case newBranch(String)
     /// The local branch of this name is at the request's commit already.
@@ -79,7 +95,7 @@ enum PullRequestBranchChoice: Equatable, Sendable {
     case checkedOut(String)
 
     /// The branch's name, whichever it is.
-    var branch: String {
+    package var branch: String {
         switch self {
         case let .newBranch(name), let .existingBranch(name), let .checkedOut(name):
             name
@@ -96,7 +112,7 @@ enum PullRequestBranchChoice: Equatable, Sendable {
     /// `commit` is the request's: the fetched one at Create, the forge's
     /// before it, `nil` when neither is known yet, in which case a branch
     /// of the request's name is never taken to be at it.
-    static func choose(
+    package static func choose(
         for head: PullRequestHead,
         commit: String?,
         localTips: [String: String],

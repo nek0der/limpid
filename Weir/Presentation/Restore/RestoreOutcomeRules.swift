@@ -2,6 +2,7 @@
 // Weir — how a restore ended as the strip and the bar take it, and which turns a restore took back.
 
 import Foundation
+import WeirDomain
 
 /// How a restore ended, as the app answers it.
 enum RestoreEnding: Equatable {

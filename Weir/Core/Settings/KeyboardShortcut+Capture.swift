@@ -8,6 +8,7 @@
 
 import AppKit
 import Carbon.HIToolbox
+import WeirDomain
 
 extension StoredShortcut {
 

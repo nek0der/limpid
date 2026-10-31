@@ -2,6 +2,7 @@
 // Weir — the changes panel's list grouped by conversation: its sections, what each hides, and how far a section's move reaches.
 
 import Foundation
+import WeirDomain
 
 extension ChangesPanelModel {
     /// The rows grouped a section per conversation: the sections in the

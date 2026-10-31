@@ -3,6 +3,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 struct AdvancedPane: View {
     @Environment(SettingsStore.self) private var store
@@ -121,7 +122,7 @@ struct AdvancedPane: View {
                 let saved = store.settings.advanced.turnRetention
                 var proposed = pendingRetention ?? saved
                 proposed[keyPath: field] = value
-                if TurnRetentionCut.isDecrease(from: saved, to: proposed) {
+                if TurnRetentionLimits.isNarrowing(from: saved.limits, to: proposed.limits) {
                     pendingRetention = proposed
                     pendingRemoval = .counting
                 } else {
@@ -149,7 +150,7 @@ struct AdvancedPane: View {
             return
         }
         let saved = store.settings.advanced.turnRetention
-        if TurnRetentionCut.needsConfirmation(from: saved, to: pending, removing: removed) {
+        if TurnRetentionCut.needsConfirmation(from: saved.limits, to: pending.limits, removing: removed) {
             pendingRemoval = .removes(removed)
         } else {
             pendingRetention = nil

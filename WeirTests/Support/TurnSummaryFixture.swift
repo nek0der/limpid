@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 enum TurnSummaryFixture {
     static let conversation = ConversationKey(provider: .claude, conversationID: "s1", isFallback: false)

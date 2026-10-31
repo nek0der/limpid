@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// From the record a hook writes to the tab's badge, through the real rules:
 /// the path a tab takes from the shell glyph to Cl or Cx, whether the agent

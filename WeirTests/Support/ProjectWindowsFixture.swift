@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// Three projects, `a`, `b`, and `c`, opened in that order, so `c` is
 /// the most recent; `a` has two sessions. The primary shows `a` on

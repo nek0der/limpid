@@ -482,6 +482,8 @@ jobs:
         run: scripts/check-localization.sh
       - name: Self-test the translation check (plurals and substitutions included)
         run: scripts/test-check-localization.sh
+      - name: Self-test the check of strings in a static module
+        run: scripts/test-check-module-strings.sh
       - name: Self-test the fixture golden script against the adapters' rules
         run: scripts/test-derive-expected-events.sh
       - name: Self-test that make screenshot shoots the app this checkout built

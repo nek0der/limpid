@@ -5,6 +5,7 @@ import AppKit
 import SwiftUI
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// The review tab chooses a conversation in its one scope menu, which keeps
 /// its place whatever the notes under it say, so a choice never moves the

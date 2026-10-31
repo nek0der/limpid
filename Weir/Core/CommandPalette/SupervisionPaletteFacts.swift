@@ -2,6 +2,7 @@
 // Weir — what the palette knows about the supervision window it opens in.
 
 import Foundation
+import WeirDomain
 
 /// The window the palette opened in, as far as its rows' enabled states
 /// need it: read by the window's own code, since Core cannot name a

@@ -4,6 +4,7 @@
 import CryptoKit
 import Foundation
 import OSLog
+import WeirDomain
 
 private let log = Logger.weir("viewed.refs")
 

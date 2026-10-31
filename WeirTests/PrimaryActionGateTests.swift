@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct PrimaryActionGateTests {
     private static let pane = UUID()

@@ -3,6 +3,7 @@
 
 import Foundation
 import Observation
+import WeirDomain
 
 /// Holds the attention list every window reads, and builds the reducer's
 /// input from what the app knows.

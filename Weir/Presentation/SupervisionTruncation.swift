@@ -2,6 +2,7 @@
 // Weir — the one rule for which end of a line the supervision window gives up when it does not fit.
 
 import Foundation
+import WeirDomain
 
 /// What a line holds, which decides where it is cut when it is too long,
 /// so the same information loses the same part wherever it is shown — a

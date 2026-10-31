@@ -11,7 +11,7 @@ import Foundation
 ///
 /// Plain values only: what a record says, never what a pane or a view
 /// shows.
-enum WorktreeTimeline {
+package enum WorktreeTimeline {
     /// The turns by when each started, as the restore orders turns across
     /// conversations. Two turns started in the same second (the
     /// record keeps seconds) keep the order of their conversations' first
@@ -19,7 +19,7 @@ enum WorktreeTimeline {
     /// readings. A turn whose start cannot be read goes first, where its
     /// place is said to be unknown (`hasStart`). Every turn is kept: the
     /// caller leaves out what it does not list.
-    static func ordered(_ turns: [TurnSummary]) -> [TurnSummary] {
+    package static func ordered(_ turns: [TurnSummary]) -> [TurnSummary] {
         var firstStarts: [ConversationKey: Date] = [:]
         for turn in turns {
             let start = sortStart(turn)
@@ -39,7 +39,7 @@ enum WorktreeTimeline {
     /// The timeline the changes panel lists and the review reads its
     /// ranges from: the turns someone prompted, in order. A record nobody
     /// prompted is no turn.
-    static func listed(_ turns: [TurnSummary]) -> [TurnSummary] {
+    package static func listed(_ turns: [TurnSummary]) -> [TurnSummary] {
         ordered(turns.filter(\.hasPrompt))
     }
 
@@ -49,24 +49,24 @@ enum WorktreeTimeline {
     /// turns it does not hold. Within a conversation the numbers need not
     /// go up: a turn another overtook, or a clock set back, can start
     /// before the one numbered before it, and the timeline puts it first.
-    static func isInOrder(_ turns: [TurnSummary]) -> Bool {
+    package static func isInOrder(_ turns: [TurnSummary]) -> Bool {
         zip(turns, turns.dropFirst()).allSatisfy { sortStart($0) <= sortStart($1) }
     }
 
     /// Whether the record says when the turn started. One that does not
     /// has no known place on the timeline.
-    static func hasStart(_ turn: TurnSummary) -> Bool {
+    package static func hasStart(_ turn: TurnSummary) -> Bool {
         UnreadTurnRules.date(turn.startedAt) != nil
     }
 
     /// When a turn started, `nil` when the record cannot be read.
-    static func startDate(_ turn: TurnSummary) -> Date? {
+    package static func startDate(_ turn: TurnSummary) -> Date? {
         UnreadTurnRules.date(turn.startedAt)
     }
 
     /// When a turn ended, for ordering what ended by when: the record's
     /// time, or its start for a record with none (a turn another overtook).
-    static func endDate(_ turn: TurnSummary) -> Date {
+    package static func endDate(_ turn: TurnSummary) -> Date {
         UnreadTurnRules.date(turn.finishedAt) ?? sortStart(turn)
     }
 
@@ -76,7 +76,7 @@ enum WorktreeTimeline {
     /// time. `nil` when there are none, or when turns of two conversations
     /// ended in the same second at different trees: which of them ended
     /// last is not recorded, and the range is not guessed at.
-    static func lastEnded(_ turns: [TurnSummary]) -> TurnSummary? {
+    package static func lastEnded(_ turns: [TurnSummary]) -> TurnSummary? {
         guard let latest = turns.map(endDate).max() else { return nil }
         let tied = turns.filter { endDate($0) == latest }
         if Set(tied.map(\.conversation)).count == 1 {
@@ -94,7 +94,7 @@ enum WorktreeTimeline {
     /// every conversation's line comes up to it; a conversation with no
     /// turn ended by then keeps its line. The caller moves nothing for a
     /// turn already viewed.
-    static func marksThrough(_ turn: TurnSummary, in timeline: [TurnSummary]) -> [TurnSummary] {
+    package static func marksThrough(_ turn: TurnSummary, in timeline: [TurnSummary]) -> [TurnSummary] {
         let end = endDate(turn)
         var others: [ConversationKey: TurnSummary] = [:]
         for other in timeline
@@ -116,7 +116,7 @@ enum WorktreeTimeline {
     /// unviewed again and every row above keeps its state; a conversation
     /// with no turn from here on keeps its line. The caller moves nothing
     /// for a turn already unviewed.
-    static func unmarksFrom(_ turn: TurnSummary, in timeline: [TurnSummary]) -> [TurnSummary] {
+    package static func unmarksFrom(_ turn: TurnSummary, in timeline: [TurnSummary]) -> [TurnSummary] {
         guard let index = timeline.firstIndex(where: { $0.turnID == turn.turnID }) else { return [turn] }
         var others: [ConversationKey: TurnSummary] = [:]
         for other in timeline[index...] where other.conversation != turn.conversation {
@@ -135,7 +135,7 @@ enum WorktreeTimeline {
     /// row's end (`marksThrough`); for "Mark as Unviewed from Here", another
     /// has a turn its line has passed at or after the row (`unmarksFrom`).
     /// What the move's label and tooltip say.
-    struct OtherLines: Sendable {
+    package struct OtherLines: Sendable {
         /// The conversation whose ended turns not viewed end first, with
         /// that end, and the first such end of any other conversation.
         /// "Another conversation than X has one by then" needs no more:
@@ -149,7 +149,7 @@ enum WorktreeTimeline {
         /// length when each turn is its own conversation).
         private let viewedFrom: [TurnID: ConversationsHolding]
 
-        init(_ timeline: [TurnSummary], isViewed: (TurnSummary) -> Bool) {
+        package init(_ timeline: [TurnSummary], isViewed: (TurnSummary) -> Bool) {
             var ends: [ConversationKey: Date] = [:]
             for turn in timeline where turn.phase != .started && !isViewed(turn) {
                 let end = WorktreeTimeline.endDate(turn)
@@ -169,14 +169,14 @@ enum WorktreeTimeline {
 
         /// Whether "Mark as Viewed up to Here" on `turn` moves another
         /// conversation's line too.
-        func marksOthers(_ turn: TurnSummary) -> Bool {
+        package func marksOthers(_ turn: TurnSummary) -> Bool {
             guard let end = firstUnviewedEnds.earliest(otherThan: turn.conversation) else { return false }
             return end <= WorktreeTimeline.endDate(turn)
         }
 
         /// Whether "Mark as Unviewed from Here" on `turn` moves another
         /// conversation's line too.
-        func unmarksOthers(_ turn: TurnSummary) -> Bool {
+        package func unmarksOthers(_ turn: TurnSummary) -> Bool {
             viewedFrom[turn.turnID]?.hasOther(than: turn.conversation) ?? false
         }
     }
@@ -248,7 +248,7 @@ enum WorktreeTimeline {
     /// it) reads as inside by time alone; within the conversation of
     /// either end, the turns' numbers say which side it is on, as a
     /// conversation runs one turn at a time.
-    static func turns(from first: TurnID, through last: TurnID, in timeline: [TurnSummary]) -> [TurnSummary] {
+    package static func turns(from first: TurnID, through last: TurnID, in timeline: [TurnSummary]) -> [TurnSummary] {
         guard let firstTurn = timeline.first(where: { $0.turnID == first }),
               let lastTurn = timeline.first(where: { $0.turnID == last }),
               let begin = startDate(firstTurn)
@@ -271,12 +271,24 @@ enum WorktreeTimeline {
 
     /// What orders the timeline (`ordered`), in the order compared.
     private struct Key: Comparable {
-        let start: Date
+        package let start: Date
         let conversationStart: Date
-        let conversationID: String
-        let number: Int
+        package let conversationID: String
+        package let number: Int
 
-        static func < (lhs: Self, rhs: Self) -> Bool {
+        package init(
+            start: Date,
+            conversationStart: Date,
+            conversationID: String,
+            number: Int
+        ) {
+            self.start = start
+            self.conversationStart = conversationStart
+            self.conversationID = conversationID
+            self.number = number
+        }
+
+        package static func < (lhs: Self, rhs: Self) -> Bool {
             if lhs.start != rhs.start {
                 return lhs.start < rhs.start
             }

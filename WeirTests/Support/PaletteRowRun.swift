@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 extension CommandPaletteActions {
     /// Runs `action` as committed from `window`'s palette. The ranking it

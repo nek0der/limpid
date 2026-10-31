@@ -13,12 +13,12 @@ import Foundation
 /// person (a question, a stop) must not stay hidden while they point at the
 /// sidebar. The selected row is always among the working rows, so choosing
 /// a row never hides it.
-enum SidebarSectionHold {
+package enum SidebarSectionHold {
     /// The sections to show next. `presented` is what is shown now,
     /// `computed` where each row belongs by what it holds now (every row
     /// listed, and only those), and `isHeld` whether something holds the
     /// shown sections.
-    static func next<Row: Hashable>(
+    package static func next<Row: Hashable>(
         presented: [Row: SidebarSection],
         computed: [Row: SidebarSection],
         isHeld: Bool,

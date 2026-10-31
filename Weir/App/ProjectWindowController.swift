@@ -3,6 +3,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 /// Owns one supervision window: an `NSWindow` whose content is SwiftUI.
 ///

@@ -2,6 +2,7 @@
 // Weir — what the new worktree sheet reads as it opens, its fetch, "Create", and ⌥⌘N's create at once.
 
 import Foundation
+import WeirDomain
 
 /// What the new worktree sheet reads of a project's folder as it opens:
 /// its branches, the base Git names and its remote, what it has checked

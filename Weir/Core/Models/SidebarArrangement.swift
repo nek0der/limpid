@@ -2,6 +2,7 @@
 // Weir — how one window lays its sidebar out: the projects' order, which are folded, and which sections are open.
 
 import Foundation
+import WeirDomain
 
 /// How one window lists its projects: in what order, which headers
 /// are folded, and which of each project's folded sections the person

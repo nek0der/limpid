@@ -3,6 +3,7 @@
 
 import Foundation
 import OSLog
+import WeirDomain
 
 private let scrollbackLog = Logger.weir("scrollback")
 

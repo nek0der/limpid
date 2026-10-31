@@ -7,6 +7,7 @@ import AppKit
 import SwiftUI
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @Suite("Supervision foot bar", .hostsWindows)
 @MainActor

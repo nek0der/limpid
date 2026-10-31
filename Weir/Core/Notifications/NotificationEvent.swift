@@ -2,6 +2,7 @@
 // Weir — what an agent's notification reported, kept as values so the history words it when it is shown.
 
 import Foundation
+import WeirDomain
 
 /// What an agent's notification reported, as values rather than the
 /// banner's sentence: which wait it was and what it named, the turn's

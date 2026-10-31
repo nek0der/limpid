@@ -2,6 +2,7 @@
 // Weir — an agent's badge, its two letters on its color, and the shell's mark.
 
 import SwiftUI
+import WeirDomain
 
 /// One agent, wherever one is named by a mark: a tab, a pane's header, a
 /// card, or a row (`AgentBadgeStrip` for a place with several):

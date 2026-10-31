@@ -2,6 +2,7 @@
 // Weir — what the windows' reviews hold on to across projects: the turn ranges the sweep keeps, and the discards let go of.
 
 import Foundation
+import WeirDomain
 
 extension WindowRegistry {
     /// Lets go of the discards of the worktrees of projects `removed`: a

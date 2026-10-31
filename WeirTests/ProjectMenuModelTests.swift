@@ -5,6 +5,7 @@ import CoreGraphics
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct ProjectMenuModelTests {
     private static func project(_ name: String, path: String? = nil) -> Project {

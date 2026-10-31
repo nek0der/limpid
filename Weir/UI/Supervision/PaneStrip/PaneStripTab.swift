@@ -2,6 +2,7 @@
 // Weir — one tab of the pane strip: its state, its badge, its title, and the marks the tab list shows.
 
 import SwiftUI
+import WeirDomain
 
 /// A tab in the pane strip. The title is the tab list's (a name the
 /// person gave, else the terminal's OSC 2 title, else the process), led by

@@ -2,6 +2,7 @@
 // Weir — the comparisons "Review Scope" offers, from the worktree's turns and each conversation's.
 
 import Foundation
+import WeirDomain
 
 /// The turns below the viewed line, as the first choice offers them.
 enum ReviewUnviewedTurns: Equatable, Sendable {

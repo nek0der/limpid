@@ -2,6 +2,7 @@
 // Weir — what the restore gate is asked about a turn's worktree, and the recovery of restores a quit cut short.
 
 import Foundation
+import WeirDomain
 
 extension AppState {
     /// The turns restores took back and that are not undone, in every

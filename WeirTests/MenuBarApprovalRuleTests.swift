@@ -6,6 +6,7 @@ import Foundation
 import SwiftUI
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct MenuBarApprovalRuleTests {
     private static func offer(

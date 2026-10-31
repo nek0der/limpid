@@ -2,6 +2,7 @@
 // Weir — the moves on a turn's card in the changes panel: the viewed line's and the restore, as glyphs.
 
 import SwiftUI
+import WeirDomain
 
 /// A turn card's moves (`ChangesPanelText.moves`) as glyph buttons where
 /// the card's time stands: the viewed line's move (a check in a circle,

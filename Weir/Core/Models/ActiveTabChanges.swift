@@ -2,6 +2,7 @@
 // Weir — which windows' selections moved since the last look, for their history and unread marks.
 
 import Foundation
+import WeirDomain
 
 /// The windows whose (container, tab) moved since the last look, each with
 /// where it was. `AppState.startActiveTabSync` records each move in that

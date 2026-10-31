@@ -5,6 +5,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct AgentCatalogTests {
     @Test func everyAgent_hasOneEntry_inTheMenusOrder() {

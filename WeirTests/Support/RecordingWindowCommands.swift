@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 /// Takes every command it is handed and remembers it with its window, for
 /// suites about what is asked of which window rather than what the window's

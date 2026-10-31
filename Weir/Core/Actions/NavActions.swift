@@ -2,6 +2,7 @@
 // Weir — tab navigation verbs: ⇧⌘[ ⇧⌘] to cycle, ⌘1…⌘9 for the session's Nth tab.
 
 import Foundation
+import WeirDomain
 
 @MainActor
 enum NavActions {

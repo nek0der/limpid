@@ -6,6 +6,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @MainActor
 enum WorkspaceSessionFixture {

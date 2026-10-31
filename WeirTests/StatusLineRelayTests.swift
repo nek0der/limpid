@@ -9,6 +9,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @Suite(
     "Status line relay",

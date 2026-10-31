@@ -214,12 +214,46 @@ targets:
     dependencies:
       - sdk: Security.framework
 
+  # The rules every layer above tests as plain values, in a module of its own
+  # so the compiler refuses a Domain file that names the rest of the app. Static
+  # so the app embeds and signs nothing more; only the app links it, because a
+  # test bundle that linked it too would hold a second copy of every type.
+  WeirDomain:
+    type: library.static
+    platform: macOS
+    # XcodeGen otherwise adds -ObjC to the app, which forces every Objective-C
+    # member of libghostty's archive in, its imgui macOS backend among them.
+    # This module is Swift only.
+    requiresObjCLinking: false
+    sources:
+      - path: Weir/Core/Domain
+    settings:
+      base:
+        PRODUCT_NAME: WeirDomain
+        SWIFT_PACKAGE_NAME: weir
+        # A static library installs under /usr/local/lib by default, and an
+        # archive holding that is generic, which exportArchive rejects (see
+        # AgentIntegrationService).
+        SKIP_INSTALL: YES
+        # Swift only. The header would land in the shared include folder, where
+        # libghostty's umbrella module warns about any header it does not name.
+        SWIFT_INSTALL_OBJC_HEADER: NO
+        # The check below reads the compiler's output under the build folder.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    postCompileScripts:
+      - name: Check the module's strings are in the catalog
+        script: '"$SRCROOT/scripts/check-module-strings.sh" "$TARGET_TEMP_DIR"'
+        # Never skipped: a catalog edit is as much a reason to check as a
+        # source edit, and the check takes a moment.
+        basedOnDependencyAnalysis: false
+
   Weir:
     type: application
     platform: macOS
     sources:
       - path: Weir
         excludes:
+          - "Core/Domain"
           - "Resources/ghostty"
           - "Resources/terminfo"
           - "Resources/claude-shim"
@@ -375,6 +409,7 @@ targets:
         # name auto-tracks PRODUCT_NAME → "Weir_Dev" and the test
         # target fails to link.
         PRODUCT_MODULE_NAME: Weir
+        SWIFT_PACKAGE_NAME: weir
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: YES
         # Cargo reads its rustup-managed toolchain outside the repository, which
@@ -414,6 +449,7 @@ targets:
         link: false
         copy:
           destination: executables
+      - target: WeirDomain
       - framework: vendor/ghostty/macos/GhosttyKit.xcframework
         embed: false
       - package: Sparkle
@@ -479,6 +515,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.nekoder.WeirTests
         PRODUCT_NAME: WeirTests
         BUNDLE_LOADER: $(TEST_HOST)
+        SWIFT_PACKAGE_NAME: weir
         # Debug builds rename the product to "Weir Dev.app" (see the
         # Debug override on the Weir target). The test host must
         # match — without the per-config split the test bundle would

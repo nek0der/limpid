@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// `WorktreeTimeline.OtherLines` keeps a summary a row rather than every
 /// conversation a row, so these check it gives the answers a reading of

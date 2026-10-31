@@ -2,6 +2,7 @@
 // Weir — the agents a workspace can start, in the order the new worktree sheet lists them, and which are installed.
 
 import Foundation
+import WeirDomain
 
 /// One agent a workspace can start: what the sheet calls it and the
 /// commands it runs as. Its badge is the one every row draws for its

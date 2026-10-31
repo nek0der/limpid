@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// What the catalog suites share: the entries limited to the home folder,
 /// stand-in executables on disk, and the shims in the source tree.

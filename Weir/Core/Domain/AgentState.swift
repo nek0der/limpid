@@ -11,7 +11,7 @@
 
 import Foundation
 
-enum AgentState: String, Codable, Equatable, CaseIterable {
+package enum AgentState: String, Codable, Equatable, CaseIterable {
     /// Initial / SessionEnd / unobserved: no hook has said what the run is
     /// doing.
     case unknown
@@ -38,7 +38,7 @@ enum AgentState: String, Codable, Equatable, CaseIterable {
     case finished
 }
 
-extension AgentState {
+package extension AgentState {
     /// Whether the run is in a turn: working, compacting, or waiting on the
     /// person to answer before it goes on. The one meaning of "an agent is
     /// at work" every place that waits on one reads: an approval card's

@@ -6,32 +6,32 @@ import Foundation
 /// The limits turn records are kept within: a turn started longer ago
 /// than `maxAgeSeconds`, or past the newest `maxPerConversation` of its
 /// conversation, goes with its refs, unless it is protected.
-struct TurnRetentionLimits: Equatable, Sendable {
-    var maxAgeSeconds: Int
-    var maxPerConversation: Int
+package struct TurnRetentionLimits: Equatable, Sendable {
+    package var maxAgeSeconds: Int
+    package var maxPerConversation: Int
     /// Past this many bytes of turn snapshots in one repository, the
     /// oldest turns that may go, go too.
-    var maxRepositoryBytes: Int? = 500 * 1024 * 1024
+    package var maxRepositoryBytes: Int? = 500 * 1024 * 1024
     /// Past this many turns kept in all, the oldest go, unread ones last:
     /// each costs about a kilobyte in every pass, and a pass past the
     /// bridge's 16 MB never runs.
-    var maxTurns: Int? = 8000
+    package var maxTurns: Int? = 8000
 
     /// The days a turn is kept and the turns a conversation keeps until the
     /// person sets their own (`TurnRetentionSettings`).
-    static let standardDays = 14
-    static let standardTurns = 200
+    package static let standardDays = 14
+    package static let standardTurns = 200
 
     /// 14 days or 200 turns, whichever comes first, 500 MB a repository,
     /// and 8,000 turns in all.
-    static let standard = TurnRetentionLimits(
+    package static let standard = TurnRetentionLimits(
         maxAgeSeconds: standardDays * 24 * 60 * 60,
         maxPerConversation: standardTurns
     )
 
     /// Whether going from `old` to `new` keeps fewer turns by its age or
     /// its count limit.
-    static func isNarrowing(from old: TurnRetentionLimits, to new: TurnRetentionLimits) -> Bool {
+    package static func isNarrowing(from old: TurnRetentionLimits, to new: TurnRetentionLimits) -> Bool {
         new.maxAgeSeconds < old.maxAgeSeconds || new.maxPerConversation < old.maxPerConversation
     }
 }
@@ -43,19 +43,15 @@ struct TurnRetentionLimits: Equatable, Sendable {
 /// nothing yet, is saved as it is made. How many a change deletes is the
 /// sweep's to say (`AgentProjectionAdapter.turnsTaken`), so the number asked
 /// with is the one it deletes.
-enum TurnRetentionCut {
-    /// Whether going from `old` to `new` asks first: only a decrease, and
+package enum TurnRetentionCut {
+    /// Whether going from `old` to `new` asks first: only a narrowing, and
     /// only when it would delete a record now.
-    static func needsConfirmation(
-        from old: TurnRetentionSettings,
-        to new: TurnRetentionSettings,
+    package static func needsConfirmation(
+        from old: TurnRetentionLimits,
+        to new: TurnRetentionLimits,
         removing count: Int
     ) -> Bool {
-        isDecrease(from: old, to: new) && count > 0
-    }
-
-    static func isDecrease(from old: TurnRetentionSettings, to new: TurnRetentionSettings) -> Bool {
-        new.days < old.days || new.turns < old.turns
+        TurnRetentionLimits.isNarrowing(from: old, to: new) && count > 0
     }
 }
 
@@ -63,22 +59,22 @@ enum TurnRetentionCut {
 /// different limits, as its own comment says: a held turn no limit takes,
 /// while an unread one is spared the age and size limits, not the count
 /// limits.
-struct TurnProtection: Equatable, Sendable {
+package struct TurnProtection: Equatable, Sendable {
     /// Unread turns whose session is open: spared the age and size limits
     /// until read, not the count limits, and holding back nothing after
     /// them.
-    var protectedTurnIDs: Set<TurnID>
+    package var protectedTurnIDs: Set<TurnID>
     /// Turns held for now: in a range a review has open or keeps comments
     /// for, or read a moment ago. Kept, and no later turn of their worktree
     /// goes while they are.
-    var heldTurnIDs: Set<TurnID> = []
+    package var heldTurnIDs: Set<TurnID> = []
     /// Conversations shown in a pane now: their latest turns stay whatever
     /// their age.
-    var shownConversations: Set<ConversationKey>
+    package var shownConversations: Set<ConversationKey>
 
     /// Unread turns of open sessions past `unreadLimit`, which the limits
     /// may take in spite of being unread (`of`); for the log.
-    var unreadPastAge = 0
+    package var unreadPastAge = 0
 
     /// How long a turn just read stays protected: the toast's Undo can put
     /// it back to unread, and it must still be there to be read again.
@@ -90,22 +86,42 @@ struct TurnProtection: Equatable, Sendable {
     static let unreadLimit: TimeInterval = 90 * 24 * 60 * 60
 
     /// What the host knows that protects turns.
-    struct Sources {
+    package struct Sources {
         /// Whether a pass has reported the turns (`TurnHistory.hasLoaded`).
-        var hasLoaded: Bool
-        var history: [ConversationKey: [TurnSummary]]
+        package var hasLoaded: Bool
+        package var history: [ConversationKey: [TurnSummary]]
         /// Past the viewed line, or seen in its pane.
-        var isRead: (TurnSummary) -> Bool
+        package var isRead: (TurnSummary) -> Bool
         /// When a turn was marked read by being seen.
-        var readAt: (TurnID) -> Date? = { _ in nil }
+        package var readAt: (TurnID) -> Date? = { _ in nil }
         /// When a conversation's viewed line last moved.
-        var lineMovedAt: (ConversationKey) -> Date? = { _ in nil }
-        /// The ranges reviews have open or keep comments for.
-        var ranges: [ReviewTurnRange] = []
-        var shownConversations: Set<ConversationKey> = []
+        package var lineMovedAt: (ConversationKey) -> Date? = { _ in nil }
+        /// The turns of the ranges reviews have open or keep comments for.
+        package var rangeTurnIDs: Set<TurnID> = []
+        package var shownConversations: Set<ConversationKey> = []
         /// The panes the session's tabs hold, upper-cased: a turn's session
         /// is open while its pane is, whether its agent still runs or not.
-        var openPanes: Set<String> = []
+        package var openPanes: Set<String> = []
+
+        package init(
+            hasLoaded: Bool,
+            history: [ConversationKey: [TurnSummary]],
+            isRead: @escaping (TurnSummary) -> Bool,
+            readAt: @escaping (TurnID) -> Date? = { _ in nil },
+            lineMovedAt: @escaping (ConversationKey) -> Date? = { _ in nil },
+            rangeTurnIDs: Set<TurnID> = [],
+            shownConversations: Set<ConversationKey> = [],
+            openPanes: Set<String> = []
+        ) {
+            self.hasLoaded = hasLoaded
+            self.history = history
+            self.isRead = isRead
+            self.readAt = readAt
+            self.lineMovedAt = lineMovedAt
+            self.rangeTurnIDs = rangeTurnIDs
+            self.shownConversations = shownConversations
+            self.openPanes = openPanes
+        }
     }
 
     /// What protects turns now, or `nil` before a pass has reported the
@@ -118,11 +134,11 @@ struct TurnProtection: Equatable, Sendable {
     /// Held: the turns of the open ranges, and one read within `readGrace`
     /// (by being seen, or by its conversation's line moving). A turn still
     /// running is held by the rules themselves.
-    static func of(_ sources: Sources, now: Date) -> TurnProtection? {
+    package static func of(_ sources: Sources, now: Date) -> TurnProtection? {
         guard sources.hasLoaded else { return nil }
         let isRecent = { (date: Date?) in date.map { now.timeIntervalSince($0) < readGrace } ?? false }
         var protected: Set<TurnID> = []
-        var held = Set(sources.ranges.flatMap(\.turnIDs))
+        var held = sources.rangeTurnIDs
         var unreadPastAge = 0
         for (conversation, turns) in sources.history {
             let isLineRecent = isRecent(sources.lineMovedAt(conversation))
@@ -159,7 +175,7 @@ struct TurnProtection: Equatable, Sendable {
     /// turns still being deleted or not deleted after all, which a pass may
     /// have missed only while their records were moved aside. One a turn's
     /// conversation was never known for is left alone.
-    static func conversationsEmptied(
+    package static func conversationsEmptied(
         by gone: [TurnID: ConversationKey?],
         remaining: Set<ConversationKey>,
         history: [ConversationKey: [TurnSummary]]

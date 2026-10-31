@@ -2,6 +2,7 @@
 // Weir — the per-pane state a pane carries when it moves to another tab.
 
 import Foundation
+import WeirDomain
 
 extension Tab {
     /// This is the state a tab holds for one pane that goes with the pane

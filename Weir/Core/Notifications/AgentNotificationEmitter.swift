@@ -6,6 +6,7 @@
 // the container is called, and how the entry is filed.
 
 import Foundation
+import WeirDomain
 
 @MainActor
 struct AgentNotificationEmitter {

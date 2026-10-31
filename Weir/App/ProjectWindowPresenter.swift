@@ -4,6 +4,7 @@
 import AppKit
 import OSLog
 import SwiftUI
+import WeirDomain
 
 private let log = Logger.weir("window.presenter")
 

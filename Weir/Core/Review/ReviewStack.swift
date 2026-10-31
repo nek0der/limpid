@@ -2,6 +2,7 @@
 // Weir — every file of the review tab's range as one row list, file under file.
 
 import Foundation
+import WeirDomain
 
 /// What a file's header in the stacked diff says about how it changed.
 enum ReviewFileMark: Hashable, Sendable, CaseIterable {

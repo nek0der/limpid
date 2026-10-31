@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// Each selection names why it is made. Only the person's choice
 /// takes the scratch tabs to a window; a window moved because what it

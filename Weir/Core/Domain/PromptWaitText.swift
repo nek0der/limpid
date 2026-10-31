@@ -7,11 +7,11 @@ import Foundation
 /// the notification history in Core say a wait as the session row, the
 /// Needs Attention list, and the decision bar in Presentation do, without
 /// Core reaching up for it.
-enum PromptWaitText {
+package enum PromptWaitText {
     /// An approval and a question as held ones read ("Waiting for approval:
     /// notes.txt", "Question: Which color?"), a sign-in as one, and any other
     /// wait as one for a response, with the agent's words when it gave any.
-    static func line(_ wait: PromptWait) -> LocalizedStringResource {
+    package static func line(_ wait: PromptWait) -> LocalizedStringResource {
         switch wait {
         case let .approval(approval):
             approval.fact.map {

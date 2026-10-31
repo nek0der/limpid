@@ -6,6 +6,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @Suite("NotificationReadSync", .timeLimit(.minutes(1)))
 @MainActor

@@ -2,6 +2,7 @@
 // Weir — "Mark as Viewed" and its Undo, from the decision bar's button or ⌘⏎.
 
 import Foundation
+import WeirDomain
 
 /// What marking a pane's turns viewed does, and how it is taken back.
 ///

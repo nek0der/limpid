@@ -5,6 +5,7 @@ import Foundation
 import Synchronization
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// Esc at Claude's question sends no hook, so the run record keeps saying the
 /// run waits, and Esc or Ctrl+C while it works sends none either, so the

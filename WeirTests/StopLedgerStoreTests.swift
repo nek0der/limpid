@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// The stops kept across launches (`StopLedgerStore`). The ledger's own
 /// rules are in `StopLedgerTests`; here what the store adds: the file, and

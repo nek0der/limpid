@@ -2,6 +2,7 @@
 // Weir — a tab or pane moved to a sidebar row of any project: which rows take it, and the move.
 
 import Foundation
+import WeirDomain
 
 @MainActor
 extension TabActions {

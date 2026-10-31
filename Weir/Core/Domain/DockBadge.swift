@@ -4,7 +4,7 @@
 import Foundation
 
 /// The Dock icon's badge.
-enum DockBadge: Equatable, Sendable {
+package enum DockBadge: Equatable, Sendable {
     case none
     /// The attention count, the same number as "Needs attention n"
     /// everywhere else.
@@ -16,7 +16,7 @@ enum DockBadge: Equatable, Sendable {
 
     /// The badge for `attentionCount` items, with `hasOtherNews` when a
     /// non-agent notification or a bell is waiting.
-    static func badge(attentionCount: Int, hasOtherNews: Bool) -> Self {
+    package static func badge(attentionCount: Int, hasOtherNews: Bool) -> Self {
         if attentionCount > 0 {
             return .count(attentionCount)
         }
@@ -24,7 +24,7 @@ enum DockBadge: Equatable, Sendable {
     }
 
     /// The text AppKit puts in the badge; `nil` clears it.
-    var label: String? {
+    package var label: String? {
         switch self {
         case .none: nil
         case let .count(count): String(count)

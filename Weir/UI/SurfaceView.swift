@@ -5,6 +5,7 @@
 import AppKit
 import GhosttyKit
 import OSLog
+import WeirDomain
 
 private let log = Logger.weir("surface.view")
 

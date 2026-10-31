@@ -8,6 +8,7 @@
 // must not prompt.
 
 import Foundation
+import WeirDomain
 
 @MainActor
 enum CloseConfirmer {

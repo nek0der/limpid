@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 extension ApprovalControllerConnection.Projection {
     /// A projection listing `pending`, with how the tracked requests that

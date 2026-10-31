@@ -2,6 +2,7 @@
 // Weir — hides a worktree's sidebar row at once and offers Undo.
 
 import SwiftUI
+import WeirDomain
 
 /// Hide Worktree: the row goes at once (the sidebar feels responsive) and
 /// a toast carries Undo, which shows it again; after 5 s the toast leaves

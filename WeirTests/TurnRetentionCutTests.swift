@@ -4,14 +4,15 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct TurnRetentionCutTests {
-    private let saved = TurnRetentionSettings(days: 14, turns: 200)
+    private let saved = TurnRetentionSettings(days: 14, turns: 200).limits
 
     @Test func onlyADecreaseThatDeletesRecords_needsConfirmation() {
-        let fewerDays = TurnRetentionSettings(days: 7, turns: 200)
-        let fewerTurns = TurnRetentionSettings(days: 14, turns: 100)
-        let wider = TurnRetentionSettings(days: 30, turns: 300)
+        let fewerDays = TurnRetentionSettings(days: 7, turns: 200).limits
+        let fewerTurns = TurnRetentionSettings(days: 14, turns: 100).limits
+        let wider = TurnRetentionSettings(days: 30, turns: 300).limits
 
         #expect(TurnRetentionCut.needsConfirmation(from: saved, to: fewerDays, removing: 3))
         #expect(TurnRetentionCut.needsConfirmation(from: saved, to: fewerTurns, removing: 1))
@@ -21,7 +22,7 @@ struct TurnRetentionCutTests {
         // A narrower one that deletes nothing yet is saved as it is made.
         #expect(!TurnRetentionCut.needsConfirmation(from: saved, to: fewerDays, removing: 0))
         // One number down and the other up is still a decrease.
-        let mixed = TurnRetentionSettings(days: 7, turns: 300)
+        let mixed = TurnRetentionSettings(days: 7, turns: 300).limits
         #expect(TurnRetentionCut.needsConfirmation(from: saved, to: mixed, removing: 2))
     }
 }

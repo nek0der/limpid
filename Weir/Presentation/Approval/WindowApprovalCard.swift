@@ -2,6 +2,7 @@
 // Weir — one window's approval card: which request it shows, where it was opened from, and its rows' frames.
 
 import Foundation
+import WeirDomain
 
 /// What one window's approval card shows. Each window has its own
 /// card, the rows it points from, and keyboard focus; the requests, their

@@ -2,6 +2,7 @@
 // Weir — a turn's receipt in words: its number, what it changed, and its last check.
 
 import Foundation
+import WeirDomain
 
 /// The receipt of one turn or a run of turns: "T7 · 2 files +94 −2 ·
 /// ✓ Tests (filtered)". Only the three facts a decision needs; the time,

@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 /// What a store's injected `decisionSender` was called with, so a test can
 /// observe what would have crossed the XPC boundary. `next()` counts a call
