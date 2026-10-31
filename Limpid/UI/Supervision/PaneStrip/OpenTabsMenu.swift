@@ -282,13 +282,11 @@ private struct OpenTabsRow: View {
 
     @ViewBuilder private var badge: some View {
         if let item = row.item {
-            // The bar before the badge, as the tab in the strip draws it.
-            ConversationIdentityLead(identity: item.identity) {
-                PaneStripTabBadge(agent: item.agent, state: item.stateGlyph)
-            }
+            // The bar before each badge, as the tab in the strip draws them.
+            PaneStripTabBadges(item: item)
         } else {
             // The review's own symbol, as its tab in the strip draws it, in
-            // a badge's box so the titles line up.
+            // a badge's box, so it lines up with a row of one badge.
             Image(systemName: ReviewPresentation.symbol)
                 .font(.supervision(.row, weight: .medium))
                 .foregroundStyle(SupervisionTokens.muted.color)
@@ -309,10 +307,6 @@ private struct OpenTabsRow: View {
     }
 
     private var detailColor: Color {
-        switch row.item?.stateGlyph {
-        case .needsAnswer?, .needsApproval?, .needsResponse?, .needsSignIn?: SupervisionTokens.waitingText.color
-        case .stopped?: SupervisionTokens.stoppedText.color
-        default: SupervisionTokens.muted.color
-        }
+        (row.item?.stateGlyph).textColor
     }
 }

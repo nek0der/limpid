@@ -35,7 +35,7 @@ struct AttentionEffectPerformer {
         // The language picked in Settings, which can differ from the one
         // the process launched with.
         let locale = state.settingsStore.appLocale
-        let tabTitle = item.subject.paneID.flatMap { state.session.tab(containing: $0) }?.displayTitle
+        let tabTitle = item.subject.paneID.flatMap { state.session.tab(containing: $0) }?.shownTitle
         AccessibilityNotification.Announcement(Self.announcement(of: item.kind, tabTitle: tabTitle, locale: locale)).post()
     }
 

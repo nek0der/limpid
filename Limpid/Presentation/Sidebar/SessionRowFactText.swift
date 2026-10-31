@@ -172,7 +172,7 @@ enum SessionRowFactText {
 
     /// Returns what VoiceOver reads for a row: its state, name, the checkout
     /// a labeled row shows ("Branch feat/login"), and project, then its
-    /// fact, the pull request its mark shows, its agent, and the time since
+    /// fact, the pull request its mark shows, its agents, and the time since
     /// it last moved. The request is read where the second line states it,
     /// and after the fact on a row whose line says something else (a stop,
     /// a wait), whose mark still shows it. A fact the line drops for the
@@ -212,7 +212,7 @@ enum SessionRowFactText {
         }
         // A shell's state is already "Shell"; its agent would say it again.
         if row.fact.glyph != .shell {
-            parts.append(agentName(row.fact.badge, locale: locale))
+            parts += row.agentKinds.map { agentName(.agent($0), locale: locale) }
         }
         // The chip carries the limit only on screen; a row held by another
         // agent's limit says so nowhere else.
@@ -325,6 +325,32 @@ enum SessionRowFactText {
     /// The chip as VoiceOver and the tooltip say it: the limit in full.
     static func usageLimitSpoken(_ limits: [UsageLimit], locale: Locale, now: Date) -> String? {
         UsageLimit.holding(limits, at: now).map { StopReasonText.usageLimit($0, locale: locale, now: now) }
+    }
+
+    /// A row's line (`make(_:locale:)`), which names the agent it is about
+    /// while the row has more than one kind ("Codex · Needs approval"): the
+    /// badges beside it say who is there, not whose line this is. A Git fact
+    /// is the folder's, whoever runs in it, and names none.
+    static func make(_ row: SessionRowFact, agentKinds: [AgentKind], locale: Locale) -> String {
+        let text = make(row.fact, locale: locale)
+        guard agentKinds.count > 1, case .agent = row.badge else { return text }
+        switch row.fact {
+        case .question, .approval, .prompt, .stopped, .unread, .running, .compacting, .workingAfterTurn:
+            return AgentStatusText.joined([agentName(row.badge, locale: locale), text], locale: locale)
+        case .pullRequest, .uncommitted, .commits, .noChanges, .idle, .unknown:
+            return text
+        }
+    }
+
+    /// One line per agent, as one text ("Claude · Running / Codex · Idle"). A
+    /// slash between them, as a line may hold a dot of its own.
+    static func agentList(_ lines: [String], locale: Locale) -> String {
+        lines.dropFirst().reduce(lines.first ?? "") { text, line in
+            LocalizedStringResource(
+                "\(text) / \(line)",
+                comment: "A row's tooltip and an Open Tabs line: separates one agent's words from the next"
+            ).resolved(in: locale)
+        }
     }
 
     /// The agent's name in full, for VoiceOver and the tooltip.

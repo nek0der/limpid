@@ -121,20 +121,13 @@ struct SessionHeaderView: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// The exception chips, then the Git ones, then the folded sidebar's,
-    /// which says something about the window rather than the session.
+    /// The exception chips, then the Git ones.
     private func chipTexts(_ model: SessionHeaderModel, cacheMark: PromptCacheMark?) -> [HeaderChipText] {
         let cache = cacheMark.map { [HeaderChipText(source: .promptCache, text: $0.chipTitle.resolved(in: locale))] } ?? []
-        // The sidebar went away without the person asking: the header says
-        // why, until the panel closes and it comes back.
-        let selection = window.selection
-        let folded = window.isSidebarFoldedForChanges(isPresented: selection.isChangesPanelPresented) && !selection.sidebarHidden
-            ? [HeaderChipText(source: .sidebarFolded, text: ChangesPanelText.sidebarFolded(locale: locale))]
-            : []
         let git = model.gitChips.map { chip in
             HeaderChipText(source: chip.kind == .pullRequest ? .pullRequest : .git, text: chip.text)
         }
-        return cache + git + folded
+        return cache + git
     }
 
     @ViewBuilder
@@ -159,8 +152,6 @@ struct SessionHeaderView: View {
             }
         case .git:
             SupervisionChip(text: Text(verbatim: chip.text))
-        case .sidebarFolded:
-            SupervisionChip(text: Text(verbatim: chip.text), systemImage: "sidebar.left")
         }
     }
 
@@ -232,14 +223,12 @@ private struct PullRequestChip: View {
     }
 }
 
-/// One chip in display order: the exception chips, the Git ones, and the
-/// folded sidebar's.
+/// One chip in display order: the exception chips, then the Git ones.
 private struct HeaderChipText {
     enum Source {
         case promptCache
         case pullRequest
         case git
-        case sidebarFolded
     }
 
     let source: Source
@@ -248,15 +237,12 @@ private struct HeaderChipText {
     var kind: HeaderChipOverflow.Kind {
         switch source {
         case .pullRequest, .git: .git
-        case .promptCache, .sidebarFolded: .exception
+        case .promptCache: .exception
         }
     }
 
-    /// The clock and the folded sidebar carry a symbol before their words.
+    /// The clock carries a symbol before its words.
     var hasIcon: Bool {
-        switch source {
-        case .promptCache, .sidebarFolded: true
-        case .pullRequest, .git: false
-        }
+        source == .promptCache
     }
 }

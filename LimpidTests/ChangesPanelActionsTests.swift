@@ -546,7 +546,7 @@ struct ChangesPanelActionsTests {
         #expect(colors(list.conversations) == expected)
         #expect(colors(rail.agents) == expected)
         #expect(colors(review.named) == expected)
-        #expect(strip.items.map(\.identity) == [0, 1])
+        #expect(strip.items.map { $0.agents.first?.identities } == [[0], [1]])
         #expect(store.derivationCount == 1, "every surface read the one cached map")
 
         fixture.attention.replaceRuntimes([a.runtime], kind: .claude)

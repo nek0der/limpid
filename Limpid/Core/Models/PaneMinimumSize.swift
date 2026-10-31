@@ -2,8 +2,8 @@
 // Limpid — the smallest width and height a pane in a split may take.
 //
 // One floor per axis. A split pane carries a header, which takes
-// height from the terminal and needs a width of its own to keep its glyph
-// and menu, so the two axes do not share a floor.
+// height from the terminal and needs a width of its own to keep its kind's
+// mark and menu, so the two axes do not share a floor.
 
 import CoreGraphics
 
@@ -50,7 +50,7 @@ struct PaneMinimumSize: Equatable {
     /// on top, so a header never eats into the rows the user asked for. The
     /// width needs no adjustment: `TerminalSettings.minPaneSizeRange`
     /// starts at the header's narrowest form, so any minimum the user can
-    /// pick already leaves room for its glyph and menu.
+    /// pick already leaves room for its kind's mark and menu.
     static func resolved(
         minPaneSize: Double,
         headerHeight: CGFloat = PaneHeaderMetrics.height

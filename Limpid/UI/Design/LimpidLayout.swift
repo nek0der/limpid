@@ -137,15 +137,14 @@ enum LimpidLayout {
     static let paneHeaderHeight = PaneHeaderMetrics.height
     static let paneHeaderHorizontalPadding = PaneHeaderMetrics.horizontalPadding
     static let paneHeaderItemSpacing = PaneHeaderMetrics.itemSpacing
-    static let paneHeaderGlyphSlot = PaneHeaderMetrics.glyphSlot
     static let paneHeaderMenuSlot = PaneHeaderMetrics.menuSlot
     static let paneHeaderWarningSlot = PaneHeaderMetrics.warningSlot
 
     /// The header's type, sized to fit one line in `paneHeaderHeight`: the
-    /// kind glyph, the pane's name, and the directory beside it, which is a
+    /// warning's symbol, the pane's name, and the directory beside it, which is a
     /// step smaller so the name leads. The "⋯" menu glyph matches the
     /// directory.
-    static let paneHeaderGlyphFontSize = LimpidFont.Supervision.Size.micro
+    static let paneHeaderWarningFontSize = LimpidFont.Supervision.Size.micro
     static let paneHeaderNameFontSize = LimpidFont.Supervision.Size.meta
     static let paneHeaderDetailFontSize = LimpidFont.Supervision.Size.caption
     static let paneHeaderMenuFontSize = LimpidFont.Supervision.Size.caption
@@ -659,6 +658,9 @@ enum LimpidLayout {
         static let agentBadgeWidth: CGFloat = 18
         static let agentBadgeHeight: CGFloat = 16
         static let agentBadgeLargeHeight: CGFloat = 18
+        /// Between the badges of two kinds of agent: enough that a tab's
+        /// state mark, which hangs off a badge's corner, clears the next.
+        static let agentBadgeSpacing: CGFloat = 5
         /// A conversation's identity bar (`ConversationIdentityBar`): thin
         /// beside its badge, a little shorter than the badge so it reads as
         /// a mark on the badge's line rather than a rule of the row, and
@@ -667,6 +669,8 @@ enum LimpidLayout {
         static let conversationIdentityBarHeight: CGFloat = 14
         static let conversationIdentityBarHeadingHeight: CGFloat = 16
         static let conversationIdentityBarCornerRadius: CGFloat = 1.5
+        /// As many colors as can be told apart in the bar's height.
+        static let conversationIdentityBarSegmentLimit = 3
         /// Between the bar and the badge after it, the same wherever the
         /// two stand.
         static let conversationIdentityBarSpacing = spaceXS

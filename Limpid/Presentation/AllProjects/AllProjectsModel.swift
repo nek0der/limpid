@@ -77,14 +77,10 @@ struct AllProjectsModel: Equatable {
         /// What the session does now: the row's fact, in words.
         let factText: String
         let chips: [SessionHeaderModel.GitChip]
-        /// The agent the card speaks for, as its row's badge shows it, and
-        /// the badge's words ("Cl"). A session with more than one agent
-        /// shows the one the card speaks for here too: the badge is
-        /// the card's one mark of its agent, as it is the row's.
-        let badge: SessionRowFact.Badge
-        let badgeText: String
-        /// What the badge says to VoiceOver (`badgeSpokenName(...)`).
-        let badgeSpokenName: String
+        /// Each kind of agent in the session, as its row's badges show them.
+        let agentKinds: [AgentKind]
+        /// What the badges say to VoiceOver (`badgesSpokenName(...)`).
+        let badgesSpokenName: String
         let windowNote: WindowNote?
         let action: Action?
         /// What opening the card goes to: the item it shows, else its
@@ -92,6 +88,9 @@ struct AllProjectsModel: Equatable {
         let leadItemID: AttentionItemID?
         /// The pane the card's last lines are read from.
         let leadPaneID: UUID?
+        /// What names that pane, above its lines, while the session has
+        /// several agent panes they could be from; `nil` otherwise.
+        var leadPaneName: String?
         /// Where `factText` is cut, as its row's fact is
         /// (`SupervisionTruncation.fact`).
         let factTruncation: SupervisionTruncation

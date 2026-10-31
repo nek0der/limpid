@@ -130,7 +130,7 @@ struct PaneHeaderTests {
     @Test func label_customNameWinsOverEverything() {
         let label = PaneHeaderRules.label(
             customName: "server",
-            agent: PaneHeaderAgent(providerName: "Claude", title: "Fix the build"),
+            agent: PaneHeaderAgent(kind: .claude, providerName: "Claude", title: "Fix the build"),
             workingDirectory: "/tmp/project",
             fallbackName: "Terminal"
         )
@@ -143,7 +143,7 @@ struct PaneHeaderTests {
     @Test func label_agentTitleWinsOverDirectory() {
         let label = PaneHeaderRules.label(
             customName: nil,
-            agent: PaneHeaderAgent(providerName: "Codex", title: "Fix the build"),
+            agent: PaneHeaderAgent(kind: .codex, providerName: "Codex", title: "Fix the build"),
             workingDirectory: "/tmp/project",
             fallbackName: "Terminal"
         )
@@ -155,7 +155,7 @@ struct PaneHeaderTests {
     @Test func label_agentWithoutTitle_fallsToDirectoryName() {
         let label = PaneHeaderRules.label(
             customName: nil,
-            agent: PaneHeaderAgent(providerName: "Claude", title: nil),
+            agent: PaneHeaderAgent(kind: .claude, providerName: "Claude", title: nil),
             workingDirectory: "/tmp/project",
             fallbackName: "Terminal"
         )
@@ -167,7 +167,7 @@ struct PaneHeaderTests {
     @Test func label_carriesTheAgentsModelAndMode() {
         let label = PaneHeaderRules.label(
             customName: nil,
-            agent: PaneHeaderAgent(providerName: "Claude", title: "Fix", model: " Opus 5.5 ", permissionMode: .plan),
+            agent: PaneHeaderAgent(kind: .claude, providerName: "Claude", title: "Fix", model: " Opus 5.5 ", permissionMode: .plan),
             workingDirectory: "/tmp/project",
             fallbackName: "Terminal"
         )
@@ -190,7 +190,7 @@ struct PaneHeaderTests {
         (nil, nil, nil)
     ] as [Self.SettingsCase])
     func settingsText_namesTheModelAndAnyModeButTheDefault(model: String?, mode: AgentPermissionMode?, text: String?) {
-        let label = PaneHeaderLabel(name: "x", detail: nil, isAgent: true, agentName: "Claude", model: model, permissionMode: mode)
+        let label = PaneHeaderLabel(name: "x", detail: nil, agentKind: .claude, agentName: "Claude", model: model, permissionMode: mode)
         #expect(label.settingsText(locale: Locale(identifier: "en")) == text)
         #expect(label.runsWithoutAsking == (mode == .bypassPermissions))
     }
@@ -575,7 +575,7 @@ struct PaneHeaderTests {
     /// while the model and mode still show.
     @Test func forms_dropDetailThenSettingsThenNameThenMark() {
         let forms = PaneHeaderRules.forms(isEditing: false, showsPromptCacheClock: false)
-        #expect(forms == [.all, .withSettings, .withName, .withMark, .glyphAndMenu])
+        #expect(forms == [.all, .withSettings, .withName, .withMark, .kindAndMenu])
         #expect(forms.map(\.showsDetail) == [true, false, false, false, false])
         #expect(forms.map(\.showsSettings) == [true, true, false, false, false])
         #expect(forms.map(\.showsName) == [true, true, true, false, false])
@@ -584,7 +584,7 @@ struct PaneHeaderTests {
 
     @Test func forms_withACacheClock_dropTheMarkBeforeTheClock() {
         let forms = PaneHeaderRules.forms(isEditing: false, showsPromptCacheClock: true)
-        #expect(forms == [.all, .withSettings, .withName, .withMark, .withClock, .glyphAndMenu])
+        #expect(forms == [.all, .withSettings, .withName, .withMark, .withClock, .kindAndMenu])
         #expect(forms.map(\.showsDetail) == [true, false, false, false, false, false])
         #expect(forms.map(\.showsSettings) == [true, true, false, false, false, false])
         #expect(forms.map(\.showsName) == [true, true, true, false, false, false])
@@ -592,8 +592,8 @@ struct PaneHeaderTests {
         #expect(forms.map(\.showsPromptCacheClock) == [true, true, true, true, true, false])
     }
 
-    @Test func metrics_theClockForm_is78PointsWide() {
-        #expect(PaneHeaderMetrics.clockFormWidth == 78)
+    @Test func metrics_theClockForm_is80PointsWide() {
+        #expect(PaneHeaderMetrics.clockFormWidth == 80)
     }
 
     @Test func forms_whileEditing_keepTheName() {
@@ -629,7 +629,7 @@ struct PaneHeaderTests {
     }
 
     @Test func renameStyle_narrowestHeaderFloats() {
-        // The narrowest header shows only its glyph and menu, so there is no
+        // The narrowest header shows only its kind's mark and menu, so there is no
         // name to edit in place.
         #expect(PaneHeaderRules.renameStyle(headerWidth: PaneHeaderMetrics.minimumWidth) == .floating)
         #expect(
@@ -807,7 +807,7 @@ extension PaneHeaderTests {
     }
 
     @Test func ambiguityWarningCountsTowardTheInlineRenameWidth() {
-        var label = PaneHeaderLabel(name: "Pane", detail: nil, isAgent: true, agentName: "Claude Code")
+        var label = PaneHeaderLabel(name: "Pane", detail: nil, agentKind: .claude, agentName: "Claude Code")
         label.settingsAreAmbiguous = true
         #expect(label.showsWarning)
         let withoutWarning = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, showsWarning: false, isZoomed: false)

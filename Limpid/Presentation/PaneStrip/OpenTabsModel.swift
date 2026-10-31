@@ -86,10 +86,13 @@ struct OpenTabsModel: Equatable {
         }
     }
 
-    /// The row's second line: the strip's tooltip line ("Claude · Running"),
-    /// and the panes of a split tab, which the strip does not show.
+    /// The row's second line: the strip's tooltip lines ("Claude · Running /
+    /// Codex · Needs approval"), every agent named, so a search finds a tab by
+    /// any of them; and the panes of a split tab, which the strip does not
+    /// show.
     static func detail(of item: PaneStripModel.Item, locale: Locale) -> String {
-        AgentStatusText.joined([item.agentLine(locale: locale)] + panes(of: item, locale: locale), locale: locale)
+        let agents = SessionRowFactText.agentList(item.agentLines(locale: locale), locale: locale)
+        return AgentStatusText.joined([agents] + panes(of: item, locale: locale), locale: locale)
     }
 
     /// "2 panes" for a split tab, which the strip does not say; nothing for

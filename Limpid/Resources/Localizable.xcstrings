@@ -464,6 +464,35 @@
         }
       }
     },
+    "%lld other panes": {
+      "comment": "Header of a zoomed pane: how many panes of the tab the zoom hides, with what most needs the person among them",
+      "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld other pane"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld other panes"
+                }
+              }
+            }
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ほか %lld ペイン"
+          }
+        }
+      }
+    },
     "%lld panes": {
       "comment": "Open Tabs: how many panes a split tab has, after who runs in it (\"Shell · 2 panes\")",
       "localizations": {
@@ -14283,7 +14312,7 @@
       }
     },
     "%@ / %@": {
-      "comment": "Worktree row tooltip: separates one agent's fact from the next",
+      "comment": "A row's tooltip and an Open Tabs line: separates one agent's words from the next",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -16497,19 +16526,19 @@
         }
       }
     },
-    "Sidebar hidden to make room for Changes": {
-      "comment": "Worktree header: the sidebar is folded while the changes panel needs its width",
+    "Sidebar hidden for Changes": {
+      "comment": "VoiceOver announcement: the sidebar is folded while the changes panel needs its width",
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Sidebar hidden to make room for Changes"
+            "value": "Sidebar hidden for Changes"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "変更パネルの幅を確保するため、サイドバーを一時的に非表示にしています"
+            "value": "変更パネルのためサイドバーを非表示にしました"
           }
         }
       }

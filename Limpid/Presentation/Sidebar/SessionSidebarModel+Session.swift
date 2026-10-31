@@ -247,18 +247,22 @@ extension SessionSidebarModel {
             isMissing: project.flatMap { project in
                 container.worktreeID.flatMap { session.worktree(projectID: project.id, worktreeID: $0) }
             }?.isMissing ?? false,
-            agents: rowRuntimes.map { runtime in
-                SessionRowFact.Input(
-                    items: items.filter { item in
-                        if case let .runtime(id, _, _, _, _) = item.subject {
-                            id == runtime.id
-                        } else {
-                            false
-                        }
-                    },
-                    requestText: requestText,
-                    agents: [SessionRowFact.Agent(runtime: runtime)]
-                )
+            // In `AgentKind`'s order, as the row's badges are.
+            agents: AgentKind.allCases.flatMap { kind in
+                agentsInFront.filter { $0.provider == kind }.map { SessionRowFact.Input(agents: [$0]) }
+                    + rowRuntimes.filter { $0.kind == kind }.map { runtime in
+                        SessionRowFact.Input(
+                            items: items.filter { item in
+                                if case let .runtime(id, _, _, _, _) = item.subject {
+                                    id == runtime.id
+                                } else {
+                                    false
+                                }
+                            },
+                            requestText: requestText,
+                            agents: [SessionRowFact.Agent(runtime: runtime)]
+                        )
+                    }
             },
             isInTmux: rowRuntimes.contains { !$0.tmuxLocations.isEmpty },
             pullRequestChecks: pullRequest.flatMap { info in info.checks.map { ($0, info.forge) } },

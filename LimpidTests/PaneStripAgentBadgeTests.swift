@@ -98,7 +98,7 @@ struct PaneStripAgentBadgeTests {
         let (session, tab, pane) = WorkspaceSessionFixture.withLooseTab()
         let record = try corpusRecord(scenario, directory: directory, stem: stem, pane: pane)
         let item = try pass(provider: agent.rawValue, records: [stem: record], session: session).strip.item(for: tab)
-        #expect(item?.agent == agent)
+        #expect(item?.agents.first?.kind == agent)
     }
 
     // MARK: - An agent started from "+"
@@ -119,7 +119,7 @@ struct PaneStripAgentBadgeTests {
         "sessionId":"0aa15490-ade7-7223-a767-7eb22b5c69e1","sessionStartedAt":"2026-10-20T06:32:38Z"}
         """
         let strip = try pass(provider: agent.rawValue, records: [run: record], session: session, container: container).strip
-        #expect(strip.item(for: tab)?.agent == agent)
+        #expect(strip.item(for: tab)?.agents.first?.kind == agent)
     }
 
     // MARK: - An agent a restore typed again
@@ -136,7 +136,7 @@ struct PaneStripAgentBadgeTests {
         let item = try #require(result.strip.item(for: tab))
         // The sidebar's row has said Cl or Cx for this run all along.
         #expect(result.attention.allRuntimes.contains { $0.paneIDs.contains(pane) && $0.kind == agent })
-        #expect(item.agent == agent)
+        #expect(item.agents.first?.kind == agent)
         #expect(item.stateGlyph == nil, "an unknown state shows no glyph on the badge")
     }
 
@@ -155,6 +155,6 @@ struct PaneStripAgentBadgeTests {
         // The pass that retires the run shows it once; the next has none.
         let item = try pass(provider: "codex", records: [run: record], session: session, isAlive: false, passes: 2)
             .strip.item(for: tab)
-        #expect(item?.agent == nil)
+        #expect(item?.agents.first?.kind == nil)
     }
 }

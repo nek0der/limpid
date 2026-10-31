@@ -7,6 +7,20 @@
 // go through this one mapping, so a state is the same icon wherever it
 // shows.
 
+import SwiftUI
+
+extension SessionRowFact.Glyph? {
+    /// The words beside a state: amber for a wait, red for a stop, and muted
+    /// for anything that does not ask for the person, or for no state at all.
+    var textColor: Color {
+        switch self {
+        case .needsAnswer?, .needsApproval?, .needsResponse?, .needsSignIn?: SupervisionTokens.waitingText.color
+        case .stopped?: SupervisionTokens.stoppedText.color
+        default: SupervisionTokens.muted.color
+        }
+    }
+}
+
 extension StateGlyph.Kind {
     /// The icon for a row's or a pane's glyph; a shell has no state to draw.
     init(_ glyph: SessionRowFact.Glyph) {

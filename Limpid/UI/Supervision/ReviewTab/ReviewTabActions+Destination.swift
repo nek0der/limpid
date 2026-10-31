@@ -89,7 +89,7 @@ extension ReviewTabActions {
         var tabTitles: [UUID: String] = [:]
         for owner in tabs {
             for pane in owner.splitTree.allLeafIDs() {
-                tabTitles[pane] = owner.displayTitle
+                tabTitles[pane] = owner.shownTitle
             }
         }
         return ReviewTabModel.destinationChoices(

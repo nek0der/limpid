@@ -70,7 +70,15 @@ is used up. A click outside the panel or Escape closes it.
   working in the background after a turn: the finished or unread ring with a
   dot circling it), the name, the time since an agent last moved ("now",
   "12m", "3h", "2d"), one fact such as "Unread · 4 files changed" or
-  "PR #324 · Open", and a badge for each agent.
+  "PR #324 · Open", and a badge for each kind of agent. With two kinds in the
+  row, the fact names the agent it is about ("Codex · Needs approval").
+- A pane strip tab has the same badges, each with its own agent's state. Past
+  three kinds, the first two stay and "+2" stands for the rest; the tab's
+  tooltip and its **Open Tabs** row name them all. Until the conversation it
+  follows has a name, a tab of several agents goes by its folder.
+- Each pane's header starts with its agent's badge. While a pane is zoomed,
+  its header says how many panes the zoom hides and what most needs you among
+  them; click it to go there.
 - At rest, the fact is the folder's Git state: "3 files uncommitted" first,
   else the PR, else "+2 commits" (commits the default branch does not have),
   else "No changes". The PR's mark stays at the right while the line says
@@ -190,13 +198,16 @@ timeline, with the unviewed count and range and a **Conversation** filter.
   unviewed turns follow. The tooltip and VoiceOver name the conversation.
 - While a worktree has two or more conversations running or with turns to
   read, each of them gets a color, drawn as a short vertical bar just left
-  of its agent badge: on its pane strip tab and its **Open Tabs** row, under
-  the turn number on its cards, in the **Conversation** filter and its
-  menu, in the review's scope menu, and on the review's file tags. A
-  conversation keeps its color while it runs or has turns to read, so a tab
-  and its cards can be matched at a glance. Rest the pointer on a tab and
-  its conversation's cards are outlined in its color while the others
-  fade; point at a card and its tab is outlined. A worktree with one such
+  of its agent badge: on its pane's header, on its pane strip tab and its
+  **Open Tabs** row, under the turn number on its cards, in the
+  **Conversation** filter and its menu, in the review's scope menu, and on
+  the review's file tags. A tab's bar shares its height among the colors of
+  the conversations its badge stands for, up to three. A conversation keeps
+  its color while it runs or has turns to read, so a pane, a tab, and their
+  cards can be matched at a glance. Rest the pointer on a tab and the cards
+  of every conversation it runs are outlined in their colors while the others
+  fade, or on a pane's header for that pane's alone; point at a card and its
+  pane is outlined, or its tab while the pane is behind another tab. A worktree with one such
   conversation, and a scratch tab, show no bar. A file tag still shows the
   number ("#2") when the conversation's name carries one.
 - An unviewed turn's number ("T7") stands in a blue pill; a viewed turn's

@@ -50,7 +50,7 @@ struct SupervisionChip: View {
     let text: Text
     var tone = Tone.plain
     /// A symbol before the words, for a chip whose words alone would not
-    /// say what it is about (the folded sidebar, the prompt cache's clock).
+    /// say what it is about (the prompt cache's clock).
     var systemImage: String?
 
     /// The face the words are drawn in, which `width(of:hasIcon:)` measures.

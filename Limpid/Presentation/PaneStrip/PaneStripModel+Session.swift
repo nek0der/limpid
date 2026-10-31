@@ -9,9 +9,11 @@ extension PaneStripModel {
     /// with `window`'s tab marked active. Each tab's glyph is read from its
     /// panes' header marks (`PaneHeaderRules.mark`) and the items behind
     /// them, so a tab and its panes never disagree on what state they are
-    /// in, a turn's unread aside. Each tab carries the conversations its
-    /// panes run (`ConversationTabs`), the one its title stands for first,
-    /// with the colors `identities` gives them (`ConversationIdentityStore`).
+    /// in, a turn's unread aside. Each kind of agent in a tab has its own
+    /// state, read the same way from the panes that are for it
+    /// (`Tab.agentKind(inPane:)`), and each tab carries the conversations its
+    /// panes run (`ConversationTabs`), with the colors `identities` gives
+    /// them (`ConversationIdentityStore`).
     init(
         container: ContainerID,
         session: WorkspaceSession,
@@ -48,28 +50,46 @@ extension PaneStripModel {
         let inputs = tabs.map { tab in
             let panes = tab.splitTree.allLeafIDs()
             let runs = conversations.conversations(of: tab.id)
-            // The one the tab's title stands for, as the changes panel names
-            // the conversation by the tab's rename only there.
-            let conversation = runs?.titled
             var runningIdentities: [ConversationKey: Int] = [:]
             for key in runs?.all ?? [] {
                 runningIdentities[key] = identities[key]
             }
+            let glyphsByPane = panes.reduce(into: [UUID: SessionRowFact.Glyph]()) { glyphs, pane in
+                glyphs[pane] = PaneHeaderRules.mark(paneItems: itemsByPane[pane] ?? [], shown: runsByPane[pane] ?? [])?.glyph
+            }
+            let paneItems = panes.flatMap { itemsByPane[$0] ?? [] }
+            // The agents the panes are for, with any an item still speaks for:
+            // a stop outlives its agent, as on the sidebar's row, and without
+            // a badge of its own no line of the tab would say it.
+            let kinds = Set(tab.agentKinds + paneItems.compactMap(\.subject.agentKind))
+            let agents = AgentKind.allCases.filter(kinds.contains).map { kind in
+                let items = paneItems.filter { $0.subject.agentKind == kind }
+                return AgentInput(
+                    kind: kind,
+                    // By the run or the item's own agent, not the agent the
+                    // pane is for now: a run left behind in the pane speaks
+                    // for itself.
+                    paneGlyphs: panes.compactMap { pane in
+                        PaneHeaderRules.mark(
+                            paneItems: items.filter { $0.subject.paneID == pane },
+                            shown: (runsByPane[pane] ?? []).filter { $0.kind == kind }
+                        )?.glyph
+                    },
+                    paneItems: items,
+                    identities: (runs?.all ?? []).filter { $0.provider == kind }.compactMap { identities[$0] }
+                )
+            }
             return ItemInput(
                 id: tab.id,
-                title: tab.displayTitle,
+                title: tab.shownTitle,
                 paletteIndex: tab.paletteIndex,
-                agent: tab.agentKind,
-                paneGlyphs: panes.compactMap { pane in
-                    PaneHeaderRules.mark(paneItems: itemsByPane[pane] ?? [], shown: runsByPane[pane] ?? [])?.glyph
-                },
-                paneItems: panes.flatMap { itemsByPane[$0] ?? [] },
+                agents: agents,
+                paneGlyphs: panes.compactMap { glyphsByPane[$0] },
+                paneItems: paneItems,
                 hasUnread: session.hasUnread(in: tab),
                 isInTmux: tab.isHostedInTmux(mountedTmuxPaneIDs: mountedTmuxPaneIDs),
                 exitCodes: panes.compactMap { session.childExitCode(paneID: $0) },
                 paneCount: panes.count,
-                conversation: conversation,
-                identity: conversation.flatMap { identities[$0] },
                 runningIdentities: runningIdentities
             )
         }

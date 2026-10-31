@@ -164,7 +164,8 @@ struct PaneStripTabsLayoutTests {
                 title: title,
                 paletteIndex: nil,
                 isActive: index == selected,
-                agent: index == 1 ? .claude : nil,
+                agents: index == 1 ? [.init(kind: .claude, state: nil, identities: [])] : [],
+                hiddenAgentsState: nil,
                 stateGlyph: nil,
                 hasUnread: false,
                 isInTmux: false,
@@ -309,8 +310,9 @@ struct PaneStripTabsLayoutTests {
             let window = ProjectWindowState(selection: WindowSelection())
             func item(_ glyph: SessionRowFact.Glyph?) -> PaneStripModel.Item {
                 PaneStripModel.Item(
-                    id: UUID(), title: "claude", paletteIndex: nil, isActive: true, agent: .claude,
-                    stateGlyph: glyph, hasUnread: false, isInTmux: false, failedExitCode: nil, paneCount: 1
+                    id: UUID(), title: "claude", paletteIndex: nil, isActive: true,
+                    agents: [.init(kind: .claude, state: glyph, identities: [])],
+                    hiddenAgentsState: nil, stateGlyph: glyph, hasUnread: false, isInTmux: false, failedExitCode: nil, paneCount: 1
                 )
             }
             let atRest = Self.measure(Self.tab(item(nil)), settings: settings, window: window)
@@ -330,12 +332,11 @@ struct PaneStripTabsLayoutTests {
             let settings = SettingsStore(directory: directory)
             let window = ProjectWindowState(selection: WindowSelection())
             func item(_ identity: Int?) -> PaneStripModel.Item {
-                var item = PaneStripModel.Item(
-                    id: UUID(), title: "claude", paletteIndex: nil, isActive: true, agent: .claude,
-                    stateGlyph: nil, hasUnread: false, isInTmux: false, failedExitCode: nil, paneCount: 1
+                PaneStripModel.Item(
+                    id: UUID(), title: "claude", paletteIndex: nil, isActive: true,
+                    agents: [.init(kind: .claude, state: nil, identities: identity.map { [$0] } ?? [])],
+                    hiddenAgentsState: nil, stateGlyph: nil, hasUnread: false, isInTmux: false, failedExitCode: nil, paneCount: 1
                 )
-                item.identity = identity
-                return item
             }
             let plain = Self.measure(Self.tab(item(nil)), settings: settings, window: window)
             let colored = Self.measure(Self.tab(item(2)), settings: settings, window: window)

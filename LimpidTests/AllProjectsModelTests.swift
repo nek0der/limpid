@@ -25,9 +25,8 @@ struct AllProjectsModelTests {
             glyph: glyph,
             factText: "",
             chips: [],
-            badge: .shell,
-            badgeText: "Shell",
-            badgeSpokenName: "Shell",
+            agentKinds: [],
+            badgesSpokenName: "",
             windowNote: nil,
             action: nil,
             leadItemID: nil,
@@ -45,8 +44,8 @@ struct AllProjectsModelTests {
     ) -> AllProjectsModel.Card {
         AllProjectsModel.Card(
             id: card.id, projectID: card.projectID, projectName: card.projectName, paletteIndex: nil, branch: card.branch,
-            name: card.name, nameTruncation: .name, glyph: glyph ?? card.glyph, factText: "", chips: [], badge: .shell,
-            badgeText: "Shell", badgeSpokenName: "Shell", windowNote: nil, action: action,
+            name: card.name, nameTruncation: .name, glyph: glyph ?? card.glyph, factText: "", chips: [],
+            agentKinds: [], badgesSpokenName: "", windowNote: nil, action: action,
             leadItemID: nil, leadPaneID: nil, factTruncation: .sentence
         )
     }
@@ -74,12 +73,11 @@ struct AllProjectsModelTests {
 
     // MARK: - Sections and counts
 
-    @Test func aCardsBadge_namesItsAgent() {
+    @Test func aCardsBadges_nameItsAgents() {
         let english = Locale(identifier: "en")
-        let japanese = Locale(identifier: "ja")
-        #expect(AllProjectsModel.badgeSpokenName(.agent(.claude), locale: english) == "Claude")
-        #expect(AllProjectsModel.badgeSpokenName(.shell, locale: japanese) == "シェル")
-        #expect(AllProjectsModel.badgeSpokenName(.agent(.codex), locale: english) == "Codex")
+        #expect(AllProjectsModel.badgesSpokenName([.claude], locale: english) == "Claude")
+        #expect(AllProjectsModel.badgesSpokenName([.claude, .codex], locale: english) == "Claude, Codex")
+        #expect(AllProjectsModel.badgesSpokenName([], locale: english).isEmpty)
     }
 
     @Test func aCardsFactLine_isLeftOut_whenAGitChipAlreadySaysIt() {

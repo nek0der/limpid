@@ -51,19 +51,22 @@ extension AttentionState {
         // The run the header speaks for, else the agent the pane's tab
         // wears for it (`Tab.agentKind(inPane:)`): one in front before its
         // record, or a restored run that has not reported since. Only the
-        // glyph and the provider's name: neither has a conversation title,
+        // badge and the provider's name: neither has a conversation title,
         // a model, or a mode to give, and `headerRuntime` stays the one that
         // names a conversation, which code restore and the changes panel
         // match on.
-        let agent = headerRuntime(inPane: paneID).map { runtime in
-            PaneHeaderAgent(
-                providerName: AgentProviderRegistry.displayName(for: settingsRuntime?.kind ?? runtime.kind),
+        let runtime = headerRuntime(inPane: paneID)
+        let agent = runtime.map { runtime in
+            let kind = settingsRuntime?.kind ?? runtime.kind
+            return PaneHeaderAgent(
+                kind: kind,
+                providerName: AgentProviderRegistry.displayName(for: kind),
                 title: PaneHeaderRules.agentTitle(for: runtime.badge),
                 model: settingsRuntime?.badge.model,
                 permissionMode: settingsRuntime?.badge.agentPermissionMode
             )
         } ?? tab?.agentKind(inPane: paneID).map { kind in
-            PaneHeaderAgent(providerName: AgentProviderRegistry.displayName(for: kind), title: nil)
+            PaneHeaderAgent(kind: kind, providerName: AgentProviderRegistry.displayName(for: kind), title: nil)
         }
         // The pane's own OSC 7 directory first. Until the shell reports one
         // (a restored pane, a shell without integration) the tab's latest
@@ -77,6 +80,8 @@ extension AttentionState {
             workingDirectory: directory,
             fallbackName: LocalizedStringResource("Terminal").resolved(in: locale)
         )
+        // The run the badge is: its color and hover must not name another's.
+        label.conversation = settingsRuntime?.conversation ?? runtime?.conversation
         if selection.isAmbiguous {
             label.model = nil
             label.permissionMode = nil

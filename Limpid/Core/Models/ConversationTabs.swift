@@ -7,9 +7,9 @@ import Foundation
 /// their panes run, read by every surface that matches a conversation to a
 /// tab: the pane strip's tabs and their hover, the changes panel's "Show
 /// Tab" and its live tab names, and the identity colors' running set. Read
-/// once, so a split tab answers the same in all of them: its bar and its
-/// own hover stand for the conversation its title stands for, and a card
-/// of any conversation it runs finds it.
+/// once, so a split tab answers the same in all of them: its title stands
+/// for one conversation, while its bars, its hover, and a card of any
+/// conversation it runs answer for them all.
 struct ConversationTabs: Equatable, Sendable {
     /// What one tab runs.
     struct TabConversations: Equatable, Sendable {

@@ -6,7 +6,7 @@ import Foundation
 /// A session row's state glyph, the single fact on its second line, the
 /// agent that fact is about, and the pull request attached to it. One row stands for one place to
 /// work (the project's folder or a worktree) and every pane in it, so the
-/// row shows the agent that most needs the person, in one order for the
+/// fact is about the agent that most needs the person, in one order for the
 /// whole app: a question or an approval, then a stop, a running turn, an
 /// unread turn, and last the row at rest. Work an agent left running when
 /// its turn ended is not a running turn: it marks the rest it sits on, or
@@ -101,7 +101,9 @@ struct SessionRowFact: Equatable, Sendable {
     }
 
     /// Whose fact the second line states: an agent, or a shell when the row
-    /// has no agent.
+    /// has no agent. The row's badges show every agent in it
+    /// (`SessionSidebarModel.Row.agentKinds`); this says which one the line is
+    /// about.
     enum Badge: Equatable, Sendable {
         case agent(AgentKind)
         case shell

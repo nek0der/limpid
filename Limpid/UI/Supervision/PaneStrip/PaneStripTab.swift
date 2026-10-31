@@ -49,11 +49,9 @@ struct PaneStripTab: View {
             // place of its own: the tab's width and its title stay put as
             // the agent starts, waits, and stops, and a tab at rest leaves
             // no gap where a glyph would be. The tab's label says the state
-            // in words, so VoiceOver skips it. The conversation's color
-            // bar leads the badge where the worktree has several.
-            ConversationIdentityLead(identity: item.identity) {
-                PaneStripTabBadge(agent: item.agent, state: item.stateGlyph)
-            }
+            // in words, so VoiceOver skips it. The conversations' color
+            // bar leads each badge where the worktree has several.
+            PaneStripTabBadges(item: item)
             InlineRenameField(
                 name: item.title,
                 isEditing: $isEditing,
@@ -93,15 +91,10 @@ struct PaneStripTab: View {
         .frame(height: layout.paneStripHeight)
         .folderTabFace(isSelected: item.isActive, isHovering: isHovering, scrolls: true, meetsPaneHeader: true)
         .contentShape(Rectangle())
-        // The tab marks the cards of the conversation its title stands for
-        // while the pointer rests on it, and is outlined while a card of any
-        // conversation it runs is under the pointer.
-        .conversationHover(
-            item.conversation,
-            surface: .tab(item.id),
-            identity: item.identity,
-            mark: .tab(running: item.runningIdentities)
-        ) { isHovering = $0 }
+        // The tab marks the cards of every conversation it runs while the
+        // pointer rests on it, and, while its panes are out of sight, is
+        // outlined while a card of any of them is under the pointer.
+        .conversationHover(tab: item.id, running: item.runningIdentities, isSelected: item.isActive) { isHovering = $0 }
         .onChange(of: isEditing) { _, isEditing in
             onEditingChanged(isEditing)
         }
@@ -165,21 +158,40 @@ struct PaneStripTab: View {
     }
 }
 
-/// Who runs in a tab: Claude's or Codex's badge, as the sidebar's
-/// rows wear it, or a shell's prompt in the shell badge's outline. The
-/// tab's label says what runs in it, so VoiceOver skips the badge.
-///
-/// An agent's badge carries the tab's state (`PaneStripModel.tabGlyph`)
-/// on its bottom trailing corner: the state glyph, small, in a ring cut
-/// out of the badge so it stands apart from the brand's color on whatever
-/// ground the tab has (selected, hovered, or at rest, translucent or not).
-/// Laid over the badge, so it takes no width.
+/// Who runs in a tab: a badge for each kind of agent in its panes, led by
+/// the color bar of that kind's conversations, as far as `AgentBadgeSlots`
+/// has room, or a shell's prompt where no agent runs.
+struct PaneStripTabBadges: View {
+    let item: PaneStripModel.Item
+
+    private typealias Layout = LimpidLayout.Supervision
+
+    var body: some View {
+        if item.agents.isEmpty {
+            PaneStripTabBadge(agent: nil)
+        } else {
+            HStack(spacing: Layout.agentBadgeSpacing) {
+                ForEach(item.shownAgents, id: \.kind) { agent in
+                    ConversationIdentityLead(identities: agent.identities) {
+                        PaneStripTabBadge(agent: agent.kind, state: agent.state)
+                    }
+                }
+                if item.hiddenAgentCount > 0 {
+                    AgentOverflowBadge(count: item.hiddenAgentCount, size: .regular)
+                        .tabStateMark(item.hiddenAgentsState)
+                }
+            }
+        }
+    }
+}
+
+/// One kind of agent's badge on a tab, as the sidebar's rows wear it, or a
+/// shell's prompt. The tab's label says what runs in it, so VoiceOver skips
+/// the badge.
 struct PaneStripTabBadge: View {
     let agent: AgentKind?
     var state: SessionRowFact.Glyph?
     @Environment(\.locale) private var locale
-
-    private typealias Layout = LimpidLayout.Supervision
 
     var body: some View {
         if let agent {
@@ -188,6 +200,31 @@ struct PaneStripTabBadge: View {
                 text: SessionRowFactText.badge(.agent(agent), locale: locale),
                 size: .regular
             )
+            .tabStateMark(state)
+        } else {
+            ShellPromptBadge()
+        }
+    }
+}
+
+extension View {
+    /// Carries a state (`PaneStripModel.tabGlyph`) on the badge's bottom
+    /// trailing corner: the state glyph, small, in a ring cut out of the
+    /// badge so it stands apart from the brand's color on whatever ground
+    /// the tab has (selected, hovered, or at rest, translucent or not). Laid
+    /// over the badge, so it takes no width.
+    func tabStateMark(_ state: SessionRowFact.Glyph?) -> some View {
+        modifier(TabStateMark(state: state))
+    }
+}
+
+private struct TabStateMark: ViewModifier {
+    let state: SessionRowFact.Glyph?
+
+    private typealias Layout = LimpidLayout.Supervision
+
+    func body(content: Content) -> some View {
+        content
             // Cut whether or not a state shows, so the badge keeps its
             // identity as the state comes and goes.
             .mask {
@@ -209,9 +246,6 @@ struct PaneStripTabBadge: View {
                         .accessibilityHidden(true)
                 }
             }
-        } else {
-            ShellPromptBadge()
-        }
     }
 
     /// The cut is the mark and its ring, centered where the mark is.

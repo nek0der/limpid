@@ -35,7 +35,7 @@ extension DecisionBarModel {
     /// keeps it after its agent exited, until the conversation is back.
     @MainActor
     init?(paneID: UUID, sources: Sources, locale: Locale) {
-        let items = sources.queue.items(inPane: paneID) + Self.missingWorktreeStops(in: paneID, sources: sources)
+        let items = Self.items(in: paneID, queue: sources.queue, session: sources.session)
         guard let agent = Self.agent(in: paneID, runtimes: sources.runtimes, session: sources.session) ?? Self.stoppedAgent(in: items)
         else { return nil }
         let approvalActions = Dictionary(uniqueKeysWithValues: items.compactMap { item -> (ApprovalKey, PromptApproval.Action)? in
@@ -75,8 +75,9 @@ extension DecisionBarModel {
         }
     }
 
-    /// The pane's agent as its runtime last reported it, or as the tab's
-    /// badge has it before the runtime is matched to the pane. The pane has
+    /// The pane's agent as its runtime last reported it, as the tab's badge
+    /// has it before the runtime is matched to the pane, or as its terminal
+    /// runs it in front before it has any record. The pane has
     /// a bar while this is not `nil`, or while a stop of its agent waits
     /// (`hasBar`), and ⌘⏎ is kept from the terminal there even while review
     /// hides the bar.
@@ -90,12 +91,16 @@ extension DecisionBarModel {
             return .init(runtime: runtime)
         }
         guard let tab = session.tab(containing: paneID) else { return nil }
-        for kind in AgentKind.allCases {
-            if let badge = tab.agentBadges[kind]?[paneID], badge.state != .unknown {
-                return .init(provider: kind, state: badge.state, detail: badge.detail, backgroundWork: badge.backgroundWork)
-            }
+        if let kind = tab.agentKind(inPane: paneID), let badge = tab.agentBadges[kind]?[paneID], badge.state != .unknown {
+            return .init(provider: kind, state: badge.state, detail: badge.detail, backgroundWork: badge.backgroundWork)
         }
-        return nil
+        // Codex reports nothing before its first prompt, yet it is running:
+        // without this its pane would have no bar beside a Claude pane's, and
+        // its rows would shift when the bar arrived at that prompt. It waits
+        // at that prompt until then, so the bar says it rests. A staged agent
+        // has no bar yet: its command is not typed, and a shell is in front.
+        guard let kind = tab.agentInFrontWithoutRecord(inPane: paneID), tab.agentsInFront[paneID]?.isStaged != true else { return nil }
+        return .init(provider: kind, state: .idle, detail: nil)
     }
 
     /// Returns the run the pane's bar speaks for, of the runs in the pane:
@@ -104,9 +109,13 @@ extension DecisionBarModel {
     /// the pane's header picks it. We pick it once, so the bar's state and
     /// its last turn's receipt are the same run's: a finished run beside
     /// a running one in the pane does not put an old turn under the
-    /// header's Running.
+    /// header's Running. A run that has reported goes before one that has not:
+    /// one restored at launch stays placed in the pane after a new agent
+    /// starts there, and would keep the bar at Unknown.
     static func runtime(in paneID: UUID, runtimes: [AgentRuntimePresentation]) -> AgentRuntimePresentation? {
-        let inPane = runtimes.filter { $0.paneIDs.contains(paneID) }
+        let placed = runtimes.filter { $0.paneIDs.contains(paneID) }
+        let reported = placed.filter { $0.badge.state != .unknown }
+        let inPane = reported.isEmpty ? placed : reported
         return SessionRowFact.leadAgentIndex(of: inPane.map(SessionRowFact.Agent.init(runtime:))).map { inPane[$0] }
     }
 
@@ -115,11 +124,26 @@ extension DecisionBarModel {
     /// A pane with no agent keeps no bar for it: the row and the list say
     /// it there.
     @MainActor
-    static func missingWorktreeStops(in paneID: UUID, sources: Sources) -> [AttentionItem] {
-        guard let tab = sources.session.tab(containing: paneID),
-              let root = sources.session.rootDirectory(of: tab.container)
+    private static func missingWorktreeStops(in paneID: UUID, queue: AttentionQueue, session: WorkspaceSession) -> [AttentionItem] {
+        guard let tab = session.tab(containing: paneID),
+              let root = session.rootDirectory(of: tab.container)
         else { return [] }
-        return sources.queue.items.filter { $0.kind == .stop(.worktreeMissing) && $0.subject.isSessionRow(at: root) }
+        return queue.items.filter { $0.kind == .stop(.worktreeMissing) && $0.subject.isSessionRow(at: root) }
+    }
+
+    /// What the bar of `paneID` can show: the items of the pane, and the stop
+    /// of its worktree if that is gone.
+    @MainActor
+    static func items(in paneID: UUID, queue: AttentionQueue, session: WorkspaceSession) -> [AttentionItem] {
+        queue.items(inPane: paneID) + missingWorktreeStops(in: paneID, queue: queue, session: session)
+    }
+
+    /// Whether the bar stays at full strength in a pane without focus, rather
+    /// than fading with its terminal: something waits on the person, and its
+    /// words are what they have to read, wherever the keyboard is.
+    @MainActor
+    static func staysOpaque(in paneID: UUID, queue: AttentionQueue, session: WorkspaceSession) -> Bool {
+        PaneAttention.of(items(in: paneID, queue: queue, session: session)) != nil
     }
 
     /// The agent of a stop the pane keeps after its run is gone.

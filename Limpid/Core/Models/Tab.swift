@@ -325,6 +325,11 @@ struct Tab: Codable, Equatable, Identifiable {
     /// name given after the move to the scratch tabs has no prefix, since
     /// a rename drops it.
     var displayTitle: String {
+        prefixedTitle(name)
+    }
+
+    /// `name` after the name prefix, if any.
+    func prefixedTitle(_ name: String) -> String {
         guard let namePrefix, !namePrefix.isEmpty else { return name }
         return "\(namePrefix) · \(name)"
     }

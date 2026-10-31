@@ -50,13 +50,13 @@ struct PaneStripAgentInFrontTests {
         let (session, tab, pane) = WorkspaceSessionFixture.withLooseTab()
         let terminal = Terminal()
         let follower = Self.follower(session, terminal)
-        #expect(Self.item(tab, in: session)?.agent == nil)
+        #expect(Self.item(tab, in: session)?.agents.first?.kind == nil)
 
         terminal.reading = .agent(agent)
         await Self.commandStarted(follower, inPane: pane)
 
         let item = try #require(Self.item(tab, in: session))
-        #expect(item.agent == agent)
+        #expect(item.agents.first?.kind == agent)
         #expect(item.stateGlyph == nil, "the job in front says which agent, not what it is doing")
     }
 
@@ -70,7 +70,7 @@ struct PaneStripAgentInFrontTests {
 
         await Self.commandStarted(follower, inPane: pane)
 
-        #expect(Self.item(tab, in: session)?.agent == .codex)
+        #expect(Self.item(tab, in: session)?.agents.first?.kind == .codex)
     }
 
     @Test func whenTheJobReturnsToTheShell_theTabIsAShellAgain() async {
@@ -83,7 +83,7 @@ struct PaneStripAgentInFrontTests {
         terminal.reading = .none
         follower.apply(.none, at: .commandFinished, inPane: pane)
 
-        #expect(Self.item(tab, in: session)?.agent == nil)
+        #expect(Self.item(tab, in: session)?.agents.first?.kind == nil)
         #expect(session.tab(tab.id)?.agentsInFront.isEmpty == true)
     }
 
@@ -98,7 +98,7 @@ struct PaneStripAgentInFrontTests {
         terminal.reading = .none
         await Self.commandStarted(follower, inPane: pane)
 
-        #expect(Self.item(tab, in: session)?.agent == nil)
+        #expect(Self.item(tab, in: session)?.agents.first?.kind == nil)
     }
 
     @Test func aRecord_overridesTheAgentInFront() async {
@@ -113,7 +113,7 @@ struct PaneStripAgentInFrontTests {
             $0.agentBadges[.claude, default: [:]][pane] = AgentBadge(state: .idle, updatedAt: Date())
         }
 
-        #expect(Self.item(tab, in: session)?.agent == .claude)
+        #expect(Self.item(tab, in: session)?.agents.first?.kind == .claude)
         #expect(session.tab(tab.id)?.agentKind(inPane: pane) == .claude)
     }
 
@@ -128,7 +128,7 @@ struct PaneStripAgentInFrontTests {
 
         follower.apply(.undetermined, at: .commandFinished, inPane: pane)
 
-        #expect(Self.item(tab, in: session)?.agent == .codex)
+        #expect(Self.item(tab, in: session)?.agents.first?.kind == .codex)
     }
 
     // MARK: - "+"
@@ -140,7 +140,7 @@ struct PaneStripAgentInFrontTests {
         let tab = try #require(session.tab(containing: pane))
 
         let item = try #require(Self.item(tab, in: session, container: container))
-        #expect(item.agent == .codex)
+        #expect(item.agents.first?.kind == .codex)
         #expect(item.stateGlyph == nil)
     }
 
@@ -150,7 +150,7 @@ struct PaneStripAgentInFrontTests {
         let pane = try #require(TabActions.newTab(session, in: container, running: nil))
         let tab = try #require(session.tab(containing: pane))
 
-        #expect(Self.item(tab, in: session, container: container)?.agent == nil)
+        #expect(Self.item(tab, in: session, container: container)?.agents.first?.kind == nil)
     }
 
     @Test func aStagedAgent_outlivesTheShellsFirstPrompt_andGoesWhenItsCommandEnds() async throws {
@@ -163,16 +163,16 @@ struct PaneStripAgentInFrontTests {
 
         // The shell titles its directory before the typed command runs.
         await Self.commandStarted(follower, inPane: pane)
-        #expect(Self.item(tab, in: session, container: container)?.agent == .codex)
+        #expect(Self.item(tab, in: session, container: container)?.agents.first?.kind == .codex)
 
         // `codex` was not found: the command ends, and the shell is back.
         follower.apply(.none, at: .commandFinished, inPane: pane)
-        #expect(Self.item(tab, in: session, container: container)?.agent == nil)
+        #expect(Self.item(tab, in: session, container: container)?.agents.first?.kind == nil)
     }
 
     // MARK: - The pane header
 
-    /// The header's glyph says agent wherever the pane's tab wears the
+    /// The header says agent wherever the pane's tab wears the
     /// agent's badge: before the agent's record too.
     @Test func anAgentInFront_beforeItsRecord_marksTheHeaderAsAnAgentsPane() throws {
         let (session, single, _) = WorkspaceSessionFixture.withLooseTab()
@@ -247,6 +247,20 @@ struct SessionSidebarAgentInFrontTests {
             gitFacts: { _ in nil },
             locale: Locale(identifier: "en")
         ).rows.first
+    }
+
+    /// Codex has no record before its first prompt; its pane has a bar all the
+    /// same, so the terminal's rows do not shift when that prompt comes.
+    @Test func anAgentInFront_beforeItsRecord_hasADecisionBar() {
+        let (session, tab, pane) = WorkspaceSessionFixture.withLooseTab()
+        #expect(!DecisionBarModel.hasBar(in: pane, runtimes: [], session: session, queue: AttentionQueue()))
+
+        session.update(tab.id) { $0.agentsInFront[pane] = PaneAgentInFront(kind: .codex, isStaged: false) }
+
+        #expect(DecisionBarModel.hasBar(in: pane, runtimes: [], session: session, queue: AttentionQueue()))
+        let agent = DecisionBarModel.agent(in: pane, runtimes: [], session: session)
+        #expect(agent?.provider == .codex)
+        #expect(agent?.state == .idle, "it waits at its prompt, which the bar says rather than Unknown")
     }
 
     @Test func anAgentInFront_beforeItsRecord_isTheRowsAgent() throws {

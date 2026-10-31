@@ -471,9 +471,9 @@ struct PromptInputEffectTests {
 @MainActor
 struct PromptCachePaneLineTests {
     @Test func paneLine_isTheNameThenTheDirectory() {
-        let withDetail = PaneHeaderLabel(name: "review", detail: "~/work/tamurakanto", isAgent: true, agentName: "Claude")
+        let withDetail = PaneHeaderLabel(name: "review", detail: "~/work/tamurakanto", agentKind: .claude, agentName: "Claude")
         #expect(PromptCacheRules.paneLine(for: withDetail) == "review · ~/work/tamurakanto")
-        let bare = PaneHeaderLabel(name: "Terminal", detail: nil, isAgent: false, agentName: nil)
+        let bare = PaneHeaderLabel(name: "Terminal", detail: nil, agentKind: nil, agentName: nil)
         #expect(PromptCacheRules.paneLine(for: bare) == "Terminal")
     }
 

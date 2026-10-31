@@ -411,7 +411,7 @@ struct TerminalSettings: Codable, Equatable {
     /// What one click of the Settings stepper moves the minimum by.
     static let minPaneSizeStep: Double = 20
 
-    /// The floor is the split pane header's narrowest width (the kind glyph
+    /// The floor is the split pane header's narrowest width (the kind's mark
     /// and the menu, `PaneHeaderMetrics.minimumWidth`) rounded up to a whole
     /// stepper step, so a split pane always has room for its header and the
     /// width minimum can be the user's number as-is. Rounding keeps the
