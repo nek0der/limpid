@@ -1,10 +1,12 @@
 //! `PermissionRequest` translation, producing the same JSON the Swift adapter
 //! it replaces emitted (serde does not escape `/`, which JSON treats alike).
 
+use crate::descriptor::install_recipe;
 use serde_json::{Value, json};
 use weir_agent_model::{
     ApprovalDecision, ApprovalQuestion, ApprovalQuestionOption, ApprovalRequest,
-    MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderId, ProviderOutput, parse_object,
+    MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderId, ProviderOutput, QuestionTurn,
+    QuestionTurnPhase, RecipePlaceholder, parse_object,
 };
 
 /// How long the hook helper waits for a decision, below Claude's own hook
@@ -57,6 +59,60 @@ pub(crate) fn questions(input: &Value) -> Vec<ApprovalQuestion> {
             })
         })
         .collect()
+}
+
+/// The events that end a turn or subagent that may have asked a question. The
+/// settings template calls the helper's `question-turn-ended` on these.
+const TURN_END_EVENTS: [&str; 3] = ["Stop", "StopFailure", "SubagentStop"];
+
+/// The turn `bytes` names when it asks a question or ends a turn.
+pub(crate) fn question_turn(bytes: &[u8]) -> Result<Option<QuestionTurn>, NormalizeError> {
+    let object = parse_object(bytes, MAX_HOOK_INPUT_BYTES)?;
+    let event = object.get("hook_event_name").and_then(Value::as_str);
+    let text = |key: &str| object.get(key).and_then(Value::as_str);
+    let phase = match event {
+        Some("PermissionRequest") if text("tool_name") == Some(QUESTION_TOOL) => {
+            QuestionTurnPhase::Asked
+        }
+        Some(event) if TURN_END_EVENTS.contains(&event) => QuestionTurnPhase::Ended,
+        _ => return Ok(None),
+    };
+    let Some(session_id) = text("session_id").filter(|id| !id.is_empty()) else {
+        return Ok(None);
+    };
+    // An agent id that is there but not a name says nothing to compare.
+    let agent_id = match object.get("agent_id") {
+        None => None,
+        Some(value) => match value.as_str().filter(|id| !id.is_empty()) {
+            Some(id) => Some(id),
+            None => return Ok(None),
+        },
+    };
+    if event == Some("SubagentStop") && agent_id.is_none() {
+        return Ok(None);
+    }
+    let prompt_id = if agent_id.is_some() {
+        None
+    } else {
+        match text("prompt_id").filter(|id| !id.is_empty()) {
+            Some(id) => Some(id),
+            None => return Ok(None),
+        }
+    };
+    let Some(variable) = install_recipe()
+        .environment
+        .into_iter()
+        .find(|variable| variable.value == RecipePlaceholder::StateDirectory)
+    else {
+        return Ok(None);
+    };
+    Ok(Some(QuestionTurn {
+        phase,
+        session_id: session_id.to_owned(),
+        prompt_id: prompt_id.map(str::to_owned),
+        agent_id: agent_id.map(str::to_owned),
+        state_directory_variable: variable.name,
+    }))
 }
 
 pub(crate) fn approval_request(bytes: &[u8]) -> Result<Option<ApprovalRequest>, NormalizeError> {
@@ -160,6 +216,68 @@ pub(crate) fn approval_output(decision: &ApprovalDecision, request: &Value) -> P
 
 #[cfg(test)]
 mod tests {
+
+    fn turn(payload: &str) -> Option<QuestionTurn> {
+        question_turn(payload.as_bytes()).unwrap()
+    }
+
+    #[test]
+    fn a_question_names_its_prompt_and_a_subagent_its_agent() {
+        let asked = turn(r#"{"hook_event_name":"PermissionRequest","tool_name":"AskUserQuestion","session_id":"s","prompt_id":"p"}"#).unwrap();
+        assert_eq!(asked.phase, QuestionTurnPhase::Asked);
+        assert_eq!(asked.session_id, "s");
+        assert_eq!(asked.prompt_id.as_deref(), Some("p"));
+        assert_eq!(asked.agent_id, None);
+        assert_eq!(asked.state_directory_variable, "WEIR_AGENT_STATES_DIR");
+
+        let child = turn(
+            r#"{"hook_event_name":"SubagentStop","session_id":"s","prompt_id":"p","agent_id":"a"}"#,
+        )
+        .unwrap();
+        assert_eq!(child.phase, QuestionTurnPhase::Ended);
+        assert_eq!(child.prompt_id, None, "a subagent can outlive the prompt");
+        assert_eq!(child.agent_id.as_deref(), Some("a"));
+    }
+
+    #[test]
+    fn a_payload_that_names_no_turn_has_none() {
+        for payload in [
+            r#"{"hook_event_name":"PermissionRequest","tool_name":"Bash","session_id":"s","prompt_id":"p"}"#,
+            r#"{"hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","session_id":"s","prompt_id":"p"}"#,
+            r#"{"hook_event_name":"Stop","session_id":"","prompt_id":"p"}"#,
+            r#"{"hook_event_name":"Stop","session_id":"s"}"#,
+            r#"{"hook_event_name":"Stop","session_id":"s","prompt_id":""}"#,
+            r#"{"hook_event_name":"Stop","session_id":"s","prompt_id":"p","agent_id":""}"#,
+            r#"{"hook_event_name":"Stop","session_id":"s","prompt_id":"p","agent_id":null}"#,
+            r#"{"hook_event_name":"SubagentStop","session_id":"s","prompt_id":"p"}"#,
+            r#"{"hook_event_name":"Stop","session_id":1,"prompt_id":"p"}"#,
+            r#"{"hook_event_name":"Stop","session_id":"s","prompt_id":1}"#,
+            r#"{"hook_event_name":"Stop","session_id":"s","prompt_id":"p","agent_id":1}"#,
+        ] {
+            assert_eq!(turn(payload), None, "{payload}");
+        }
+    }
+
+    #[test]
+    fn a_payload_that_is_not_an_object_is_an_error() {
+        assert!(question_turn(b"[]").is_err());
+        assert!(question_turn(b"not json").is_err());
+    }
+
+    /// The helper hears of a turn's end only from the template's hooks.
+    #[test]
+    fn the_template_calls_the_helper_on_every_event_that_ends_a_turn() {
+        let template: Value =
+            serde_json::from_str(include_str!("../resources/settings.template.json")).unwrap();
+        let hooks = template["hooks"].as_object().unwrap();
+        let mut events: Vec<&str> = hooks
+            .iter()
+            .filter(|(_, groups)| groups.to_string().contains("question-turn-ended"))
+            .map(|(event, _)| event.as_str())
+            .collect();
+        events.sort_unstable();
+        assert_eq!(events, TURN_END_EVENTS);
+    }
     use super::*;
 
     #[test]

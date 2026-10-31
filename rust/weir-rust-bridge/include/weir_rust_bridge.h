@@ -528,6 +528,20 @@ int32_t weir_provider_turn_failure_report_v1(const uint8_t *provider,
                                              uint8_t **out,
                                              size_t *out_len);
 
+// Reports the question turn a hook payload names as JSON, or `null` when it
+// names none. On success, ownership of `*out` transfers to the caller, which
+// must release it with `weir_approval_bytes_free_v1`.
+//
+// # Safety
+//
+// Same contract as `weir_provider_approval_request_v1`.
+int32_t weir_provider_question_turn_v1(const uint8_t *provider,
+                                       size_t provider_len,
+                                       const uint8_t *input,
+                                       size_t input_len,
+                                       uint8_t **out,
+                                       size_t *out_len);
+
 // Restores a worktree to the start of a turn. `request` is JSON:
 // `{"root":…,"turnId":…,"paneId":…,"stateDirectories":[{"provider":…,"directory":…}]}`.
 // The body is `{"outcome":"refused","refusal":{"kind":…}}` or
