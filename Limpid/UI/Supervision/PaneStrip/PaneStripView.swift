@@ -93,7 +93,7 @@ private struct PaneStripContent: View, Equatable {
         .frame(height: LimpidLayout.Supervision.paneStripHeight)
         .coordinateSpace(.named(PaneStripView.coordinateSpace))
         .overlayPreferenceValue(SelectedStripTabKey.self) { selected in
-            PaneStripRule(gap: selected?.frame, visible: selected?.scrolls == true ? tabsVisibleRange : nil)
+            PaneStripRule(gap: selected?.frame, visible: tabsVisibleRange)
         }
         // No detach target on the strip's empty space: a pane dropped in
         // the gap between two tabs would leave its tab by accident. The
@@ -465,7 +465,7 @@ struct ReviewStripTab: View {
             .frame(height: layout.paneStripHeight)
             // The tab takes the width the strip gives it
             // (`PaneStripTabsLayout`), cutting its title at the end.
-            .folderTabFace(isSelected: tab.isShown, isHovering: isHovering, scrolls: true)
+            .folderTabFace(isSelected: tab.isShown, isHovering: isHovering)
             .onHover { isHovering = $0 }
             .contextMenu {
                 Button(role: .destructive) {
@@ -512,24 +512,33 @@ private struct OpenTabsButton: View {
             Image(systemName: "chevron.down")
                 .font(.supervision(.glyph, weight: .semibold))
                 .foregroundStyle(isLit ? SupervisionTokens.text.color : SupervisionTokens.muted.color)
-                .frame(width: Layout.openTabsButtonSize, height: Layout.openTabsButtonSize)
-                .background(
-                    RoundedRectangle(cornerRadius: Layout.paneStripTabCornerRadius, style: .continuous)
-                        .fill(isLit ? SupervisionTokens.selection.color : SupervisionTokens.hover.color)
-                )
-                // Centered over the strip's rule, as the tabs' content is.
-                .padding(.bottom, Layout.paneStripRuleWidth)
-                .frame(width: Layout.paneStripAddButtonWidth, height: Layout.paneStripHeight)
-                .contentShape(Rectangle())
+                .paneStripControlFace(fill: isLit ? SupervisionTokens.selection.color : SupervisionTokens.hover.color)
         }
         .iconButtonHelp("Open Tabs", shortcut: shortcut)
     }
 }
 
+private extension View {
+    /// The rounded square of the strip's two controls, centered over the
+    /// strip's rule as the tabs' content is. It stays clear of the rule, so
+    /// a control never reads as a tab growing out of it.
+    func paneStripControlFace(fill: Color) -> some View {
+        let layout = LimpidLayout.Supervision.self
+        return frame(width: layout.openTabsButtonSize, height: layout.openTabsButtonSize)
+            .background(
+                RoundedRectangle(cornerRadius: layout.paneStripTabCornerRadius, style: .continuous)
+                    .fill(fill)
+            )
+            .padding(.bottom, layout.paneStripRuleWidth)
+            .frame(width: layout.paneStripAddButtonWidth, height: layout.paneStripHeight)
+            .contentShape(Rectangle())
+    }
+}
+
 /// The strip's "+": adds a tab to this session. Its menu hangs below
 /// it on the surface every dropdown shares, opened as the title bar's
-/// dropdowns are. It is drawn as an unselected tab is, muted until the
-/// pointer is on it: the tab's hover fill while lit.
+/// dropdowns are. It is muted and bare until the pointer is on it, then
+/// lit on the same rounded square as Open Tabs.
 private struct AddTabButton: View {
     let container: ContainerID
     @Environment(WorkspaceSession.self) private var session
@@ -541,13 +550,7 @@ private struct AddTabButton: View {
             Image(systemName: "plus")
                 .font(.supervision(.label, weight: .medium))
                 .foregroundStyle(isLit ? SupervisionTokens.text.color : SupervisionTokens.muted.color)
-                .padding(.bottom, LimpidLayout.Supervision.paneStripRuleWidth)
-                .frame(
-                    width: LimpidLayout.Supervision.paneStripAddButtonWidth,
-                    height: LimpidLayout.Supervision.paneStripHeight
-                )
-                .folderTabFace(isSelected: false, isHovering: isLit, scrolls: false)
-                .contentShape(Rectangle())
+                .paneStripControlFace(fill: isLit ? SupervisionTokens.selection.color : .clear)
         }
         .help(help)
         .accessibilityLabel(help)

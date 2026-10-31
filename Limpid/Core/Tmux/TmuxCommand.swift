@@ -58,7 +58,7 @@ final class TmuxCommand: Sendable {
         }
         guard !isSecondRun else { return .launchFailed }
         let process = Process()
-        let pipe = Pipe()
+        let pipe = Pipe.forChildProcess()
         defer { try? pipe.fileHandleForReading.close() }
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments

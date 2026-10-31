@@ -721,7 +721,7 @@ enum LimpidLayout {
         /// badge, and narrower than the title bar's dropdowns, which hold
         /// paths.
         static let openTabsListWidth: CGFloat = 360
-        /// The Open Tabs button's square, inside the strip's height with
+        /// The square of the strip's two controls, inside its height with
         /// room above and below, as Chrome's tab search button sits.
         static let openTabsButtonSize: CGFloat = 24
         /// The corners of the window's small bordered parts: a menu's

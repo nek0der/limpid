@@ -228,10 +228,12 @@ fn environment(into: &Path, run: &RunSpec) -> HookEnv {
     }
     if run.tmux {
         // A fixed endpoint keeps the generated records stable; the server pid
-        // and start time are what the reader correlates panes by.
+        // and start time are what the reader correlates panes by. The hook
+        // asks `ps` for that pid's start time, so the pid is one no system
+        // hands out: a real process holding it would change the record.
         pairs.push((
             "TMUX".to_owned(),
-            "/tmp/limpid-corpus-socket,4242,0".to_owned(),
+            "/tmp/limpid-corpus-socket,2147483647,0".to_owned(),
         ));
         pairs.push(("TMUX_PANE".to_owned(), "%3".to_owned()));
     }

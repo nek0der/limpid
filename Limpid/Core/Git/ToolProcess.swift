@@ -244,8 +244,8 @@ private func runToolSync(
         process.standardError = FileHandle.nullDevice
     } else {
         outputFile = nil
-        let out = Pipe()
-        let err = Pipe()
+        let out = Pipe.forChildProcess()
+        let err = Pipe.forChildProcess()
         stdoutPipe = out
         stderrPipe = err
         process.standardOutput = out
