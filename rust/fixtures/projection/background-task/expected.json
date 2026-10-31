@@ -17,6 +17,7 @@
             "shells": 1
           },
           "hasPrompt": true,
+          "effort": "medium",
           "permissionMode": "auto"
         },
         "panes": [
@@ -47,6 +48,7 @@
             "shells": 1
           },
           "hasPrompt": true,
+          "effort": "medium",
           "permissionMode": "auto"
         }
       }

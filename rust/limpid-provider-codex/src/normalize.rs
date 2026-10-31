@@ -22,7 +22,7 @@
 //! and permission requests count as the pane's (`is_subagents_own`).
 
 use crate::failure::{RolloutFailure, USAGE_LIMIT_KIND, rollout_failure};
-use crate::json::string;
+use crate::json::{contains, parse, string};
 use limpid_agent_model::{
     AgentEvent, HookContext, MAX_HOOK_INPUT_BYTES, NormalizeError, PermissionMode, RawHookInput,
     RunRecord, SessionSettings, SessionSource, UsageLimit, format_utc_seconds, parse_object,
@@ -291,8 +291,8 @@ fn is_internal_agent(object: &Map<String, Value>, context: &HookContext) -> bool
         .is_internal_agent_directory(&resolved(home), &resolved(thread_directory))
 }
 
-/// What the call says of the session's model and permission mode. Codex
-/// sends both on nearly every event: `model` as the id the person picked
+/// What the call says of the session's settings. Codex sends the model and
+/// the permission mode on nearly every event: `model` as the id the person picked
 /// (`gpt-6.1-sol`), which is the name its own interface shows, and
 /// `permission_mode` as `bypassPermissions` for an approval policy that never
 /// asks and `default` for any other (`hook_permission_mode` in Codex's
@@ -309,8 +309,26 @@ pub(crate) fn session_settings(input: RawHookInput<'_>, context: &HookContext) -
         model: string(&object, "model")
             .filter(|model| !model.is_empty())
             .map(str::to_owned),
+        answered_model: None,
+        is_awaiting_answer: false,
+        effort: input.transcript.and_then(rollout_effort),
         permission_mode: string(&object, "permission_mode").and_then(PermissionMode::parse),
     }
+}
+
+/// The effort the rollout's latest `turn_context` line names. Codex writes
+/// one as each turn starts, so a change made between turns is the later line;
+/// the runtime hands us the rollout only on the calls that end a turn
+/// (`transcript_path`). `None` when the part read holds no such line.
+fn rollout_effort(rollout: &[u8]) -> Option<String> {
+    let context = rollout
+        .rsplit(|byte| *byte == b'\n')
+        .filter(|line| contains(line, b"\"turn_context\""))
+        .filter_map(parse)
+        .find(|record| string(record, "type") == Some("turn_context"))?;
+    string(context.get("payload")?.as_object()?, "effort")
+        .filter(|effort| !effort.is_empty())
+        .map(str::to_owned)
 }
 
 /// Whether the payload comes from a subagent (Codex names it with
@@ -467,6 +485,42 @@ mod tests {
         )
     }
 
+    #[test]
+    fn the_effort_is_the_latest_turn_context_in_the_part_read() {
+        let payload = r#"{"hook_event_name":"Stop","cwd":"/r","model":"gpt-6.1-sol"}"#;
+        let effort = |rollout: &str| {
+            session_settings(
+                RawHookInput {
+                    bytes: payload.as_bytes(),
+                    transcript: Some(rollout.as_bytes()),
+                },
+                &HookContext::fixture(),
+            )
+            .effort
+        };
+        let context = |word: &str| {
+            format!(r#"{{"type":"turn_context","payload":{{"model":"m","effort":"{word}"}}}}"#)
+        };
+        let later = format!(
+            "{}\n{}\n{}\n",
+            context("medium"),
+            context("xhigh"),
+            r#"{"type":"event_msg","payload":{"message":"\"turn_context\""}}"#
+        );
+        assert_eq!(effort(&later).as_deref(), Some("xhigh"));
+        assert_eq!(effort(r#"{"type":"event_msg","payload":{}}"#), None);
+        // The latest says none: an older line does not stand in for it.
+        let unsaid = format!(
+            "{}\n{}\n",
+            context("high"),
+            r#"{"type":"turn_context","payload":{"model":"m"}}"#
+        );
+        assert_eq!(effort(&unsaid), None);
+        // A line cut by the bounded read is skipped, not fatal.
+        let cut = format!("{}\n{}", context("high"), r#"{"type":"turn_context","pay"#);
+        assert_eq!(effort(&cut).as_deref(), Some("high"));
+    }
+
     /// The fields as the recordings carry them (`gpt-6.1-sol`,
     /// `bypassPermissions` in `fixtures/codex/2026-10/interrupted-turn`),
     /// taken from the session's own calls only.
@@ -480,6 +534,9 @@ mod tests {
             ),
             SessionSettings {
                 model: Some("gpt-6.1-sol".to_owned()),
+                answered_model: None,
+                is_awaiting_answer: false,
+                effort: None,
                 permission_mode: Some(PermissionMode::BypassPermissions),
             }
         );

@@ -22,6 +22,7 @@ struct PaneHeaderView: View {
     @Environment(AttentionQueueStore.self) private var attentionQueue
     @Environment(\.surfaceRegistry) private var registry
     @Environment(\.conversationIdentities) private var conversationIdentities
+    @Environment(\.turnHistory) private var turnHistory
     @Environment(\.displayScale) private var displayScale
     @Environment(PaneRenamePresentation.self) private var renamePresentation
     @Environment(SettingsStore.self) private var settingsStore
@@ -80,6 +81,21 @@ struct PaneHeaderView: View {
         attention.paneHeaderLabel(paneID: paneID, in: session, locale: locale)
     }
 
+    /// What the pane's conversation has used, its kept turns together; `nil`
+    /// while none has a count, or while the header cannot tell which run it
+    /// speaks for. Read here rather than in the label, which every surface
+    /// that names a pane reads and none of the others needs this from.
+    private func usage(of label: PaneHeaderLabel) -> TurnUsage? {
+        guard !label.settingsAreAmbiguous, let conversation = label.conversation else { return nil }
+        return turnHistory.flatMap { TurnUsage.total(of: $0.turns(of: conversation)) }
+    }
+
+    private func withTokens(_ label: PaneHeaderLabel, usage: TurnUsage?) -> PaneHeaderLabel {
+        var label = label
+        label.tokens = usage.map { ChangesPanelText.tokenCount($0, locale: locale) }
+        return label
+    }
+
     /// The conversation's color, as its tab and its cards wear it; `nil` for
     /// a worktree of one conversation and for a scratch tab. Read here rather
     /// than in the pane area: what decides the colors follows every turn, and
@@ -106,7 +122,8 @@ struct PaneHeaderView: View {
     }
 
     var body: some View {
-        let label = self.label
+        let usage = usage(of: self.label)
+        let label = withTokens(self.label, usage: usage)
         let mark = self.mark
         let identity = identity(of: label)
         let hiddenPanes = self.hiddenPanes
@@ -205,9 +222,9 @@ struct PaneHeaderView: View {
                 hasStartedPaneDrag = false
             }
         }
-        .help(Text(verbatim: hoverText(label)))
+        .help(Text(verbatim: hoverText(label, usage: usage)))
         .accessibilityElement(children: isEditing ? .contain : .ignore)
-        .accessibilityLabel(Text(verbatim: accessibilityDescription(label, mark: mark)))
+        .accessibilityLabel(Text(verbatim: accessibilityDescription(label, usage: usage, mark: mark)))
         .accessibilityAddTraits(.isHeader)
         .accessibilityAction { focusPane() }
         .accessibilityAction(named: Text("Rename Pane…")) { beginRename(label: label) }
@@ -296,7 +313,10 @@ struct PaneHeaderView: View {
             if form.showsMark, label.showsWarning {
                 warning(inWords: form.showsSettings, isAmbiguous: label.settingsAreAmbiguous)
             }
-            if form.showsSettings, let settings = label.settingsText(locale: locale) {
+            if form.showsSettings, let settings = label.settingsText(
+                tokens: form.showsTokens ? label.tokens : nil,
+                locale: locale
+            ) {
                 settingsText(settings)
             }
             if form.showsPromptCacheClock {
@@ -374,8 +394,8 @@ struct PaneHeaderView: View {
         }
     }
 
-    /// The model and the mode. Never truncated: a row without room for it
-    /// all takes the next narrower form, which leaves it out.
+    /// The settings and the tokens. Never truncated: a row without room for
+    /// them takes the next narrower form, which leaves the tokens out first.
     private func settingsText(_ settings: String) -> some View {
         Text(verbatim: settings)
             .font(.supervision(LimpidLayout.paneHeaderDetailFontSize))
@@ -416,25 +436,33 @@ struct PaneHeaderView: View {
         AgentStatusText.pane(name: StateGlyph.Kind(mark.glyph).name.resolved(in: locale), detail: mark.detail, locale: locale)
     }
 
-    /// The name, the agent, the directory, then the model and the mode in
+    /// The name, the agent, the directory, then the settings in
     /// full, which the row shortens or leaves out as it narrows.
-    private func hoverText(_ label: PaneHeaderLabel) -> String {
-        ([label.name, label.agentName, label.detail] + settingsDescription(label))
+    private func hoverText(_ label: PaneHeaderLabel, usage: TurnUsage?) -> String {
+        ([label.name, label.agentName, label.detail] + settingsDescription(label, usage: usage))
             .compactMap(\.self)
             .joined(separator: " — ")
     }
 
-    /// The model and the mode as the hover text and VoiceOver say them. The
-    /// default mode is said here too, unlike in the row: a reader asking
-    /// what the agent may do is told.
-    private func settingsDescription(_ label: PaneHeaderLabel) -> [String] {
+    /// The model, the effort, the mode, and the exact tokens as the hover text
+    /// and VoiceOver say them. The default mode is said here too, unlike in
+    /// the row: a reader asking what the agent may do is told.
+    private func settingsDescription(_ label: PaneHeaderLabel, usage: TurnUsage?) -> [String] {
         if label.settingsAreAmbiguous {
             return [PaneHeaderLabel.unavailableSettings.resolved(in: locale)]
         }
-        return [label.model, label.permissionMode?.spokenName.resolved(in: locale)].compactMap(\.self)
+        let effort = label.effort.map { effort in
+            LocalizedStringResource(
+                "paneHeader.effort",
+                defaultValue: "Effort: \(effort)",
+                comment: "Pane header's hover text and VoiceOver: how hard the model reasons; argument: the agent's word, as in high"
+            ).resolved(in: locale)
+        }
+        let tokens = usage.map { ChangesPanelText.tokenTotal($0, isExact: true, locale: locale) }
+        return [label.model, effort, label.permissionMode?.spokenName.resolved(in: locale), tokens].compactMap(\.self)
     }
 
-    private func accessibilityDescription(_ label: PaneHeaderLabel, mark: PaneHeaderMark?) -> String {
+    private func accessibilityDescription(_ label: PaneHeaderLabel, usage: TurnUsage?, mark: PaneHeaderMark?) -> String {
         var pieces = [label.name]
         if let agentName = label.agentName {
             pieces.append(agentName)
@@ -442,7 +470,7 @@ struct PaneHeaderView: View {
         if let detail = label.detail {
             pieces.append(detail)
         }
-        pieces += settingsDescription(label)
+        pieces += settingsDescription(label, usage: usage)
         // The mark's own name, as the glyph reads it everywhere.
         if let mark {
             pieces.append(StateGlyph.Kind(mark.glyph).name.resolved(in: locale))

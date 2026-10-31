@@ -613,6 +613,10 @@ enum DemoFixture {
         case .claude: "Opus 5.5"
         case .codex: "gpt-5.5"
         }
+        badge.effort = switch agent {
+        case .claude: "high"
+        case .codex: "medium"
+        }
         var tab = Tab(
             id: slot.tabID,
             title: name,

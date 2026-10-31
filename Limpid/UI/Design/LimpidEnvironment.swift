@@ -52,6 +52,10 @@ extension EnvironmentValues {
     /// `nil` in Previews and tests, where no tab shows a color.
     @Entry var conversationIdentities: ConversationIdentityStore?
 
+    /// Every agent's turns, for what a pane's conversation has used. `nil` in
+    /// Previews and tests, where a header has no count to say.
+    @Entry var turnHistory: TurnHistory?
+
     /// Command palette frecency scoring store. `nil` in Previews /
     /// tests; LimpidApp installs the real instance at the scene root.
     @Entry var frecencyStore: FrecencyStore?

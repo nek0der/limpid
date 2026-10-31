@@ -50,6 +50,7 @@ extension View {
         .environment(\.reviewWriters, state.reviewWriters)
         .environment(\.agentProjection, state.agentProjection)
         .environment(\.conversationIdentities, state.conversationIdentities)
+        .environment(\.turnHistory, state.agentProjection.turnHistory)
         .environment(\.frecencyStore, state.frecencyStore)
         .environment(\.notificationManager, state.notificationManager)
         .environment(\.sparkleUpdater, updaterStack.updater)

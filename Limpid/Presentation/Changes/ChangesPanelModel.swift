@@ -116,6 +116,9 @@ enum ChangesPanelModel {
         /// "14 turns · 10 unviewed": the worktree's, whatever the filter.
         let turnCount: Int
         let unviewedCount: Int
+        /// What the worktree's kept turns used together, whatever the filter;
+        /// `nil` while none has said (`TurnUsage.total`).
+        let usage: TurnUsage?
         /// What the worktree's unviewed range changed, as the one
         /// comparison "Review Unviewed" reads (`comparison`), and whether a
         /// shell command made some of it. Nothing while no turn is
@@ -372,6 +375,7 @@ enum ChangesPanelModel {
             conversations: conversations,
             turnCount: timeline.count,
             unviewedCount: counts.values.reduce(0, +),
+            usage: TurnUsage.total(of: timeline),
             added: added,
             removed: removed,
             fileCount: fileCount,

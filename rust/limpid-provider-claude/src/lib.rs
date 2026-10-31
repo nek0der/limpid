@@ -95,7 +95,7 @@ impl ProviderAdapter for ClaudeAdapter {
 
     fn session_settings(&self, input: RawHookInput<'_>, _: &HookContext) -> SessionSettings {
         parse_object(input.bytes, MAX_HOOK_INPUT_BYTES)
-            .map(|object| settings::session_settings(&object))
+            .map(|object| settings::session_settings(&object, input.transcript))
             .unwrap_or_default()
     }
 

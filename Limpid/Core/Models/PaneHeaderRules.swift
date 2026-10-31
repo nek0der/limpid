@@ -9,10 +9,10 @@
 import Foundation
 
 /// The agent a header speaks for: `title` names the pane, `providerName` goes
-/// only into the hover text and VoiceOver, and the model and permission mode
-/// go on the header's trailing side. Each is nil until the agent has said it:
-/// the title until the conversation has produced one, the model and the mode
-/// until a hook has carried them.
+/// only into the hover text and VoiceOver, and the model, effort, and
+/// permission mode go on the header's trailing side. Each is nil until the
+/// agent has said it: the title until the conversation has produced one, the
+/// settings until a hook or the agent's rollout has carried them.
 struct PaneHeaderAgent: Equatable {
     /// Which agent it is, for the header's badge.
     var kind: AgentKind
@@ -20,6 +20,7 @@ struct PaneHeaderAgent: Equatable {
     var title: String?
     var model: String?
     var permissionMode: AgentPermissionMode?
+    var effort: String?
 }
 
 /// What a pane header shows, left to right: the name, then the dimmer
@@ -41,6 +42,12 @@ struct PaneHeaderLabel: Equatable {
     var model: String?
     /// How freely the pane's agent may act without asking.
     var permissionMode: AgentPermissionMode?
+    /// How hard the pane's agent's model reasons, in the provider's own word.
+    var effort: String?
+    /// What the pane's conversation has used, as the header writes it; only
+    /// the header sets it, as the other surfaces that read a label do not
+    /// show it.
+    var tokens: String?
     /// Whether the run records lack enough evidence to identify the current
     /// settings owner.
     var settingsAreAmbiguous = false
@@ -68,15 +75,17 @@ struct PaneHeaderLabel: Equatable {
         permissionMode?.runsWithoutAsking == true
     }
 
-    /// The model and the mode's short name, as the header's trailing text
-    /// shows them ("Opus 5.5 · Plan"), or nil when there is neither. The
+    /// The model, the effort, and the mode's short name, as the header's
+    /// trailing text shows them ("Opus 5.5 · high · Plan"), or nil when there
+    /// are none, then `tokens`, what the conversation has used, as the caller
+    /// wrote it. The effort stays the agent's own word, as the model does. The
     /// default mode is left unsaid, and the mode that runs without asking is
     /// named by the warning instead.
-    func settingsText(locale: Locale) -> String? {
+    func settingsText(tokens: String? = nil, locale: Locale) -> String? {
         if settingsAreAmbiguous {
             return nil
         }
-        let pieces = [model, permissionMode?.headerName?.resolved(in: locale)].compactMap(\.self)
+        let pieces = [model, effort, permissionMode?.headerName?.resolved(in: locale), tokens].compactMap(\.self)
         return pieces.isEmpty ? nil : pieces.joined(separator: " · ")
     }
 }
@@ -84,15 +93,19 @@ struct PaneHeaderLabel: Equatable {
 /// How much of a header a row has room for, widest first. The kind's mark
 /// and the "⋯" menu are in every form: the mark says what the pane is and
 /// the menu is how to act on it. Between them the detail goes first, then
-/// the agent's model and mode, then the warning's words, then the name, then
+/// the tokens, then the agent's settings, then the warning's words, then the name, then
 /// the state mark with the warning's symbol, then the prompt cache clock,
 /// which is what a narrow pane most needs to say while it shows: the next
 /// message will cost a re-write, and the clock is the way to deal with it.
 enum PaneHeaderForm: CaseIterable, Equatable {
-    /// Kind's mark, name, detail, warning, model and mode, cache clock, state
-    /// mark, menu.
+    /// Kind's mark, name, detail, warning, settings, tokens, cache clock,
+    /// state mark, menu.
     case all
-    /// Kind's mark, name, warning, model and mode, cache clock, state mark, menu.
+    /// Kind's mark, name, warning, settings, tokens, cache clock, state mark,
+    /// menu.
+    case withTokens
+    /// Kind's mark, name, warning, settings, cache clock, state mark, menu. A
+    /// count that grows with every turn gives way before what the agent runs.
     case withSettings
     /// Kind's mark, name (truncating), warning's symbol, cache clock, state mark,
     /// menu.
@@ -108,24 +121,29 @@ enum PaneHeaderForm: CaseIterable, Equatable {
     case kindAndMenu
 
     var showsName: Bool {
-        self == .all || self == .withSettings || self == .withName
+        self == .all || self == .withTokens || self == .withSettings || self == .withName
     }
 
     var showsDetail: Bool {
         self == .all
     }
 
-    /// The model and mode, and the warning in words rather than its symbol
+    /// The settings, and the warning in words rather than its symbol
     /// alone.
     var showsSettings: Bool {
-        self == .all || self == .withSettings
+        self == .all || self == .withTokens || self == .withSettings
+    }
+
+    /// What the pane's conversation has used, beside the settings.
+    var showsTokens: Bool {
+        self == .all || self == .withTokens
     }
 
     /// The state mark, and the warning, which stays as long as the mark
     /// does: as words while the form has room for the settings, else as
     /// its symbol.
     var showsMark: Bool {
-        self == .all || self == .withSettings || self == .withName || self == .withMark
+        self == .all || self == .withTokens || self == .withSettings || self == .withName || self == .withMark
     }
 
     /// Whether the kind's mark has its conversation's color before it. It goes
@@ -319,7 +337,8 @@ enum PaneHeaderRules {
             agentName: agent.flatMap { normalizedName($0.providerName) },
             isNamedByPerson: personName != nil,
             model: normalizedName(agent?.model),
-            permissionMode: agent?.permissionMode
+            permissionMode: agent?.permissionMode,
+            effort: normalizedName(agent?.effort)
         )
     }
 }

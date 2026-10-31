@@ -462,6 +462,7 @@ mod tests {
                 stop_reason: None,
                 has_prompt: None,
                 model: None,
+                effort: None,
                 permission_mode: None,
             },
             panes: vec![pane()],

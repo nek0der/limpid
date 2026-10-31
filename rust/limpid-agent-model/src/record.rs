@@ -306,6 +306,13 @@ pub struct RunRecord {
         deserialize_with = "lenient"
     )]
     pub model: Option<String>,
+    /// How hard the session's model reasons, kept as `model` is.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "lenient"
+    )]
+    pub effort: Option<String>,
     /// How freely the session may act without asking, kept as `model` is.
     #[serde(
         default,
@@ -467,6 +474,7 @@ impl From<RunRecordV2> for RunRecord {
             background_work: None,
             // The shell receivers recorded neither.
             model: None,
+            effort: None,
             permission_mode: None,
             extra: record.extra,
         }
@@ -740,12 +748,14 @@ mod tests {
 
         let with_settings = RunRecord {
             model: Some("Opus 5.5".to_owned()),
+            effort: Some("xhigh".to_owned()),
             permission_mode: Some(PermissionMode::BypassPermissions),
             ..record
         };
         let encoded = with_settings.encode().expect("encodes");
         let text = String::from_utf8(encoded.clone()).expect("utf8");
         assert!(text.contains(r#""model":"Opus 5.5""#));
+        assert!(text.contains(r#""effort":"xhigh""#));
         assert!(text.contains(r#""permissionMode":"bypassPermissions""#));
         assert_eq!(
             RunRecord::decode(&encoded).expect("decodes again"),

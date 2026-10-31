@@ -128,24 +128,24 @@ session, with who runs in it and its state, to search, switch to, or close.
 Use it when the strip has more tabs than fit.
 
 Every pane has a one-line header with the pane's name and folder. For an
-agent it adds the model and, unless it is the default, the permission mode.
+agent it adds the model, the effort, the permission mode unless it is the
+default, and the tokens its conversation's kept turns have used.
 When the agent runs every action without asking (Claude Code's bypass mode, or Codex with approvals
 set to never), the header says **Runs without asking** beside a warning
-sign. As the pane narrows, the folder goes first, then the model and the
-mode, then the name. The warning stays as its sign.
+sign. As the pane narrows, the folder goes first, then the tokens, then the
+model, the effort, and the mode, then the name. The warning stays as its sign.
 
 When tmux shows several agents in one terminal, the header gives priority
 to a visible agent that runs without asking, keeping its warning even when
 another split has focus. The model and provider name describe that same
 agent. Otherwise, the focused agent takes priority. When an agent launches
 another CLI in the same tmux pane, settings follow the child while it works.
-The header returns to the parent with its next model or permission-mode
-report, or when the child reports that its session has ended.
+The header returns to the parent with its next report of its settings, or when the child reports that its session has ended.
 Agents in hidden tmux windows or panes hidden by zoom do not supply the
 header settings.
 If older records do not identify which invocation is current, the header
 says **Agent settings unavailable** with a warning sign instead of guessing
-the model or permission mode. A new invocation records its launch order.
+the model, effort, or permission mode. A new invocation records its launch order.
 
 ### Decision bar
 
@@ -172,7 +172,8 @@ its background terminals, so its line never says this.
 ### Changes panel
 
 ⌥⌘I, off by default. Every conversation's turns in the worktree as one
-timeline, with the unviewed count and range and a **Conversation** filter.
+timeline, with the unviewed count and range, the tokens those turns used,
+and a **Conversation** filter.
 
 - Each turn is a card: its prompt and when it started, then what it
   changed, its test runs in order (✗✗✓ failed twice, then passed; a

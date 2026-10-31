@@ -174,7 +174,7 @@
       }
     },
     "tokens.unit": {
-      "comment": "A turn card: the unit after its count of tokens, as in 84K tok; kept short, as the card's column is narrow",
+      "comment": "The unit after a count of tokens, as in 84K tok, on a card, the panel head, and a pane header",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -191,7 +191,7 @@
       }
     },
     "tokens.atLeast": {
-      "comment": "A turn's tokens, part of the turn unread so it used more; argument: the count, as in 84,123 or 84K",
+      "comment": "Tokens of a turn, conversation, or worktree, some unread so they used more; argument: the count, as in 84K",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -312,7 +312,7 @@
       }
     },
     "tokens.total": {
-      "comment": "A turn's tokens, the cache reads left out; argument: the count, as in 84,123 or 84K",
+      "comment": "Tokens of a turn, conversation, or worktree, the cache reads left out; argument: the count, as in 84K",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -329,7 +329,7 @@
       }
     },
     "tokens.breakdown": {
-      "comment": "Tooltip of a turn: what its token count is made of; arguments: fresh input, cache writes, output, as counts",
+      "comment": "Token tooltip: what the count is made of; arguments: fresh input, cache writes, output, as counts",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -346,7 +346,7 @@
       }
     },
     "tokens.cacheReads": {
-      "comment": "Tooltip of a turn: the input read from the prompt cache, left out of its token count; argument: a count",
+      "comment": "Token tooltip: the input read from the prompt cache, left out of the count; argument: a count",
       "localizations": {
         "en": {
           "stringUnit": {
@@ -375,6 +375,57 @@
           "stringUnit": {
             "state": "translated",
             "value": "ターンの一部を読めなかったため、実際より少ない可能性があります"
+          }
+        }
+      }
+    },
+    "tokens.partialTotal": {
+      "comment": "Changes panel head's tooltip: its token count may be lower than what the turns used",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some turns could not be read, so the count may be short"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "一部のターンを読めなかったため、実際より少ない可能性があります"
+          }
+        }
+      }
+    },
+    "tokens.worktreeScope": {
+      "comment": "Changes panel head's tooltip: which turns its token count adds up",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tokens add up every conversation’s turns still kept in this worktree"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "トークンは、このワークツリーに残っている全会話のターンの合計です"
+          }
+        }
+      }
+    },
+    "paneHeader.effort": {
+      "comment": "Pane header's hover text and VoiceOver: how hard the model reasons; argument: the agent's word, as in high",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Effort: %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "エフォート：%@"
           }
         }
       }
