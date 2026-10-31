@@ -62,6 +62,58 @@ enum RustProviderBridge {
         return Set(names)
     }
 
+    /// A turn that failed, as the provider's crate reads it from a line of its
+    /// transcript.
+    struct TurnFailureReport {
+        /// The hook payload to report.
+        var payload: [String: Any]
+        /// When the line says it was written; `nil` when it does not say.
+        let writtenAt: Date?
+        /// The message that names when a usage limit resets, for the host to
+        /// read in the time zone the provider ran in.
+        let usageLimitMessage: String?
+        /// The payload key for that reset.
+        let messageResetKey: String
+    }
+
+    /// The report for `line` when it is a turn that failed, else `nil`. A line
+    /// with no time of its own was written no later than `readAt`.
+    static func turnFailureReport(
+        provider: String,
+        line: Data,
+        transcriptPath: String,
+        sessionID: String,
+        readAt: Date
+    ) throws -> TurnFailureReport? {
+        let path = Array(transcriptPath.utf8)
+        let session = Array(sessionID.utf8)
+        let body = try call(provider: provider, input: line, notApproval: false) { pointers in
+            weir_provider_turn_failure_report_v1(
+                pointers.provider, pointers.providerCount,
+                pointers.input, pointers.inputCount,
+                path, path.count,
+                session, session.count,
+                UInt64(max(0, readAt.timeIntervalSince1970)),
+                pointers.out, pointers.outCount
+            )
+        }
+        guard let body else { throw AgentIntegrationError.invalidResponse }
+        let object = try JSONSerialization.jsonObject(with: body, options: .fragmentsAllowed)
+        if object is NSNull {
+            return nil
+        }
+        guard let report = object as? [String: Any],
+              let payload = report["payload"] as? [String: Any],
+              let messageResetKey = report["message_reset_key"] as? String
+        else { throw AgentIntegrationError.invalidResponse }
+        return TurnFailureReport(
+            payload: payload,
+            writtenAt: (report["written_at"] as? Int).map { Date(timeIntervalSince1970: TimeInterval($0)) },
+            usageLimitMessage: report["usage_limit_message"] as? String,
+            messageResetKey: messageResetKey
+        )
+    }
+
     /// Which hook entry point `runHook` invokes.
     enum HookKind {
         case lifecycle

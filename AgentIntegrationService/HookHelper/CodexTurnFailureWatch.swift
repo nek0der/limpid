@@ -13,8 +13,8 @@ import Foundation
 /// reports `WeirTurnFailed` through the same hook runtime in the same
 /// environment as Codex's own hooks, so the run's record, its turn, and the
 /// notification follow as for a failure a hook reports. The report names the
-/// session and the time it observed (`CodexTurnFailureReport`), since the
-/// run may have moved on by the time it lands.
+/// session and the time it observed (`weir_provider_turn_failure_report_v1`),
+/// since the run may have moved on by the time it lands.
 ///
 /// The watcher holds no pipe of Codex's (its standard streams are the null
 /// device), runs in a process group of its own (`Process` starts each child
@@ -80,24 +80,42 @@ enum CodexTurnFailureWatch {
         while isAlive(codex) {
             Thread.sleep(forTimeInterval: interval)
             let lines = reader.readNewLines(keeping: RolloutReader.mayBeFailureLine)
-            if let line = lines.compactMap(RolloutReader.failureLine(in:)).last {
+            let reports = lines.compactMap { report(for: $0, rollout: rollout, session: session) }
+            if let failure = reports.last {
                 // The time zone Codex printed a usage limit's reset in is the
                 // one this process runs in, its environment being Codex's. A
                 // line with no time of its own was written within one
                 // interval.
-                let writtenAt = line.writtenAt ?? Date().addingTimeInterval(-interval)
-                let resetAt = line.isUsageLimit ? line.message.flatMap {
+                let writtenAt = failure.writtenAt ?? Date().addingTimeInterval(-interval)
+                var payload = failure.payload
+                if let resetAt = failure.usageLimitMessage.flatMap({
                     CodexUsageLimitMessage.resetAt(in: $0, writtenAt: writtenAt, timeZone: .current)
-                } : nil
-                let payload = CodexTurnFailureReport.payload(
-                    rollout: rollout,
-                    sessionID: session,
-                    line: line,
-                    readAt: Date(),
-                    messageResetAt: resetAt
-                )
+                }) {
+                    payload[failure.messageResetKey] = Int(resetAt.timeIntervalSince1970)
+                }
                 report(payload, environment: environment)
             }
+        }
+    }
+
+    /// What the Codex crate says of `line`. A failure to ask costs only the
+    /// detection of that turn.
+    private static func report(
+        for line: Substring,
+        rollout: String,
+        session: String
+    ) -> RustProviderBridge.TurnFailureReport? {
+        do {
+            return try RustProviderBridge.turnFailureReport(
+                provider: "codex",
+                line: Data(line.utf8),
+                transcriptPath: rollout,
+                sessionID: session,
+                readAt: Date()
+            )
+        } catch {
+            logHookDiagnostic("Weir hook helper: a rollout line could not be read: \(error)")
+            return nil
         }
     }
 

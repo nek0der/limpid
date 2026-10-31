@@ -5,6 +5,7 @@ use crate::{
     PlanUsageAnswer, PromptKind, ProviderDescriptor, SessionSettings, Titles, TurnUsage,
     WorktreeIntent,
 };
+use serde::Serialize;
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -124,6 +125,31 @@ pub trait StatusLineAdapter: Send + Sync {
     fn relay(&self, user: &Map<String, Value>, relay_command: &str) -> Value;
 }
 
+/// What a host's watcher knows about the transcript it reads.
+#[derive(Clone, Copy, Debug)]
+pub struct FailureWatch<'a> {
+    pub transcript_path: &'a str,
+    pub session_id: &'a str,
+    /// When the watcher read the line, in Unix seconds: a line with no time of
+    /// its own was written no later.
+    pub read_at: u64,
+}
+
+/// A turn that failed, as a watcher reports it through the hook runtime.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct FailureReport {
+    /// The hook payload to report.
+    pub payload: serde_json::Value,
+    /// When the line says it was written, in Unix seconds; `None` when it does
+    /// not say, or not readably.
+    pub written_at: Option<u64>,
+    /// The provider's message, when it names when a usage limit resets. Only
+    /// the host can read that message, in the time zone the provider ran in.
+    pub usage_limit_message: Option<String>,
+    /// The payload key for the reset the host read from that message.
+    pub message_reset_key: &'static str,
+}
+
 /// A provider is one implementation of this trait plus recorded fixtures.
 pub trait ProviderAdapter: Send + Sync {
     /// Identity, capabilities, timing, and directory names.
@@ -131,6 +157,17 @@ pub trait ProviderAdapter: Send + Sync {
 
     /// What the platform must place so the provider's hooks reach Weir.
     fn install_recipe(&self) -> InstallRecipe;
+
+    /// The report a host's watcher makes for a turn the provider ran no hook
+    /// for, when `line` of its transcript says the turn failed; `None` for any
+    /// other line, and for a provider whose hooks say so themselves.
+    fn turn_failure_report(
+        &self,
+        _line: &[u8],
+        _watch: &FailureWatch<'_>,
+    ) -> Option<FailureReport> {
+        None
+    }
 
     /// The environment variable that moves the provider's configuration
     /// directory (`CODEX_HOME`), when the provider has one. The runtime reads

@@ -18,10 +18,11 @@ use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use weir_agent_model::{
-    AgentEvent, ApprovalDecision, ApprovalRequest, HookContext, InstallRecipe, ListDirectory,
-    MAX_HOOK_INPUT_BYTES, NormalizeError, PlanUsageAnswer, ProviderAdapter, ProviderDescriptor,
-    ProviderOutput, RawHookInput, RunRecord, SessionSettings, Titles, TurnReading, TurnUsage,
-    UnpromptedPrompt, WorktreeIntent, parse_object, transcript_path_for_events,
+    AgentEvent, ApprovalDecision, ApprovalRequest, FailureReport, FailureWatch, HookContext,
+    InstallRecipe, ListDirectory, MAX_HOOK_INPUT_BYTES, NormalizeError, PlanUsageAnswer,
+    ProviderAdapter, ProviderDescriptor, ProviderOutput, RawHookInput, RunRecord, SessionSettings,
+    Titles, TurnReading, TurnUsage, UnpromptedPrompt, WorktreeIntent, parse_object,
+    transcript_path_for_events,
 };
 
 /// The Codex CLI provider.
@@ -38,6 +39,10 @@ impl ProviderAdapter for CodexAdapter {
 
     fn install_recipe(&self) -> InstallRecipe {
         descriptor::install_recipe()
+    }
+
+    fn turn_failure_report(&self, line: &[u8], watch: &FailureWatch<'_>) -> Option<FailureReport> {
+        failure::turn_failure_report(line, watch)
     }
 
     fn home_directory_variable(&self) -> Option<&'static str> {

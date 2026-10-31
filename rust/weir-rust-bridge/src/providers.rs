@@ -13,7 +13,8 @@ use weir_agent_hook::{
     run_hook, run_worktree_hook,
 };
 use weir_agent_model::{
-    ApprovalDecision, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter, RawHookInput,
+    ApprovalDecision, FailureWatch, MAX_HOOK_INPUT_BYTES, NormalizeError, ProviderAdapter,
+    RawHookInput,
 };
 
 /// Status codes returned by the provider translation ABI functions,
@@ -48,6 +49,10 @@ const PROVIDER_INPUT_TOO_LARGE: i32 = weir_provider_result::WEIR_PROVIDER_INPUT_
 const PROVIDER_INVALID_INPUT: i32 = weir_provider_result::WEIR_PROVIDER_INVALID_INPUT as i32;
 const PROVIDER_INTERNAL: i32 = weir_provider_result::WEIR_PROVIDER_INTERNAL as i32;
 const PROVIDER_PANIC: i32 = weir_provider_result::WEIR_PROVIDER_PANIC as i32;
+
+/// The longest transcript line asked about: more than the watcher's reads can
+/// hand over together with what they kept of the line before.
+const MAX_TRANSCRIPT_LINE_BYTES: usize = 8 * 1024 * 1024;
 
 /// Which hook entry point `weir_hook_run_v1` runs.
 pub const WEIR_HOOK_KIND_LIFECYCLE: u32 = 0;
@@ -281,6 +286,74 @@ pub unsafe extern "C" fn weir_provider_approval_output_v2(
             // and the bytes are owned by the caller until it frees them.
             unsafe { transfer(body, out, out_len) };
         }
+        Ok(PROVIDER_OK)
+    });
+    status.unwrap_or_else(|code| code)
+}
+
+/// Asks `provider` about one line of a transcript a watcher reads. Reports the
+/// `FailureReport` as JSON when the line is a turn that failed, and `null` for
+/// any other line. On success, ownership of `*out` transfers to the caller,
+/// which must release it with `weir_approval_bytes_free_v1`.
+///
+/// # Safety
+///
+/// Same contract as `weir_provider_approval_request_v1`, with `line` readable
+/// for `line_len` bytes, and `transcript_path` and `session_id` readable for
+/// their lengths.
+#[unsafe(no_mangle)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn weir_provider_turn_failure_report_v1(
+    provider: *const u8,
+    provider_len: usize,
+    line: *const u8,
+    line_len: usize,
+    transcript_path: *const u8,
+    transcript_path_len: usize,
+    session_id: *const u8,
+    session_id_len: usize,
+    read_at: u64,
+    out: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    if out.is_null() || out_len.is_null() {
+        return PROVIDER_NULL_POINTER;
+    }
+    // SAFETY: The caller guarantees both output pointers are writable.
+    unsafe {
+        ptr::write(out, ptr::null_mut());
+        ptr::write(out_len, 0);
+    }
+    let status = provider_boundary(|| {
+        let adapter = unsafe { resolve_adapter(provider, provider_len) }?;
+        // A line is not a hook payload: a turn's end can carry a long answer,
+        // and one refused here is a failure never reported.
+        if line_len > MAX_TRANSCRIPT_LINE_BYTES {
+            return Err(PROVIDER_INPUT_TOO_LARGE);
+        }
+        if line.is_null() && line_len > 0 {
+            return Err(PROVIDER_NULL_POINTER);
+        }
+        // SAFETY: The caller guarantees a readable line of this length.
+        let line = if line_len == 0 {
+            &[]
+        } else {
+            unsafe { slice::from_raw_parts(line, line_len) }
+        };
+        let text = |pointer, length| {
+            let bytes = unsafe { input_bytes(pointer, length) }?;
+            std::str::from_utf8(bytes).map_err(|_| PROVIDER_INVALID_INPUT)
+        };
+        let watch = FailureWatch {
+            transcript_path: text(transcript_path, transcript_path_len)?,
+            session_id: text(session_id, session_id_len)?,
+            read_at,
+        };
+        let report = adapter.turn_failure_report(line, &watch);
+        let body = serde_json::to_vec(&report).map_err(|_| PROVIDER_INTERNAL)?;
+        // SAFETY: The caller guarantees both output pointers are writable, and
+        // the bytes are owned by the caller until it frees them.
+        unsafe { transfer(body, out, out_len) };
         Ok(PROVIDER_OK)
     });
     status.unwrap_or_else(|code| code)

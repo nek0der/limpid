@@ -8,11 +8,6 @@ import Testing
 struct CodexTurnFailureTests {
     private static let limited = #"{"timestamp":"2026-10-13T01:00:00.500Z","type":"event_msg","payload":{"type":"task_complete","#
         + #""error":{"message":"Try again at 10:29 AM.","codex_error_info":"usage_limit_exceeded"}}}"#
-    private static let limitedLine = RolloutReader.FailureLine(
-        kind: "usage_limit_exceeded",
-        message: "Try again at 10:29 AM.",
-        writtenAt: Date(timeIntervalSince1970: 1_791_853_200.5)
-    )
     private static let done = #"{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"ok"}}"#
 
     private static func append(_ data: Data, to url: URL) throws {
@@ -40,7 +35,7 @@ struct CodexTurnFailureTests {
             try Self.append(Self.done + "\n" + Self.limited, to: url)
             #expect(reader.readNewLines() == [Substring(Self.done)], "a line not ended yet waits")
             try Self.append("\n", to: url)
-            #expect(reader.readNewLines().compactMap(RolloutReader.failureLine(in:)) == [Self.limitedLine])
+            #expect(reader.readNewLines() == [Substring(Self.limited)])
         }
     }
 
@@ -58,36 +53,42 @@ struct CodexTurnFailureTests {
         }
     }
 
-    /// The report names the session the watcher read and when the turn
-    /// failed, so the hook runtime can tell a report about an earlier
-    /// conversation or turn from one about the run as it is, and the kind,
-    /// which stands when the rollout cannot be read again.
-    @Test func report_namesTheSessionTheKindAndWhenTheTurnFailed() {
-        let readAt = Date(timeIntervalSince1970: 1_791_853_260)
-        let payload = CodexTurnFailureReport.payload(
-            rollout: "/tmp/rollout.jsonl",
+    /// The Codex crate's own tests cover what it reads from a line. This one
+    /// covers what crosses the bridge, which the watcher then reports.
+    @Test func report_crossesTheBridgeWithTheMessageTheHostReads() throws {
+        let report = try RustProviderBridge.turnFailureReport(
+            provider: "codex",
+            line: Data(Self.limited.utf8),
+            transcriptPath: "/tmp/rollout.jsonl",
             sessionID: "session-a",
-            line: Self.limitedLine,
-            readAt: readAt,
-            messageResetAt: Date(timeIntervalSince1970: 1_791_854_940)
+            readAt: Date(timeIntervalSince1970: 1_791_853_260)
         )
-        #expect(payload["hook_event_name"] as? String == "WeirTurnFailed")
-        #expect(payload["transcript_path"] as? String == "/tmp/rollout.jsonl")
-        #expect(payload["session_id"] as? String == "session-a")
-        #expect(payload[CodexTurnFailureReport.failedAtKey] as? Int == 1_791_853_200, "the line's own second")
-        #expect(payload[CodexTurnFailureReport.errorKindKey] as? String == "usage_limit_exceeded")
-        #expect(payload[CodexTurnFailureReport.messageResetKey] as? Int == 1_791_854_940)
+        let failure = try #require(report)
+        #expect(failure.payload["hook_event_name"] as? String == "WeirTurnFailed")
+        #expect(failure.payload["transcript_path"] as? String == "/tmp/rollout.jsonl")
+        #expect(failure.payload["session_id"] as? String == "session-a")
+        #expect(failure.writtenAt == Date(timeIntervalSince1970: 1_791_853_200), "the line's own time")
+        #expect(failure.usageLimitMessage == "Try again at 10:29 AM.")
 
-        let undated = CodexTurnFailureReport.payload(
-            rollout: "/tmp/rollout.jsonl",
+        // A failure on a line longer than any hook payload is still reported.
+        let long = String(repeating: "x", count: 2 * 1024 * 1024)
+        let longLine = Self.limited.replacingOccurrences(of: #""type":"event_msg""#, with: #""type":"event_msg","padding":"\#(long)""#)
+        #expect(try RustProviderBridge.turnFailureReport(
+            provider: "codex",
+            line: Data(longLine.utf8),
+            transcriptPath: "/tmp/rollout.jsonl",
             sessionID: "session-a",
-            line: RolloutReader.FailureLine(kind: nil, message: nil, writtenAt: nil),
-            readAt: readAt,
-            messageResetAt: nil
-        )
-        #expect(undated[CodexTurnFailureReport.failedAtKey] as? Int == 1_791_853_260, "no later than the read")
-        #expect(undated[CodexTurnFailureReport.errorKindKey] == nil)
-        #expect(undated[CodexTurnFailureReport.messageResetKey] == nil)
+            readAt: Date()
+        ) != nil)
+        #expect(failure.messageResetKey == "weir_message_resets_at")
+
+        #expect(try RustProviderBridge.turnFailureReport(
+            provider: "codex",
+            line: Data(Self.done.utf8),
+            transcriptPath: "/tmp/rollout.jsonl",
+            sessionID: "session-a",
+            readAt: Date()
+        ) == nil)
     }
 
     @Test func reader_aLineThatIsNotTextIsPassedOver() throws {
@@ -110,7 +111,7 @@ struct CodexTurnFailureTests {
             try Self.append(String(repeating: filler, count: count) + Self.limited + "\n", to: url)
             let kept = reader.readNewLines(keeping: RolloutReader.mayBeFailureLine)
             #expect(kept.count == 1, "the filler is not kept")
-            #expect(kept.last.flatMap(RolloutReader.failureLine(in:)) != nil)
+            #expect(kept.last == Substring(Self.limited))
         }
     }
 
@@ -132,40 +133,6 @@ struct CodexTurnFailureTests {
     @Test func reader_aMissingFileReadsNothing() {
         var reader = RolloutReader(path: "/nonexistent/weir/rollout.jsonl", offset: 0)
         #expect(reader.readNewLines().isEmpty)
-    }
-
-    /// Only a turn that failed counts, whatever the failure, never a turn
-    /// that ended on its own or an answer that quotes the words.
-    @Test func failureLine_isATaskCompleteWithAnErrorOnly() {
-        #expect(RolloutReader.failureLine(in: Substring(Self.limited)) == Self.limitedLine)
-        #expect(Self.limitedLine.isUsageLimit)
-        #expect(RolloutReader.failureLine(in: Substring(Self.done)) == nil)
-        let quoted = #"{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"usage_limit_exceeded"}}"#
-        #expect(RolloutReader.failureLine(in: Substring(quoted)) == nil)
-        let notAnEvent = #"{"type":"response_item","payload":{"type":"task_complete","#
-            + #""error":{"codex_error_info":"usage_limit_exceeded"}}}"#
-        #expect(RolloutReader.failureLine(in: Substring(notAnEvent)) == nil)
-        let bare = #"{"type":"event_msg","payload":{"type":"task_complete","error":{"codex_error_info":"usage_limit_exceeded"}}}"#
-        #expect(RolloutReader.failureLine(in: Substring(bare)) == RolloutReader.FailureLine(
-            kind: "usage_limit_exceeded",
-            message: nil,
-            writtenAt: nil
-        ))
-        // Taken from what Codex CLI 0.165.0 wrote for a model it does not have.
-        let model = #"{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":null,"#
-            + #""error":{"message":"The 'no-such-model' model is not supported.","codex_error_info":"model_not_found"}}}"#
-        let modelLine = RolloutReader.failureLine(in: Substring(model))
-        #expect(modelLine?.kind == "model_not_found")
-        #expect(modelLine?.isUsageLimit == false)
-        let detailed = #"{"type":"event_msg","payload":{"type":"task_complete","#
-            + #""error":{"message":"lost","codex_error_info":{"http_connection_failed":{"http_status_code":502}}}}}"#
-        #expect(RolloutReader.failureLine(in: Substring(detailed))?.kind == "http_connection_failed")
-        let unnamed = #"{"type":"event_msg","payload":{"type":"task_complete","error":{"message":"Something broke."}}}"#
-        #expect(RolloutReader.failureLine(in: Substring(unnamed)) == RolloutReader.FailureLine(
-            kind: nil,
-            message: "Something broke.",
-            writtenAt: nil
-        ))
     }
 
     private static let tokyo = TimeZone(identifier: "Asia/Tokyo") ?? .gmt

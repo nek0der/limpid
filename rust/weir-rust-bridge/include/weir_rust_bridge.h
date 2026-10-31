@@ -506,6 +506,28 @@ int32_t weir_provider_approval_output_v2(const uint8_t *provider,
                                          uint8_t **out,
                                          size_t *out_len);
 
+// Asks `provider` about one line of a transcript a watcher reads. Reports the
+// `FailureReport` as JSON when the line is a turn that failed, and `null` for
+// any other line. On success, ownership of `*out` transfers to the caller,
+// which must release it with `weir_approval_bytes_free_v1`.
+//
+// # Safety
+//
+// Same contract as `weir_provider_approval_request_v1`, with `line` readable
+// for `line_len` bytes, and `transcript_path` and `session_id` readable for
+// their lengths.
+int32_t weir_provider_turn_failure_report_v1(const uint8_t *provider,
+                                             size_t provider_len,
+                                             const uint8_t *line,
+                                             size_t line_len,
+                                             const uint8_t *transcript_path,
+                                             size_t transcript_path_len,
+                                             const uint8_t *session_id,
+                                             size_t session_id_len,
+                                             uint64_t read_at,
+                                             uint8_t **out,
+                                             size_t *out_len);
+
 // Restores a worktree to the start of a turn. `request` is JSON:
 // `{"root":…,"turnId":…,"paneId":…,"stateDirectories":[{"provider":…,"directory":…}]}`.
 // The body is `{"outcome":"refused","refusal":{"kind":…}}` or
