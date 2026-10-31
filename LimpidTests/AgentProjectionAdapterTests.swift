@@ -237,19 +237,21 @@ struct AgentProjectionAdapterTests {
             }
             #expect(paneSession() == "S")
 
-            var held: AgentRecordFixtures.HeldLock? = try AgentRecordFixtures.HeldLock(on: hintURL)
-            adapter.forgetSession("S", of: .claude, inPane: pane)
-            #expect(FileManager.default.fileExists(atPath: hintURL.path))
-            #expect(adapter.forgottenHints == [.init(provider: "claude", pane: pane, sessionID: "S")])
-            adapter.refresh()
-            #expect(adapter.lastFailure == nil)
-            #expect(paneSession() == nil)
-            #expect(session.activeTab(in: session.primaryWindowID)?.agentResumeCandidates[pane] == nil)
+            do {
+                let held = try AgentRecordFixtures.HeldLock(on: hintURL)
+                withExtendedLifetime(held) {
+                    adapter.forgetSession("S", of: .claude, inPane: pane)
+                    #expect(FileManager.default.fileExists(atPath: hintURL.path))
+                    #expect(adapter.forgottenHints == [.init(provider: "claude", pane: pane, sessionID: "S")])
+                    adapter.refresh()
+                    #expect(adapter.lastFailure == nil)
+                    #expect(paneSession() == nil)
+                    #expect(session.activeTab(in: session.primaryWindowID)?.agentResumeCandidates[pane] == nil)
+                }
+            }
 
             // The hook let go: the next pass deletes the hint.
-            held = nil
             adapter.refresh()
-            #expect(held == nil)
             #expect(!FileManager.default.fileExists(atPath: hintURL.path))
             #expect(adapter.forgottenHints.isEmpty)
             #expect(paneSession() == nil)
@@ -294,18 +296,20 @@ struct AgentProjectionAdapterTests {
             #expect(AgentForgottenHintFile.read(fileURL) == forgotten)
 
             // The next launch, with a hook holding the lock.
-            var held: AgentRecordFixtures.HeldLock? = try AgentRecordFixtures.HeldLock(on: hintURL)
             let relaunched = ProjectionFixture.adapter(
                 provider: "claude", state: state, sessions: sessions, forgottenHintsURL: fileURL, processStatus: { _ in .dead }
             )
-            #expect(relaunched.forgottenHints == forgotten)
-            relaunched.bootstrap(into: session, attention: AttentionState())
-            #expect(relaunched.lastFailure == nil)
-            #expect(session.activeTab(in: session.primaryWindowID)?.agentSessions[.claude]?[pane] == nil)
+            do {
+                let held = try AgentRecordFixtures.HeldLock(on: hintURL)
+                withExtendedLifetime(held) {
+                    #expect(relaunched.forgottenHints == forgotten)
+                    relaunched.bootstrap(into: session, attention: AttentionState())
+                    #expect(relaunched.lastFailure == nil)
+                    #expect(session.activeTab(in: session.primaryWindowID)?.agentSessions[.claude]?[pane] == nil)
+                }
+            }
 
-            held = nil
             relaunched.refresh()
-            #expect(held == nil)
             #expect(!FileManager.default.fileExists(atPath: hintURL.path))
             #expect(relaunched.forgottenHints.isEmpty)
             #expect(!FileManager.default.fileExists(atPath: fileURL.path), "nothing waits: the file is gone")
@@ -508,10 +512,11 @@ struct AgentProjectionAdapterTests {
             adapter.bootstrap(into: session, attention: AttentionState())
 
             // No record is left, so the pass clears the badge; the name
-            // read from it stays.
+            // read from it stays. An empty map, not none: a pass writes the
+            // map only when the badge it saw there differs.
             #expect(adapter.lastFailure == nil)
             let after = try #require(session.tab(tab.id))
-            #expect(after.agentBadges[.claude]?.isEmpty ?? true)
+            #expect(after.agentBadges[.claude] == [:])
             #expect(after.conversationName?.name == "Run sleep 15 with a timer")
         }
     }

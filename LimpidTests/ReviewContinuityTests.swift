@@ -84,10 +84,16 @@ struct ReviewContinuityTests {
         let repository = try FakeReviewRepository.oneFile()
         try await withTempDir { @Sendable directory in
             let store = await ReviewSession(root: directory, git: repository, drafts: FileReviewDraftStore(directory: directory))
+            let draft = FileReviewDraftStore.url(root: directory, directory: directory)
+            // Left alone, the delayed save writes the draft.
             await store.rememberOpenFile(FakeReviewRepository.unstagedFile.id)
+            await store.flushNavigationSave()
+            #expect(FileManager.default.fileExists(atPath: draft.path))
+
+            await store.rememberOpenFile("another file")
             ReviewDraftWriter.removeDraft(root: directory, directory: directory)
             await store.flushNavigationSave()
-            #expect(!FileManager.default.fileExists(atPath: FileReviewDraftStore.url(root: directory, directory: directory).path))
+            #expect(!FileManager.default.fileExists(atPath: draft.path))
         }
     }
 }

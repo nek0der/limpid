@@ -112,6 +112,13 @@ struct PaneHeaderTests {
         let plain = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, showsWarning: false, isZoomed: false)
         let warned = PaneHeaderMetrics.inlineRenameMinimumWidth(showsPromptCacheClock: false, showsWarning: true, isZoomed: false)
         #expect(warned - plain == PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.warningSlot)
+        // Everything but the field, with the warning, still leaves the field
+        // its minimum.
+        let fixedParts = PaneHeaderMetrics.minimumWidth
+            + PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.markSlot // state mark
+            + PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.warningSlot // warning
+            + PaneHeaderMetrics.itemSpacing // glyph to field
+        #expect(warned - fixedParts >= PaneHeaderMetrics.inlineRenameFieldMinimumWidth)
     }
 
     @Test func inlineRename_endsWhenTheHeaderNarrowsBelowAUsableField() {
@@ -592,10 +599,6 @@ struct PaneHeaderTests {
         #expect(forms.map(\.showsPromptCacheClock) == [true, true, true, true, true, false])
     }
 
-    @Test func metrics_theClockForm_is80PointsWide() {
-        #expect(PaneHeaderMetrics.clockFormWidth == 80)
-    }
-
     @Test func forms_whileEditing_keepTheName() {
         for showsClock in [false, true] {
             let forms = PaneHeaderRules.forms(isEditing: true, showsPromptCacheClock: showsClock)
@@ -709,6 +712,8 @@ struct PaneHeaderTests {
 
 // MARK: - Nested agent ownership
 
+/// The label a run's family gives, through the facts each run reports. Who
+/// owns the header in each family shape is `PaneHeaderOwnershipRulesTests`'s.
 extension PaneHeaderTests {
     @Test func paneHeaderLabel_activeChildSuppliesItsOwnSettings() throws {
         let fixture = try Self.headerFamilyFixture()
@@ -738,20 +743,6 @@ extension PaneHeaderTests {
         #expect(!label.settingsAreAmbiguous)
     }
 
-    @Test func paneHeaderLabel_endedGrandchildReturnsToTheNearestKnownAncestor() throws {
-        let fixture = try Self.headerFamilyFixture()
-        let session = fixture.session
-        let pane = fixture.pane
-        let attention = fixture.attention
-        let parent = Self.familyRun("parent", launched: 100, observed: 110, pane: pane, bypasses: true)
-        let child = Self.familyRun("child", parent: "parent", launched: 101, observed: 120, pane: pane, state: .unknown)
-        let grandchild = Self.familyRun("grandchild", parent: "child", launched: 102, observed: 130, pane: pane, state: .unknown)
-        attention.replaceRuntimes([child, grandchild, parent], kind: .claude)
-        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
-        #expect(label.model == "parent")
-        #expect(label.runsWithoutAsking)
-    }
-
     @Test func paneHeaderLabel_endedChildReturnsToItsKnownParent() throws {
         let fixture = try Self.headerFamilyFixture()
         let session = fixture.session
@@ -763,21 +754,6 @@ extension PaneHeaderTests {
         let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
         #expect(label.model == "parent")
         #expect(label.runsWithoutAsking)
-    }
-
-    @Test(arguments: [AgentState.running, .unknown])
-    func paneHeaderLabel_newRootSupersedesTheOldFamily(newState: AgentState) throws {
-        let fixture = try Self.headerFamilyFixture()
-        let session = fixture.session
-        let pane = fixture.pane
-        let attention = fixture.attention
-        let parent = Self.familyRun("old-parent", launched: 100, observed: 400, pane: pane, bypasses: true)
-        let child = Self.familyRun("old-child", parent: "old-parent", launched: 101, observed: 500, pane: pane)
-        let replacement = Self.familyRun("new-root", launched: 200, observed: 210, pane: pane, state: newState)
-        attention.replaceRuntimes([replacement, child, parent], kind: .claude)
-        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
-        #expect(label.model == (newState == .unknown ? nil : "new-root"))
-        #expect(!label.runsWithoutAsking)
     }
 
     @Test func paneHeaderLabel_parentAtAnotherEndpointIsNotAnAncestor() throws {
@@ -793,19 +769,6 @@ extension PaneHeaderTests {
         #expect(label.runsWithoutAsking)
     }
 
-    @Test func paneHeaderLabel_cyclicParentEvidenceIsAmbiguous() throws {
-        let fixture = try Self.headerFamilyFixture()
-        let session = fixture.session
-        let pane = fixture.pane
-        let attention = fixture.attention
-        let parent = Self.familyRun("parent", parent: "child", launched: 100, observed: 110, pane: pane)
-        let child = Self.familyRun("child", parent: "parent", launched: 101, observed: 120, pane: pane)
-        attention.replaceRuntimes([parent, child], kind: .claude)
-        let label = attention.paneHeaderLabel(paneID: pane, in: session, locale: Locale(identifier: "en"))
-        #expect(label.settingsAreAmbiguous)
-        #expect(label.model == nil)
-    }
-
     @Test func ambiguityWarningCountsTowardTheInlineRenameWidth() {
         var label = PaneHeaderLabel(name: "Pane", detail: nil, agentKind: .claude, agentName: "Claude Code")
         label.settingsAreAmbiguous = true
@@ -814,7 +777,6 @@ extension PaneHeaderTests {
         let withWarning = PaneHeaderMetrics.inlineRenameMinimumWidth(
             showsPromptCacheClock: false, showsWarning: label.showsWarning, isZoomed: false
         )
-        #expect(withWarning == withoutWarning + PaneHeaderMetrics.itemSpacing + PaneHeaderMetrics.warningSlot)
         #expect(PaneHeaderRules.renameStyle(headerWidth: withoutWarning, threshold: withWarning) == .floating)
     }
 

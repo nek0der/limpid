@@ -4,6 +4,7 @@
 
 import AppKit
 import Foundation
+import SwiftUI
 import Testing
 @testable import Limpid
 
@@ -58,16 +59,28 @@ struct WindowAlertTests {
     }
 
     /// A close question, which is exclusive, and a link's confirmation,
-    /// which is not.
+    /// which is not. Hidden the way the app hides one, through the registry
+    /// and the presenter, which is what answers the sheet.
     @MainActor
     @Test(arguments: [true, false])
-    func aRealSheet_isAnsweredCancel_whenItsWindowIsHidden(isExclusive: Bool) {
-        let window = Self.shownWindow()
-        defer { window.close() }
+    func aRealSheet_isAnsweredCancel_whenItsWindowIsHidden(isExclusive: Bool) throws {
+        let session = WorkspaceSession()
+        let registry = WindowRegistry(primary: session.primarySelection)
+        let presenter = ProjectWindowPresenter(session: session, registry: registry) { _ in AnyView(EmptyView()) }
+        registry.presenter = presenter
+        // The host app may own a window of its own: only the one this `show`
+        // added is the test's.
+        let before = Set(NSApp.windows.map(ObjectIdentifier.init))
+        registry.show(registry.primary.id)
+        let window = try #require(NSApp.windows.first { !before.contains(ObjectIdentifier($0)) })
+        defer { registry.hide(registry.primary.id) }
         let record = SheetRecord()
         WindowAlert.begin(NSAlert(), on: window, isExclusive: isExclusive) { record.responses.append($0) }
-        WindowAlert.cancelPending(on: window)
-        window.orderOut(nil)
+        #expect(window.attachedSheet != nil)
+        #expect(record.responses.isEmpty)
+
+        registry.hide(registry.primary.id)
+
         #expect(record.responses == [.cancel])
         #expect(window.attachedSheet == nil)
     }

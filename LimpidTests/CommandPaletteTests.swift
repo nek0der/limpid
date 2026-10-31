@@ -267,14 +267,15 @@ struct CommandPaletteTests {
 
     @Test("catalog includes open tabs with display titles")
     func catalog_includesOpenTabs() throws {
-        let (session, _, _) = WorkspaceSessionFixture.withLooseTab()
+        let (session, tab, _) = WorkspaceSessionFixture.withLooseTab()
+        session.update(tab.id) { $0.titleOverride = "build" }
         let tabItems = try Self.items(session).filter {
             if case .jumpToTab = $0.action {
                 return true
             }
             return false
         }
-        #expect(tabItems.count == 1)
+        #expect(tabItems.map(\.title) == ["build"])
     }
 
     @Test("catalog includes projects")

@@ -62,6 +62,17 @@ struct ReviewTabTextTests {
         #expect(try ReviewTabText.followingTurns([Self.turn(8), Self.turn(9)], locale: en) == "T8–T9 finished")
     }
 
+    @Test func theBand_saysHowManyFilesAreLeft() {
+        let en = Locale(identifier: "en")
+        let ja = Locale(identifier: "ja")
+        #expect(ReviewTabText.band(.unviewedFiles(2), locale: en) == "2 unviewed files")
+        #expect(ReviewTabText.band(.unviewedFiles(2), locale: ja) == "未確認のファイル 2")
+        #expect(ReviewTabText.band(.allFilesViewed, locale: en) == "All files viewed")
+        #expect(ReviewTabText.band(.allFilesViewed, locale: ja) == "すべてのファイルを確認済み")
+        #expect(ReviewTabText.band(.noChanges, locale: en) == "No changes")
+        #expect(ReviewTabText.band(.noChanges, locale: ja) == "変更はありません")
+    }
+
     @Test func theWords_inJapanese() throws {
         let ja = Locale(identifier: "ja")
         let context = try Self.context([Self.turn(6), Self.turn(7, prompt: "タイムラインのストアのテストを追加してください")])

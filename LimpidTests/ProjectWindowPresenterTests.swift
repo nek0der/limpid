@@ -18,12 +18,13 @@ struct ProjectWindowPresenterTests {
         let registry: WindowRegistry
         let presenter: ProjectWindowPresenter
 
-        init() {
+        init(initialContentSize: NSSize = ProjectWindowController.initialContentSize) {
             session = WorkspaceSession()
             registry = WindowRegistry(primary: session.primarySelection)
             presenter = ProjectWindowPresenter(
                 session: session,
-                registry: registry
+                registry: registry,
+                initialContentSize: initialContentSize
             ) { _ in AnyView(EmptyView()) }
             registry.presenter = presenter
         }
@@ -68,7 +69,11 @@ struct ProjectWindowPresenterTests {
     /// Each window opened from the primary steps on from the last one
     /// placed, on the primary's screen and inside it.
     @Test func windowsOpenedOneAfterAnother_fromOneWindow_eachStepOn() throws {
-        let fixture = Fixture()
+        // Small enough to leave room for every step on any screen. At the
+        // usual size a CI runner's has none, every step wraps back to the
+        // top-left, and the windows share it. The wrap itself is
+        // `theCascade_stepsFromTheLastWindowPlaced_andWrapsAtTheScreensEdge`.
+        let fixture = Fixture(initialContentSize: NSSize(width: 400, height: 300))
         let registry = fixture.registry
         let primaryWindow = try fixture.showPrimaryOnItsOwnProject()
         var opened: [ProjectWindowState] = []
@@ -87,16 +92,8 @@ struct ProjectWindowPresenterTests {
         }
 
         let visible = try #require(primaryWindow.screen?.visibleFrame)
-        // On a screen with no room for three steps past the window, as on a
-        // CI runner's, every step wraps back to the top-left, as AppKit's
-        // cascade does, and the windows share it. The wrap itself is
-        // `theCascade_stepsFromTheLastWindowPlaced_andWrapsAtTheScreensEdge`.
-        let size = try #require(frames.first?.size)
-        let room = CGFloat(3 * 30)
-        if visible.width >= size.width + room, visible.height >= size.height + room {
-            let origins = [primaryWindow.frame.origin] + frames.map(\.origin)
-            #expect(Set(origins.map { "\($0.x),\($0.y)" }).count == 4, "no window lands on another")
-        }
+        let origins = [primaryWindow.frame.origin] + frames.map(\.origin)
+        #expect(Set(origins.map { "\($0.x),\($0.y)" }).count == 4, "no window lands on another")
         for frame in frames {
             #expect(visible.contains(frame) || frame.width > visible.width || frame.height > visible.height)
         }

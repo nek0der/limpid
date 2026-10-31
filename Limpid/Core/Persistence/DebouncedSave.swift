@@ -15,13 +15,15 @@ import Foundation
 /// when the save runs.
 @MainActor
 final class DebouncedSave {
-    /// This is the work the main queue runs after the delay. It is optional
+    /// This cancels the save the timer runs after the delay. It is optional
     /// because no save may have been scheduled yet, or the last one was canceled.
-    private var pending: DispatchWorkItem?
-    private let delay: DispatchTimeInterval
+    private var pending: (@MainActor () -> Void)?
+    private let delay: Duration
+    private let timer: HoverDelayTimer
 
-    init(delay: DispatchTimeInterval = .milliseconds(PersistenceTiming.coalescingMs)) {
+    init(delay: Duration = .milliseconds(PersistenceTiming.coalescingMs), timer: HoverDelayTimer = .live) {
         self.delay = delay
+        self.timer = timer
     }
 
     /// Whether a save was scheduled and not canceled since. It stays true
@@ -36,19 +38,14 @@ final class DebouncedSave {
     /// `delay` passes without another call. `run` usually enqueues a write
     /// of a snapshot it captured on the store's serial queue.
     func schedule(_ run: @escaping @MainActor @Sendable () -> Void) {
-        pending?.cancel()
-        // The main queue runs the item, so the main actor holds when it does.
-        let work = DispatchWorkItem {
-            MainActor.assumeIsolated { run() }
-        }
-        pending = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+        pending?()
+        pending = timer.schedule(delay, run)
     }
 
     /// Drops the pending save, if any, before it runs. It is for a store
     /// writing now on its own, or one that has stopped saving.
     func cancel() {
-        pending?.cancel()
+        pending?()
         pending = nil
     }
 }

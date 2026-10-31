@@ -55,21 +55,12 @@ struct NamedKeyTests {
         #expect(NamedKey.escape.keyEquivalent == .escape)
     }
 
-    @Test("every function key's menu key is AppKit's character for that key")
-    func functionKey_keyEquivalent_isAppKitCharacter() throws {
-        let functionKeys = NamedKey.allCases.filter(\.isFunctionKey)
-        #expect(functionKeys.count == 20)
-        for key in functionKeys {
-            let number = try #require(key.functionKeyNumber)
-            let scalars = Array(key.keyEquivalent.character.unicodeScalars)
-            #expect(scalars.map(\.value) == [UInt32(NSF1FunctionKey + number - 1)], "\(key)")
-        }
-        // The loop leans on AppKit numbering the keys contiguously; spot-check
-        // that against the constants of two keys in the middle and at the end.
-        let f5 = try #require(UnicodeScalar(UInt16(NSF5FunctionKey)))
-        let f20 = try #require(UnicodeScalar(UInt16(NSF20FunctionKey)))
-        #expect(NamedKey.f5.keyEquivalent.character == Character(f5))
-        #expect(NamedKey.f20.keyEquivalent.character == Character(f20))
+    /// Each key's menu character is `MenuShortcutTests`'s, against AppKit's
+    /// constant for that key.
+    @Test("the function keys are F1 through F20, and no other key has a number")
+    func functionKeys_areNumberedOneToTwenty() {
+        let numbers = NamedKey.allCases.filter(\.isFunctionKey).compactMap(\.functionKeyNumber)
+        #expect(numbers.sorted() == Array(1...20))
         #expect(NamedKey.escape.functionKeyNumber == nil)
     }
 

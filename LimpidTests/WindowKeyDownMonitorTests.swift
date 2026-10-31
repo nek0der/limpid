@@ -37,6 +37,13 @@ struct WindowKeyDownMonitorTests {
         NSApp.postEvent(event, atStart: false)
     }
 
+    /// Waits for the last key posted to come round. The key itself is the
+    /// signal, and the app's event queue is real, so a loaded run can hold it
+    /// a good while: the deadline is only for a key that never comes.
+    private static func waitForDelivery(_ condition: () -> Bool) async {
+        await pollUntil(timeout: .seconds(30), interval: .milliseconds(5), condition)
+    }
+
     @Test func theMonitor_seesItsOwnWindowsKeys_andNoneOnceGone() async throws {
         let seen = Seen()
         // A second window's monitor sees the keys posted to it in the order
@@ -58,14 +65,14 @@ struct WindowKeyDownMonitorTests {
 
         try Self.post("a", to: own)
         try Self.post("b", to: other)
-        await pollUntil { witnessed.keys == ["b"] }
+        await Self.waitForDelivery { witnessed.keys == ["b"] }
         #expect(witnessed.keys == ["b"], "another window's keys are its own")
         #expect(seen.keys == ["a"])
 
         own.contentView = nil
         try Self.post("c", to: own)
         try Self.post("d", to: other)
-        await pollUntil { witnessed.keys == ["b", "d"] }
+        await Self.waitForDelivery { witnessed.keys == ["b", "d"] }
         #expect(witnessed.keys == ["b", "d"])
         #expect(seen.keys == ["a"], "removed with its view")
     }
@@ -114,7 +121,7 @@ struct WindowKeyDownMonitorTests {
             )
             NSApp.postEvent(event, atStart: false)
         }
-        await pollUntil { passed.keys.last == "a" }
+        await Self.waitForDelivery { passed.keys.last == "a" }
 
         #expect(taken.keys == ["up", "down"])
         #expect(passed.keys == ["up", "⇧up", "a"])

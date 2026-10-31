@@ -649,13 +649,17 @@ final class ApprovalPresentationStore {
     /// Reads the service clock again, for after the Mac wakes. Both clocks
     /// stop during sleep, so the time left should not move; reading it again
     /// is what keeps that an observation rather than an assumption.
-    func refreshServiceClock() {
+    ///
+    /// Returns the read in flight, nil when none was started, so a test can
+    /// wait for what became of it rather than for a stretch of time.
+    @discardableResult
+    func refreshServiceClock() -> Task<Void, Never>? {
         // Nothing to refresh before the first projection or after `stop()`,
         // and a reading with no epoch to match would be dropped anyway.
-        guard observedEpoch != nil else { return }
+        guard observedEpoch != nil else { return nil }
         let generation = observerGeneration
         let reader = serviceClockReader
-        Task { [weak self] in
+        return Task { [weak self] in
             do {
                 let reading = try await reader()
                 guard let self, observerGeneration == generation else { return }
@@ -674,7 +678,7 @@ final class ApprovalPresentationStore {
         }
         let token = center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.refreshServiceClock()
+                _ = self?.refreshServiceClock()
             }
         }
         wakeObservation = (center, token)

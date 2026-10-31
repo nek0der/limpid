@@ -132,6 +132,7 @@ struct SidebarRowDropTests {
         dragState.springOpen(project)
         dragState.keepSpringOpen(for: project)
         dragState.end()
+        #expect(dragState.keptOpenProject == project)
 
         Self.rowDrop(fixture, dragState: dragState).drop(
             prefix: DragPrefix.tab,

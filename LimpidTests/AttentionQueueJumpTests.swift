@@ -147,19 +147,12 @@ extension AttentionQueueJumpTests {
             navigator = SessionAttentionNavigator(session: session, registry: registry)
             store.navigator = navigator
             store.apply(.init(runtimes: [
-                Self.stop("a", in: a, of: here),
-                Self.stop("b1", in: b1, of: there),
-                Self.stop("b2", in: b2, of: there)
+                RuntimeFact.stopped("a", in: a, of: here),
+                RuntimeFact.stopped("b1", in: b1, of: there),
+                RuntimeFact.stopped("b2", in: b2, of: there)
             ]), announces: false)
             self.session = session
             self.here = here
-        }
-
-        static func stop(_ name: String, in tab: Tab, of project: Project) -> RuntimeFact {
-            RuntimeFact(
-                runtimeID: name, provider: .claude, paneIDs: tab.splitTree.allLeafIDs(), tabID: tab.id, projectID: project.id,
-                state: .error, updatedAt: Date(), episodeToken: "1", isEpisodeRead: false, detail: nil
-            )
         }
 
         static func id(_ name: String) -> AttentionItemID {

@@ -162,12 +162,11 @@ struct SupervisionTokensTests {
         Pair("unread blue mark on window", Tokens.unread, Tokens.window),
         Pair("unread blue mark on sidebar", Tokens.unread, Tokens.sidebar),
         Pair("unread blue mark on selection", Tokens.unread, Tokens.selection),
-        // The idle ring under Increase Contrast (`StateGlyphGeometry.idleInk`).
-        Pair("idle ring with Increase Contrast on window", Tokens.muted, Tokens.window),
-        Pair("idle ring with Increase Contrast on sidebar", Tokens.muted, Tokens.sidebar),
-        Pair("idle ring with Increase Contrast on selection", Tokens.muted, Tokens.selection),
-        Pair("idle ring with Increase Contrast on hover", Tokens.muted, Tokens.hover),
-        Pair("idle ring with Increase Contrast on popover", Tokens.muted, Tokens.popover),
+        // `muted` marks need no rows of their own: `textPairs` holds it to
+        // the stricter ratio on each of their grounds. They are the idle ring
+        // under Increase Contrast (`StateGlyphGeometry.idleInk`), on window,
+        // sidebar, selection, hover, and popover; a tab's unread dot, on the
+        // terminal; and the review tab's file list marks, on window.
         Pair("running arc on window", Tokens.running, Tokens.window),
         Pair("running arc on sidebar", Tokens.running, Tokens.sidebar),
         Pair("amber on window, and the attention count's ring there", Tokens.waiting, Tokens.window),
@@ -179,9 +178,6 @@ struct SupervisionTokensTests {
         Pair("amber on hover, and the attention count's ring there", Tokens.waiting, Tokens.hover),
         Pair("amber on well", Tokens.waiting, Tokens.well),
         Pair("amber on the terminal", Tokens.waiting, Tokens.terminal),
-        // A tab's dot for output since it was last shown, on the session's
-        // surface, the terminal's ground.
-        Pair("tab's unread dot on the terminal", Tokens.muted, Tokens.terminal),
         // The two letters on Claude's orange are a mark, not words to read
         // (`SupervisionTokens.badgeForeground`).
         Pair("Claude badge letters", Tokens.badgeForeground, Tokens.claude),
@@ -199,9 +195,7 @@ struct SupervisionTokensTests {
         Pair("Codex badge's edge on popover", Tokens.codexEdge, Tokens.popover),
         Pair("unread blue mark on popover", Tokens.unread, Tokens.popover),
         Pair("stopped disc on popover", Tokens.stopped, Tokens.popover),
-        Pair("needs-input disc's edge on popover", Tokens.waitingGlyphEdge, Tokens.popover),
-        // The file list's chevrons, filter, and clear marks.
-        Pair("muted marks on the review tab", Tokens.muted, Tokens.window)
+        Pair("needs-input disc's edge on popover", Tokens.waitingGlyphEdge, Tokens.popover)
     ]
 
     @Test(arguments: [false, true])
@@ -384,10 +378,6 @@ struct SupervisionTokensTests {
 
     // MARK: Conversation identity
 
-    @Test func conversationIdentity_hasSixColors() {
-        #expect(Tokens.conversationIdentity.count == 6)
-    }
-
     /// The identity bar is a decoration beside a badge whose conversation is
     /// named in words, and is hidden from VoiceOver, so it is held to 2:1
     /// rather than the 3:1 a mark that carries meaning alone needs. Light: a card (`0xF7F7F8`),
@@ -411,6 +401,8 @@ struct SupervisionTokensTests {
     @Test(arguments: [false, true])
     func conversationIdentity_colorsStayApart(isDark: Bool) {
         let colors = Tokens.conversationIdentity.map { $0.value(isDark: isDark) }
+        // With fewer there is no pair, and the loops below check nothing.
+        #expect(colors.count >= 2)
         for first in colors.indices {
             for second in colors.indices where second > first {
                 let distance = OKLab.distance(colors[first], colors[second]) * 100

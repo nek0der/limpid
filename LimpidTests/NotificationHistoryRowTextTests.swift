@@ -285,7 +285,7 @@ struct NotificationHistoryRowTextTests {
         #expect(NotificationHistoryRowText.happening(of: entry(body: body), locale: ja) == .wait(wait, fact: fact))
     }
 
-    @Test func anOlderWait_withNothingNamed_isReadFromItsTitle() {
+    @Test func anOlderWait_withNothingNamed_isReadFromItsBody_notItsTitle() {
         for (body, wait) in [
             ("Claude Code is waiting for approval", NotificationEvent.Wait.approval),
             ("Codex が質問しています", .question),
@@ -294,6 +294,8 @@ struct NotificationHistoryRowTextTests {
         ] {
             #expect(NotificationHistoryRowText.happening(of: entry(body: body), locale: en) == .wait(wait, fact: nil))
         }
+        #expect(NotificationHistoryRowText.happening(of: entry(title: "Needs answer", body: "承認待ち"), locale: en)
+            == .wait(.approval, fact: nil))
         // Words that are none of these: a wait for a response.
         #expect(NotificationHistoryRowText.happening(of: entry(body: "Waiting for your input"), locale: en)
             == .wait(.response, fact: "Waiting for your input"))

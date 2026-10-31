@@ -113,6 +113,12 @@ struct RestoreOutcomeDecodingTests {
         ))
     }
 
+    /// The cases below run once per code, so an empty list would pass them
+    /// all by running none.
+    @Test func theStageReasonsRustWrites_areListed() throws {
+        #expect(try !Self.stageCodes().written.isEmpty)
+    }
+
     /// Every code Rust writes for a reason is one this build reads as itself.
     @Test(arguments: try RestoreOutcomeDecodingTests.stageCodes().written)
     func aStageReasonRustWrites_isReadAsItself(_ code: String) throws {

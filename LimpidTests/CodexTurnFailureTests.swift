@@ -121,9 +121,11 @@ struct CodexTurnFailureTests {
             var reader = Self.reader(over: url)
             // Replaced by a larger file, as a rewrite would.
             let other = directory.appendingPathComponent("other.jsonl")
-            try Data((String(repeating: "y", count: 80) + "\n" + Self.limited + "\n").utf8).write(to: other)
+            let first = String(repeating: "y", count: 80)
+            try Data((first + "\n" + Self.limited + "\n").utf8).write(to: other)
             _ = try FileManager.default.replaceItemAt(url, withItemAt: other)
-            #expect(reader.readNewLines().contains { RolloutReader.failureLine(in: $0) != nil })
+            // The first line whole: from the old offset, its start is cut off.
+            #expect(reader.readNewLines() == [Substring(first), Substring(Self.limited)])
         }
     }
 

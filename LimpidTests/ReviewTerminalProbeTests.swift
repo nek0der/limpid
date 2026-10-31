@@ -80,8 +80,15 @@ struct ReviewTerminalProbeTests {
         #expect(Self.read(probe.surfaces, clients: clients) { _ in probe.activePane } == probe.expected)
     }
 
-    @Test func tmuxsClientsAndActivePanes_areReadFromItsOutput() throws {
-        try ReviewValidationScenarios.tmuxDelivery()
+    /// tmux hosting puts the agent on a pane pty while the surface carries the
+    /// client, so the delivery target is resolved through the client's session.
+    @Test func tmuxsClientsAndActivePanes_areReadFromItsOutput() {
+        #expect(TmuxClientProbe.parsePaneTTY("/dev/ttys004\n") == "/dev/ttys004", "Pane tty")
+        #expect(TmuxClientProbe.parsePaneTTY("") == nil, "Empty answer accepted")
+        #expect(TmuxClientProbe.parsePaneTTY("can't find session: $9\n") == nil, "Error text accepted")
+        let clients = TmuxClientProbe.parseClients("/dev/ttys003\t$1\tlimpid-a b\n", socketPath: "/tmp/socket")
+        #expect(clients["/dev/ttys003"]?.sessionID == "$1", "Client tty is the key")
+        #expect(clients["/dev/ttys003"]?.sessionName == "limpid-a b", "Session name with a space")
     }
 
     @Test func aSurfaceWithoutTmuxInFront_isDeliveredToByItsOwnTTY() {

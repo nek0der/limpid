@@ -362,4 +362,9 @@ struct ChangesPanelTextTests {
         #expect(ChangesPanelText.groupingLabel(locale: Self.english) == "Arrange Turns")
         #expect(ChangesPanelText.groupingLabel(locale: Self.japanese) == "ターンの並べ方")
     }
+
+    @Test func theSidebarFoldingForThePanel_isAnnouncedInBothLanguages() {
+        #expect(ChangesPanelText.sidebarFolded(locale: Self.english) == "Sidebar hidden for Changes")
+        #expect(ChangesPanelText.sidebarFolded(locale: Self.japanese) == "変更パネルのためサイドバーを非表示にしました")
+    }
 }

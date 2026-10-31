@@ -313,6 +313,7 @@ struct SessionSnapshotTests {
 
         let restored = WorkspaceSession()
         restored.restore(from: carrying)
+        #expect(restored.carriedRootFields["fromTheFuture"] != nil)
         try restored.restore(from: JSONDecoder().decode(SessionSnapshot.self, from: plain))
 
         #expect(restored.carriedRootFields.isEmpty)

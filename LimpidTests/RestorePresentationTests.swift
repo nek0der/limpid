@@ -20,16 +20,8 @@ struct RestorePresentationTests {
         conversationID: String = "s1",
         startedAt: String? = nil
     ) throws -> TurnSummary {
-        var extras = TurnSummaryFixture.Extras()
-        extras.beginTree = SnapshotTree(tree: TurnSummaryFixture.tree("b", number), root: root)
-        extras.conversationID = conversationID
-        extras.startedAt = startedAt ?? String(format: "2026-10-12T00:%02d:00Z", number)
-        return try TurnSummaryFixture.turn(
-            "\(conversationID)-T\(number)",
-            changes: changes,
-            hasPrompt: hasPrompt,
-            number: number,
-            extras: extras
+        try TurnSummaryFixture.restorable(
+            number, changes: changes, hasPrompt: hasPrompt, root: root, conversationID: conversationID, startedAt: startedAt
         )
     }
 
@@ -211,10 +203,13 @@ struct RestorePresentationTests {
             == "Restore canceled. A merge, a rebase, or a conflict is in progress.")
         #expect(RestoreText.ended(.canceled(.otherChanges), locale: Self.japanese)
             == "復元を中止しました。ほかの変更が見つかったため、ファイルは変更していません。")
+        #expect(RestoreText.ended(.canceled(.unknown), locale: Self.english) == "Restore canceled. No files were changed.")
         #expect(RestoreText.ended(.canceled(.unknown), locale: Self.japanese) == "復元を中止しました。ファイルは変更していません。")
         // A refusal the person cannot act on says only that nothing was written.
         #expect(RestoreText.ended(.canceled(.refused(.lockUnavailable)), locale: Self.english)
             == "Restore canceled. No files were changed.")
+        #expect(RestoreText.ended(.partial(kept: ["a.txt"], failed: ["b"]), locale: Self.english)
+            == "Restored only part of the code. Kept the files changed meanwhile: a.txt. Couldn’t write: b.")
         #expect(RestoreText.ended(.partial(kept: ["a.txt"], failed: ["b", "c", "d", "e"]), locale: Self.english)
             == "Restored only part of the code. Kept the files changed meanwhile: a.txt. Couldn’t write: b, c, d, and 1 more.")
         #expect(RestoreText.ended(.partial(kept: [], failed: ["b", "c", "d", "e"]), locale: Self.japanese)

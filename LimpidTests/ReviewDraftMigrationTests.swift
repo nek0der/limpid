@@ -334,16 +334,16 @@ struct ReviewDraftMigrationTests {
         }
     }
 
-    @Test func noCopyCanBeKept_soTheOriginalStays_andTheDraftIsNotSaved() throws {
+    /// Run as root, the folder below stays writable and there is nothing to
+    /// test.
+    @Test(.disabled(if: geteuid() == 0, "root writes into a read-only folder"))
+    func noCopyCanBeKept_soTheOriginalStays_andTheDraftIsNotSaved() throws {
         try withTempDir { directory in
             let original = #"{"version":1,"comments":[]}"#
             let file = try Self.write(original, in: directory)
             // A folder nothing new can be written into.
             try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: directory.path)
             defer { try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path) }
-            // Run as root, the folder stays writable and there is nothing to
-            // test.
-            guard !FileManager.default.isWritableFile(atPath: directory.path) else { return }
 
             do {
                 _ = try FileReviewDraftStore(directory: directory).load(root: Self.root)

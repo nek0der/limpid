@@ -182,10 +182,14 @@ struct TurnProtectionTests {
         #expect(shown["provider"] as? String == "claude")
     }
 
-    @Test func theStandardLimits_areFourteenDaysOrTwoHundredTurns() {
+    /// A restatement on purpose: these are the numbers the README promises,
+    /// and lowering one deletes people's turns sooner. It checks no behavior;
+    /// it makes changing one a second, deliberate edit.
+    @Test func theStandardLimits_areTheOnesTheReadmePromises() {
         #expect(TurnRetentionLimits.standard.maxAgeSeconds == 14 * 24 * 60 * 60)
         #expect(TurnRetentionLimits.standard.maxPerConversation == 200)
         #expect(TurnRetentionLimits.standard.maxRepositoryBytes == 500 * 1024 * 1024)
+        #expect(TurnRetentionLimits.standard.maxTurns == 8000)
     }
 
     /// A closed window's review, kept for its project, holds its range as an

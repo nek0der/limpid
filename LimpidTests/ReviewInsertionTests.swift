@@ -53,10 +53,10 @@ struct ReviewInsertionTests {
         return insert
     }
 
-    /// What review hands a pane, and what it does when the pane will not
-    /// take it: the path that decides whether comments are recorded as
-    /// inserted, the one mistake a reader cannot see.
-    @Test func aRefusedDeliveryLeavesNothingRecorded() throws {
+    /// What review hands a pane, and that a pane which will not take it, or
+    /// is gone, is reported. What that does to the comments is
+    /// `commentsAreRecordedOnlyAfterThePaneTookTheText`.
+    @Test func anInsert_handsThePaneTheTextAndItsReceipt_andReportsAPaneThatRefusesOrIsGone() throws {
         let registry = RecordingSurfaceRegistry()
         let paneID = UUID()
         let deliverer = RecordingReviewDeliverer()

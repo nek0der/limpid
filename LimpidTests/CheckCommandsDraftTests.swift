@@ -118,8 +118,10 @@ struct CheckCommandsDraftTests {
         #expect(typed == ["swift test --filter \"Turn\""])
     }
 
-    @Test func theDefaults_comeFromTheHook() {
+    @Test func theDefaults_comeFromTheHook() throws {
         // The same list the hook classifies with, not a copy kept here.
+        let hooks = try JSONDecoder().decode([String].self, from: LimpidProjectionBridge.checkDefaults())
+        #expect(AgentProviderRegistry.checkDefaults == hooks)
         #expect(AgentProviderRegistry.checkDefaults.contains("cargo test"))
         #expect(AgentProviderRegistry.checkDefaults.contains("make test*"))
     }

@@ -24,14 +24,20 @@ final class ProjectWindowPresenter: ProjectWindowPresenting {
     private var lastCascade: [WindowID: NSPoint] = [:]
     /// The windows saved in full screen, shown and going back into it.
     private var fullScreen = FullScreenEntryQueue()
+    /// The size a window opens at before it has a saved frame. A test gives
+    /// a small one, so that where windows land does not hang on how much
+    /// room its machine's screen has.
+    private let initialContentSize: NSSize
 
     init(
         session: WorkspaceSession,
         registry: WindowRegistry,
+        initialContentSize: NSSize = ProjectWindowController.initialContentSize,
         makeRoot: @escaping (ProjectWindowState) -> AnyView
     ) {
         self.session = session
         self.registry = registry
+        self.initialContentSize = initialContentSize
         self.makeRoot = makeRoot
     }
 
@@ -173,6 +179,7 @@ final class ProjectWindowPresenter: ProjectWindowPresenting {
         let controller = ProjectWindowController(
             windowID: state.id,
             rootView: makeRoot(state),
+            contentSize: initialContentSize,
             events: ProjectWindowController.Events(
                 close: { [weak registry, session = self.session] id in registry?.close(id, in: session) },
                 becameKey: { [weak registry] id in registry?.windowBecameKey(id) },

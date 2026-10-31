@@ -13,9 +13,7 @@ struct BackgroundWorkTests {
     private static let resting = SessionRowFact.Agent(provider: .claude, state: .finished, detail: nil)
 
     private static func badge(_ backgroundWork: String?) throws -> AgentBadge {
-        let field = backgroundWork.map { #","backgroundWork":"# + $0 } ?? ""
-        let json = #"{"state":"finished","updatedAt":"2026-10-28T05:00:00Z""# + field + "}"
-        return try JSONDecoder().decode(AgentProjectedBadge.self, from: Data(json.utf8)).asAgentBadge
+        try AgentBadge.decoded(field: "backgroundWork", value: backgroundWork)
     }
 
     /// `work` as the run of `items`' first item left it, or as the pane's

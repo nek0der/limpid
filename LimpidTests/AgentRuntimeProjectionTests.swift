@@ -56,7 +56,7 @@ struct AgentRuntimeProjectionTests {
                     sessionID: "$2",
                     sessionName: "work"
                 )
-            ], topology: topology())
+            ], topology: TmuxTopology.onePane())
             let projection = ProjectionFixture.adapter(
                 state: states,
                 sessions: directory.appendingPathComponent("sessions")
@@ -92,7 +92,7 @@ struct AgentRuntimeProjectionTests {
                     sessionID: "$2",
                     sessionName: "work"
                 )
-            ], topology: topology())
+            ], topology: TmuxTopology.onePane())
             let projection = ProjectionFixture.adapter(
                 state: states,
                 sessions: directory.appendingPathComponent("sessions")
@@ -102,13 +102,6 @@ struct AgentRuntimeProjectionTests {
 
             #expect(session.tab(tab.id)?.agentBadges[.codex]?[displayPaneID]?.state == .needsInput)
         }
-    }
-
-    private func topology(sessionID: String = "$2", start: String = "100") -> TmuxTopology {
-        TmuxTopology(panes: TmuxTopology.parsePanes(
-            "42\t\(start)\t\(sessionID)\t@3\t%4\t1\t1\n",
-            socketPath: "/private/tmp/tmux-501/default"
-        ), socketAliases: ["/tmp/tmux-501/default": "/private/tmp/tmux-501/default"])
     }
 
     @Test func unresolvedTmux_doesNotUseLaunchPaneOrSavedBinding() throws {
@@ -144,7 +137,7 @@ struct AgentRuntimeProjectionTests {
             try AgentRecordFixtures.write(second, to: states)
             let presence = TmuxPanePresence(bindingsByPaneID: [paneID: TmuxBinding(
                 socketPath: "/tmp/tmux-501/default", sessionID: "$2", sessionName: "work"
-            )], topology: topology())
+            )], topology: TmuxTopology.onePane())
             let projection = ProjectionFixture.adapter(
                 state: states,
                 sessions: directory.appendingPathComponent("sessions")
@@ -237,7 +230,7 @@ struct AgentRuntimeProjectionTests {
             let fresh = record(runID: freshRunID, launchPaneID: UUID(), state: "running", revision: 1)
             try AgentRecordFixtures.write(stale, to: states)
             try AgentRecordFixtures.write(fresh, to: states)
-            var probed = topology()
+            var probed = TmuxTopology.onePane()
             // The socket answered, so a run it does not list is detached.
             probed.outcomes = ["/private/tmp/tmux-501/default": .success("")]
             let presence = TmuxPanePresence(bindingsByPaneID: [displayPaneID: TmuxBinding(
@@ -269,7 +262,7 @@ struct AgentRuntimeProjectionTests {
             try AgentRecordFixtures.write(legacy, to: states)
             let presence = TmuxPanePresence(bindingsByPaneID: [displayPaneID: TmuxBinding(
                 socketPath: "/tmp/tmux-501/default", sessionID: "$2", sessionName: "work"
-            )], topology: topology())
+            )], topology: TmuxTopology.onePane())
             let projection = ProjectionFixture.adapter(
                 state: states,
                 sessions: directory.appendingPathComponent("sessions")

@@ -485,17 +485,19 @@ private struct HostedStrip {
     /// selection and come to rest: unchanged for longer than the strip's
     /// scroll takes, so a scroll still under way, or one not yet begun, is
     /// not taken for its end. We time the rest rather than count checks,
-    /// since a loaded machine stretches each check. It returns `nil` if the
-    /// frames never rest.
+    /// since a loaded machine stretches each check. We force a layout only
+    /// until the strip has taken the selection: on macOS 27, one forced
+    /// through the scroll keeps the animated scroll from ever moving the
+    /// offset. It returns `nil` if the frames never rest.
     func settledFrames() async -> [CGRect]? {
         let clock = ContinuousClock()
         var last: [CGRect]?
         var lastChange = clock.now
         var settled: [CGRect]?
         await pollUntil(timeout: .seconds(5), interval: .milliseconds(10)) {
-            host.layoutSubtreeIfNeeded()
             let frames = (0..<count).compactMap { recorder.frames[$0] }
             guard frames.count == count, recorder.appliedSelection == selection.selected else {
+                host.layoutSubtreeIfNeeded()
                 lastChange = clock.now
                 return false
             }

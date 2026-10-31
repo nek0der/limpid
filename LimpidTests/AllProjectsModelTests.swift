@@ -255,6 +255,15 @@ struct AllProjectsModelTests {
         #expect(selection.selectedID == cards[0].id)
         selection.move(.next, in: groups, columns: 3)
         #expect(selection.selectedID == cards[1].id)
+
+        selection = AllProjectsSelection(selectedID: cards[3].id)
+        selection.move(.next, in: groups, columns: 3)
+        #expect(selection.selectedID == cards[3].id)
+
+        // With nothing chosen yet, a key chooses the first card.
+        selection = AllProjectsSelection(selectedID: nil)
+        selection.move(.next, in: groups, columns: 3)
+        #expect(selection.selectedID == cards[0].id)
     }
 
     @Test func upAndDown_moveARowOfThree_intoTheNextSectionsColumn() {

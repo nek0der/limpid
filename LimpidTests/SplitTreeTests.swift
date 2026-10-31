@@ -88,6 +88,15 @@ struct SplitTreeTests {
         )
         let firstVisibleExtent = 400 * ratio - Double(PaneSplit.dividerThickness / 2)
         #expect(abs(firstVisibleExtent - 80) < 0.001)
+
+        let far = PaneSplit.resolvedRatio(
+            1,
+            extent: 400,
+            firstMinimum: 80,
+            secondMinimum: 80
+        )
+        let secondVisibleExtent = 400 * (1 - far) - Double(PaneSplit.dividerThickness / 2)
+        #expect(abs(secondVisibleExtent - 80) < 0.001)
     }
 
     @Test("minimum extent adds same-axis descendants and takes the maximum across the other axis")
@@ -185,9 +194,7 @@ struct SplitTreeTests {
             .resize(splitAt: [], by: 200, bounds: bounds, minSize: 80)
             .resize(splitAt: [.second], by: 150, bounds: bounds, minSize: 80)
 
-        let leveled = dragged.equalize()
-
-        /// Walk the tree and assert every split is back at 0.5.
+        /// Walk the tree and collect every split's ratio.
         func collectRatios(_ node: PaneNode) -> [Double] {
             switch node {
             case .leaf: []
@@ -195,6 +202,13 @@ struct SplitTreeTests {
                 [data.ratio] + collectRatios(data.first) + collectRatios(data.second)
             }
         }
+        // A drag that moved nothing would leave equalize nothing to reset.
+        let off = dragged.root.map(collectRatios) ?? []
+        #expect(off.count == 2)
+        #expect(off.allSatisfy { $0 != 0.5 })
+
+        let leveled = dragged.equalize()
+
         let ratios = leveled.root.map(collectRatios) ?? []
         #expect(ratios.count == 2)
         #expect(ratios.allSatisfy { $0 == 0.5 })

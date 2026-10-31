@@ -144,7 +144,7 @@ struct WorkspaceSessionWorktreeTests {
     @Test("createGitWorktree: unknown project id throws projectNotFound")
     func createGitWorktree_withUnknownProject_throwsProjectNotFound() async {
         let session = WorkspaceSession()
-        await #expect(throws: CreateWorktreeError.self) {
+        let error = await WorktreeFixture.failure(CreateWorktreeError.self) {
             try await session.createGitWorktree(
                 projectID: UUID(),
                 path: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
@@ -153,6 +153,10 @@ struct WorkspaceSessionWorktreeTests {
                 openTab: false,
                 git: FakeGit()
             )
+        }
+        guard case .projectNotFound? = error else {
+            Issue.record("expected .projectNotFound, got \(String(describing: error))")
+            return
         }
     }
 
@@ -165,7 +169,7 @@ struct WorkspaceSessionWorktreeTests {
         defer { try? FileManager.default.removeItem(at: collidingPath) }
         let git = FakeGit()
 
-        await #expect(throws: CreateWorktreeError.self) {
+        let error = await WorktreeFixture.failure(CreateWorktreeError.self) {
             try await session.createGitWorktree(
                 projectID: project.id,
                 path: collidingPath,
@@ -174,6 +178,11 @@ struct WorkspaceSessionWorktreeTests {
                 openTab: false,
                 git: git
             )
+        }
+        if case let .pathAlreadyExists(path)? = error {
+            #expect(path == collidingPath)
+        } else {
+            Issue.record("expected .pathAlreadyExists, got \(String(describing: error))")
         }
         #expect(git.createCalls.isEmpty)
     }
@@ -217,9 +226,11 @@ struct WorkspaceSessionWorktreeTests {
             git: git
         )
 
+        let tab = session.openTab(container: .worktree(projectID: project.id, worktreeID: wt.id))
+
         // Reset for the delete leg.
         git.nextRemoveResult = .success()
-        _ = try await session.deleteGitWorktree(
+        let freed = try await session.deleteGitWorktree(
             projectID: project.id,
             worktreeID: wt.id,
             force: false,
@@ -228,6 +239,8 @@ struct WorkspaceSessionWorktreeTests {
 
         let updated = try #require(session.projects.first { $0.id == project.id })
         #expect(!updated.worktrees.contains { $0.id == wt.id })
+        #expect(!freed.isEmpty)
+        #expect(Set(freed) == Set(tab.splitTree.allLeafIDs()))
     }
 
     // MARK: - Delete — errors
@@ -235,7 +248,7 @@ struct WorkspaceSessionWorktreeTests {
     @Test("deleteGitWorktree: unknown project id throws projectNotFound")
     func deleteGitWorktree_withUnknownProject_throwsProjectNotFound() async {
         let session = WorkspaceSession()
-        await #expect(throws: DeleteWorktreeError.self) {
+        let error = await WorktreeFixture.failure(DeleteWorktreeError.self) {
             try await session.deleteGitWorktree(
                 projectID: UUID(),
                 worktreeID: UUID(),
@@ -243,18 +256,26 @@ struct WorkspaceSessionWorktreeTests {
                 git: FakeGit()
             )
         }
+        guard case .projectNotFound? = error else {
+            Issue.record("expected .projectNotFound, got \(String(describing: error))")
+            return
+        }
     }
 
     @Test("deleteGitWorktree: unknown worktree id throws worktreeNotFound")
-    func deleteGitWorktree_withUnknownWorktree_throwsWorktreeNotFound() async throws {
+    func deleteGitWorktree_withUnknownWorktree_throwsWorktreeNotFound() async {
         let (session, project) = WorkspaceSessionFixture.withProject(name: "demo")
-        await #expect(throws: DeleteWorktreeError.self) {
+        let error = await WorktreeFixture.failure(DeleteWorktreeError.self) {
             try await session.deleteGitWorktree(
                 projectID: project.id,
                 worktreeID: UUID(),
                 force: false,
                 git: FakeGit()
             )
+        }
+        guard case .worktreeNotFound? = error else {
+            Issue.record("expected .worktreeNotFound, got \(String(describing: error))")
+            return
         }
     }
 

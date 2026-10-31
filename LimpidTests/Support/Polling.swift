@@ -2,6 +2,7 @@
 // Limpid — waits for a condition a test cannot await directly.
 
 import Foundation
+import Observation
 
 /// Checks `condition` until it holds or `timeout` passes, for work a test
 /// starts but cannot await: a task the code under test spawns, a hop back to
@@ -30,6 +31,23 @@ func pollUntil(
         } else {
             await Task.yield()
         }
+    }
+}
+
+/// Waits until `condition`, which reads `@Observable` state, holds, woken by
+/// each change to what it read rather than on a clock: nothing to give up on
+/// under load. It has no deadline, so the suite needs a `.timeLimit`; the
+/// limit's cancellation ends the wait and the expectation after it fails.
+@MainActor
+func untilObserved(_ condition: @MainActor () -> Bool) async {
+    while !condition(), !Task.isCancelled {
+        let (changes, changed) = AsyncStream.makeStream(of: Void.self)
+        withObservationTracking {
+            _ = condition()
+        } onChange: {
+            changed.finish()
+        }
+        for await _ in changes {}
     }
 }
 

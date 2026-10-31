@@ -17,7 +17,7 @@ import SwiftUI
 @MainActor
 final class ProjectWindowController: NSWindowController, NSWindowDelegate {
     /// The size a window opens at before it has a saved frame.
-    private static let initialContentSize = NSSize(width: 1280, height: 800)
+    static let initialContentSize = NSSize(width: 1280, height: 800)
     /// The smallest the window's root may be laid out at, under
     /// the title bar; the window's `contentMinSize` adds the title bar.
     static let minimumContentSize = NSSize(
@@ -53,6 +53,7 @@ final class ProjectWindowController: NSWindowController, NSWindowDelegate {
     init(
         windowID: WindowID,
         rootView: AnyView,
+        contentSize: NSSize = initialContentSize,
         events: Events
     ) {
         self.windowID = windowID
@@ -74,13 +75,13 @@ final class ProjectWindowController: NSWindowController, NSWindowDelegate {
         // under: 432pt for the root's 400 out of full screen.
         hosting.sizingOptions = [.minSize]
         let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: Self.initialContentSize),
+            contentRect: NSRect(origin: .zero, size: contentSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.contentViewController = hosting
-        window.setContentSize(Self.initialContentSize)
+        window.setContentSize(contentSize)
         // The same value set here, for the time before the window is
         // shown: a saved frame is widened to it as the window's syncs bind
         // (`WindowFrameSync`). Asking the hosting view to write it now

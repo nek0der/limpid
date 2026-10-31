@@ -112,10 +112,11 @@ struct ProjectBootstrapTests {
     }
 
     @Test
-    func bootstrapItem_defaultTimeoutMatchesClaudeCodeHookDefault() {
-        // The 600s default lines up with Claude Code's own PreToolUse
-        // hook timeout so a long bootstrap step won't get killed by
-        // the upstream hook before our wrapper would have.
+    func bootstrapItem_defaultTimeoutStaysAtTenMinutes() {
+        // We chose 600s to line up with Claude Code's own hook timeout, so a
+        // long bootstrap step is not killed by the upstream hook before our
+        // wrapper would have. This pins our own value against an accidental
+        // edit; it cannot tell when Claude Code changes theirs.
         #expect(BootstrapDetail.defaultTimeoutSeconds == 600)
     }
 

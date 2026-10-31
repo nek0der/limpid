@@ -240,7 +240,7 @@ struct ApprovalLedgerTests {
         let epoch = UUID()
         let delegated = ApprovalPresentation.test(epoch: epoch)
         let held = ApprovalPresentation.test(epoch: epoch)
-        store.receive([delegated, held])
+        store.receive([delegated, held], seenAt: Self.seenAt)
         store.receive([held], epoch: epoch, terminals: [delegated.id: .resolved(.delegate)])
         store.stop()
 
@@ -248,7 +248,7 @@ struct ApprovalLedgerTests {
 
         #expect(store.ledger.entry(for: delegated)?.state.isLeftToTerminal == true)
         #expect(store.ledger.entry(for: held)?.state == .held)
-        #expect(store.ledger.entry(for: held)?.firstSeenAt != Self.laterSight, "it keeps its first sight")
+        #expect(store.ledger.entry(for: held)?.firstSeenAt == Self.seenAt, "it keeps its first sight")
         #expect(!store.ledger.trackedIDs.contains(delegated.id), "nothing left to ask the broker")
     }
 
@@ -302,6 +302,7 @@ struct ApprovalLedgerTests {
         gate.open()
         await pollUntil { hasLanded }
 
+        #expect(hasLanded)
         #expect(store.ledger.entry(for: request)?.state == .unknownResult)
     }
 

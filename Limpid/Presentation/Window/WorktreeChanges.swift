@@ -103,8 +103,11 @@ final class WorktreeChanges {
     private(set) var outsideTurnsContents: [String: [String: String]] = [:]
     /// The worktrees whose last count left a gap, or what changed since, out
     /// because the turns it starts from ended in one second at different
-    /// trees (`OutsideTurnsPlan.isComplete`): their count may be short,
-    /// which the panel says rather than let it read as the whole.
+    /// trees (`OutsideTurnsPlan.isComplete`), or because a gap's tree is gone
+    /// while an uncommitted path is not counted: their count may be short,
+    /// which the panel says rather than let it read as the whole. With every
+    /// uncommitted path counted, a gone gap could add nothing, as the count
+    /// holds only those.
     private(set) var incompleteOutsideTurns: Set<String> = []
     /// The same with each file's size, time, and inode, so the next count
     /// hashes only what was touched.
@@ -336,6 +339,7 @@ final class WorktreeChanges {
         }
         var paths: Set<String> = []
         var found: [String: ReviewGit.ContentFingerprint] = [:]
+        var uncommitted: Set<String> = []
         do {
             for gap in plan.gaps {
                 switch before[gap] ?? kept[gap] {
@@ -362,7 +366,8 @@ final class WorktreeChanges {
                     untrackedHashes[key] = changed.untrackedHashes
                 }
             }
-            try await paths.formIntersection(git.uncommitted(root))
+            uncommitted = try await git.uncommitted(root)
+            paths.formIntersection(uncommitted)
             // Nothing to hash when nothing changed outside turns.
             found = try await paths.isEmpty ? [:] : git.fingerprints(root, paths, fingerprints[root.path] ?? [:])
         } catch {
@@ -374,7 +379,8 @@ final class WorktreeChanges {
         if outsideTurns[key] != paths {
             outsideTurns[key] = paths
         }
-        noteCompleteness(of: key, isComplete: plan.isComplete)
+        let hasGoneGap = plan.gaps.contains { kept[$0] == .unknown }
+        noteCompleteness(of: key, isComplete: plan.isComplete && (!hasGoneGap || uncommitted.isSubset(of: paths)))
         fingerprints[key] = found
         let contents = found.mapValues(\.contents)
         if outsideTurnsContents[key] != contents {

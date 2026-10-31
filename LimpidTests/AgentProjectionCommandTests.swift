@@ -64,6 +64,8 @@ struct AgentProjectionCommandTests {
 
     @Test func aTurnTarget_isReportedUnderItsOwnName() throws {
         let data = try JSONEncoder().encode(AgentCommandTarget.turn(provider: "codex", turnID: "TURN"))
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: String])
+        #expect(object == ["target": "turn", "provider": "codex", "turnId": "TURN"])
         let back = try JSONDecoder().decode(AgentCommandTarget.self, from: data)
         #expect(back == .turn(provider: "codex", turnID: "TURN"))
     }

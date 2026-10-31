@@ -303,7 +303,10 @@ struct TabAgentMapDecodingTests {
 
         #expect(keys.contains("agentSessions"))
         #expect(keys.contains("agentBadges"))
+        // Every per-provider field the fixture came with, then one it did not.
         #expect(!keys.contains("claudeSessions"))
+        #expect(!keys.contains("codexSessions"))
+        #expect(!keys.contains("claudeAgentBadges"))
         #expect(!keys.contains("codexAgentBadges"))
     }
 }

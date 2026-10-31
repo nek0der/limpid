@@ -17,7 +17,12 @@ private let log = Logger.limpid("notifications")
 
 @MainActor
 final class LimpidNotificationManager {
-    private let center = UNUserNotificationCenter.current()
+    /// Read on first use, so a manager given a `bannerPoster` never reaches
+    /// the system's center.
+    private lazy var center = UNUserNotificationCenter.current()
+    /// Takes a banner in place of macOS, so a test can see what would be
+    /// posted. Nil in the app, which posts to `center`.
+    private let bannerPoster: (@MainActor (UNNotificationRequest) -> Void)?
     private var rateLimiter = RateLimiter(maxPerSecond: 5)
     private let historyStore: NotificationHistoryStore
     /// The agents' banners held back since `holdAgentBanners`, posted as one
@@ -32,10 +37,17 @@ final class LimpidNotificationManager {
     /// moment of the event; reading it here gives them all one source.
     let appLocale: @MainActor () -> Locale
 
-    init(historyStore: NotificationHistoryStore, appLocale: @escaping @MainActor () -> Locale) {
+    init(
+        historyStore: NotificationHistoryStore,
+        appLocale: @escaping @MainActor () -> Locale,
+        bannerPoster: (@MainActor (UNNotificationRequest) -> Void)? = nil
+    ) {
         self.historyStore = historyStore
         self.appLocale = appLocale
-        requestPermission()
+        self.bannerPoster = bannerPoster
+        if bannerPoster == nil {
+            requestPermission()
+        }
     }
 
     private func requestPermission() {
@@ -240,6 +252,10 @@ final class LimpidNotificationManager {
     }
 
     private func post(_ request: UNNotificationRequest) {
+        if let bannerPoster {
+            bannerPoster(request)
+            return
+        }
         center.add(request) { error in
             if let error {
                 log.error("notification deliver failed: \(error.localizedDescription, privacy: .private)")

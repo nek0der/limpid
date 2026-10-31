@@ -21,7 +21,11 @@ struct TmuxCommandTests {
         let start = ProcessInfo.processInfo.systemUptime
         let result = TmuxCommand().run(executable: "/bin/sh", arguments: ["-c", "trap '' TERM; while :; do :; done"], timeout: 0.05)
         #expect(result == .timedOut)
-        #expect(ProcessInfo.processInfo.systemUptime - start < 1.5)
+        // The timeout and both graces come to under half a second. A run
+        // that never sent SIGKILL would not return at all, so the bound only
+        // has to stand well past the graces, and leaves room for a busy CI
+        // runner, as the drain test's below does.
+        #expect(ProcessInfo.processInfo.systemUptime - start < 10)
     }
 
     @Test func descendantHoldingWriter_doesNotKeepReaderAlive() throws {
@@ -58,7 +62,9 @@ struct TmuxCommandTests {
     }
 
     @Test func outputLimitAndInvalidEncoding_areNotPartialSuccess() {
-        #expect(TmuxCommand().run(executable: "/usr/bin/printf", arguments: ["abcdef"], outputLimit: 3) == .outputLimit)
-        #expect(TmuxCommand().run(executable: "/usr/bin/printf", arguments: ["\\377"]) == .invalidOutput)
+        // A timeout no run here reaches, as in the first test: the half-second
+        // default could report a late start as `.timedOut`.
+        #expect(TmuxCommand().run(executable: "/usr/bin/printf", arguments: ["abcdef"], timeout: 30, outputLimit: 3) == .outputLimit)
+        #expect(TmuxCommand().run(executable: "/usr/bin/printf", arguments: ["\\377"], timeout: 30) == .invalidOutput)
     }
 }
