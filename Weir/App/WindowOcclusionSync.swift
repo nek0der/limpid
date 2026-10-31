@@ -2,6 +2,7 @@
 // Weir — tells the window registry whether one window can be seen at all.
 
 import AppKit
+import WeirDomain
 
 /// Reports a window going off screen (hidden, minimized, fully covered)
 /// and coming back, so the registry stops counting its panes as visible

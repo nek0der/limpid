@@ -2,6 +2,7 @@
 // Weir — what a review hunk's "Discard" offers, and what a discard of it did.
 
 import Foundation
+import WeirDomain
 
 /// One hunk, as a discard names it: the range (two ranges may end in the
 /// same trees), the trees the review diffed, the worktree, the file, and

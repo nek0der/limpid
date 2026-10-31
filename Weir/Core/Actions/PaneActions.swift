@@ -7,6 +7,7 @@
 
 import AppKit
 import Foundation
+import WeirDomain
 
 @MainActor
 enum PaneActions {

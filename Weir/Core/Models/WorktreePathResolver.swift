@@ -2,6 +2,7 @@
 // Weir — each spelling of a worktree's path with its links followed, worked out once for the whole app.
 
 import Foundation
+import WeirDomain
 
 /// The one place a worktree path is resolved through its links. The hook
 /// records Git's spelling (`/private/tmp/...` on macOS), a session folder

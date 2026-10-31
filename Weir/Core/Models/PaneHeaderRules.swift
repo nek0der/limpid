@@ -7,6 +7,7 @@
 // win in is the part a later change is most likely to get wrong.
 
 import Foundation
+import WeirDomain
 
 /// The agent a header speaks for: `title` names the pane, `providerName` goes
 /// only into the hover text and VoiceOver, and the model, effort, and

@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 /// One project's window and the stores its changes panel and review tab
 /// read, none of which reads Git or writes a file: each folder is its own

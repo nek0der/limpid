@@ -2,6 +2,7 @@
 // Weir — what the restore strip asks before the code goes back to the start of a turn, and where the strip stands.
 
 import Foundation
+import WeirDomain
 
 /// The question the restore strip asks: which turns' changes go, by
 /// how much, and what stays; and whether "Restore Code" can run now.

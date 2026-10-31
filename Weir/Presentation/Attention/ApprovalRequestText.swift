@@ -2,6 +2,7 @@
 // Weir — what a request is about, in the words the Needs Attention list and the sidebar show.
 
 import Foundation
+import WeirDomain
 
 /// What Weir shows of a request beside its state: the command an
 /// approval waits on, or the start of a question. The Needs Attention list

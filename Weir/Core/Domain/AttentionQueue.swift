@@ -10,21 +10,24 @@ import Foundation
 /// person is looking at does not jump; only insertion and removal change
 /// the order. The queue numbers the items itself, so two sources inserting
 /// in the same pass cannot hand out the same position.
-struct AttentionQueue: Equatable, Sendable {
-    private(set) var items: [AttentionItem] = []
+package struct AttentionQueue: Equatable, Sendable {
+    package private(set) var items: [AttentionItem] = []
     /// The usage limit stops another run of their provider has since worked
     /// past (`UsageLimits.isLifted`): the limit no longer holds the account,
     /// though the stop stays until its own conversation moves on. Kept for
     /// the stop's life rather than read from the runtimes each pass, since
     /// the run that proved it starts its next turn and stops showing it.
     private(set) var liftedUsageLimits: Set<AttentionItemID> = []
+
     private var nextSequence: UInt64 = 1
+
+    package init() {}
 
     /// Appends a new item. Returns `false`, leaving the queue unchanged,
     /// when an item with this ID is already in it: a source that reports the
     /// same request on every pass must not move it to the end.
     @discardableResult
-    mutating func insert(
+    package mutating func insert(
         id: AttentionItemID,
         kind: AttentionItemKind,
         subject: AttentionSubject,
@@ -45,7 +48,7 @@ struct AttentionQueue: Equatable, Sendable {
     /// Replaces an item's content in place, and its subject when one is
     /// given (the pane moved to another tab, or a tmux session is now seen
     /// through another pane). Does nothing for an ID that is not in the queue.
-    mutating func update(id: AttentionItemID, kind: AttentionItemKind, subject: AttentionSubject? = nil) {
+    package mutating func update(id: AttentionItemID, kind: AttentionItemKind, subject: AttentionSubject? = nil) {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return }
         let item = items[index]
         items[index] = AttentionItem(
@@ -57,7 +60,7 @@ struct AttentionQueue: Equatable, Sendable {
         )
     }
 
-    mutating func remove(_ id: AttentionItemID) {
+    package mutating func remove(_ id: AttentionItemID) {
         items.removeAll { $0.id == id }
         liftedUsageLimits.remove(id)
     }
@@ -72,21 +75,21 @@ struct AttentionQueue: Equatable, Sendable {
     }
 
     /// The item `id` while the queue holds it.
-    func item(_ id: AttentionItemID) -> AttentionItem? {
+    package func item(_ id: AttentionItemID) -> AttentionItem? {
         items.first { $0.id == id }
     }
 
-    func items(inPane paneID: UUID) -> [AttentionItem] {
+    package func items(inPane paneID: UUID) -> [AttentionItem] {
         items.filter { $0.subject.paneID == paneID }
     }
 
-    func counts() -> AttentionCounts {
+    package func counts() -> AttentionCounts {
         Self.counts(of: items)
     }
 
     /// The counts of one project's items, for the project menu and the
     /// mark beside the project's name.
-    func counts(inProject projectID: UUID) -> AttentionCounts {
+    package func counts(inProject projectID: UUID) -> AttentionCounts {
         Self.counts(of: items.filter { $0.subject.projectID == projectID })
     }
 
@@ -94,7 +97,7 @@ struct AttentionQueue: Equatable, Sendable {
     /// mark beside the project's name. Items in no project (scratch tabs, a
     /// request no pane is known for) are not another project's, so they are
     /// left out.
-    func counts(inProjectsOtherThan projectID: UUID?) -> AttentionCounts {
+    package func counts(inProjectsOtherThan projectID: UUID?) -> AttentionCounts {
         Self.counts(of: items.filter { item in
             item.subject.projectID.map { $0 != projectID } ?? false
         })
@@ -102,7 +105,7 @@ struct AttentionQueue: Equatable, Sendable {
 
     /// The counts of `items`, some of the list's: what a caller that has
     /// grouped the list once counts each group by.
-    static func counts(of items: [AttentionItem]) -> AttentionCounts {
+    package static func counts(of items: [AttentionItem]) -> AttentionCounts {
         var counts = AttentionCounts()
         for item in items {
             switch item.kind {
@@ -121,38 +124,38 @@ struct AttentionQueue: Equatable, Sendable {
 /// The attention count by kind. Every place that shows "Needs attention n"
 /// (title bar, list, all projects, menu bar, Dock) reads `total` from here,
 /// so they cannot disagree.
-struct AttentionCounts: Equatable, Sendable {
-    var approvals = 0
-    var questions = 0
+package struct AttentionCounts: Equatable, Sendable {
+    package var approvals = 0
+    package var questions = 0
     /// Waits at the agent's own prompt we cannot name as an approval or a
     /// question ("Needs response"); the ones we can are counted with
     /// `approvals` and `questions`. All show in one amber glyph.
-    var prompts = 0
+    package var prompts = 0
     /// Agents waiting for the person to sign in again ("Needs sign-in").
-    var signIns = 0
-    var stops = 0
-    var unread = 0
+    package var signIns = 0
+    package var stops = 0
+    package var unread = 0
 
-    var total: Int {
+    package var total: Int {
         approvals + questions + prompts + signIns + stops + unread
     }
 
     /// Whether anything is blocked on the person. The title bar pill is
     /// filled amber for these and only outlined blue for unread turns.
-    var hasBlockingItems: Bool {
+    package var hasBlockingItems: Bool {
         approvals + questions + prompts + signIns + stops > 0
     }
 }
 
 /// Which item a pane shows when it is opened without choosing one.
-enum PanePriority {
+package enum PanePriority {
     /// The highest-ranked item, and among equals the one that arrived
     /// first. Questions come before approvals, and both before stops:
     /// Weir can answer a request only until its deadline, while a stop
     /// has none. The Rust `RunState::priority` holds the same order (a
     /// wait before a stop before an unread turn) for the runs that compete
     /// for one pane.
-    static func dominant(_ items: [AttentionItem]) -> AttentionItem? {
+    package static func dominant(_ items: [AttentionItem]) -> AttentionItem? {
         items.min(by: precedes)
     }
 

@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// A Codex usage the tests hand out.
 private let codexUsage = PlanUsage(

@@ -2,13 +2,14 @@
 // Weir — plan usage in the form the Rust side writes it: camel case, with ISO-8601 times.
 
 import Foundation
+import WeirDomain
 
 extension PlanUsage: Decodable {
     private enum CodingKeys: String, CodingKey {
         case windows, observedAt, resetCredits
     }
 
-    init(from decoder: any Decoder) throws {
+    package init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         try self.init(
             windows: container.decode([PlanUsageWindow].self, forKey: .windows),
@@ -29,7 +30,7 @@ extension PlanResetCredits: Decodable {
         case available, expiresAt
     }
 
-    init(from decoder: any Decoder) throws {
+    package init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         try self.init(
             available: container.decode(Int.self, forKey: .available),
@@ -45,7 +46,7 @@ extension PlanUsageWindow: Decodable {
         case kind, usedPercent, resetsAt
     }
 
-    init(from decoder: any Decoder) throws {
+    package init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         try self.init(
             kind: container.decode(String.self, forKey: .kind),

@@ -2,6 +2,7 @@
 // Weir — the pane strip's tabs: their titles and marks, in the session's order.
 
 import Foundation
+import WeirDomain
 
 /// What waits on the person in a pane, for the pane's frame. A
 /// turn's "unread" is not one: it is not urgent.

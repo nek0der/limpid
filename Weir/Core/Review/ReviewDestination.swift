@@ -2,6 +2,7 @@
 // Weir — the pane the assembled feedback is pasted into.
 
 import Foundation
+import WeirDomain
 
 /// The one thing review needs from the pane it writes to.
 ///

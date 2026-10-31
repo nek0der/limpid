@@ -2,6 +2,7 @@
 // Weir — what the title bar's "Needs Attention n" says, and how loudly.
 
 import Foundation
+import WeirDomain
 
 /// The title bar's attention count. It never disappears:
 /// at zero it reads "Needs Attention 0", faint and unfilled, so the place

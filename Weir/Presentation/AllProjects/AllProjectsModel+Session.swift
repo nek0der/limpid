@@ -2,6 +2,7 @@
 // Weir — builds the all projects sheet's cards from every project's sidebar rows.
 
 import Foundation
+import WeirDomain
 
 extension AllProjectsModel {
     /// What the sheet is read from: the same sources each window's sidebar

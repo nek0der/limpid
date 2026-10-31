@@ -9,28 +9,28 @@ import Foundation
 /// two turns. It also keeps the turn's number, which orders it
 /// against the conversation's other turns after its record is deleted, and
 /// the tree the turn ended at, which the line's auxiliary ref points to.
-struct ViewedLinePosition: Equatable, Codable, Sendable {
-    let turnID: TurnID
+package struct ViewedLinePosition: Equatable, Codable, Sendable {
+    package let turnID: TurnID
     /// The turn's `displayNumber`: never reused within its conversation, so
     /// a turn is under the line exactly when its number is not greater.
-    let displayNumber: Int
+    package let displayNumber: Int
     /// `nil` when the turn's end snapshot was not taken.
-    let endTree: SnapshotTree?
+    package let endTree: SnapshotTree?
 
-    init(turnID: TurnID, displayNumber: Int, endTree: SnapshotTree?) {
+    package init(turnID: TurnID, displayNumber: Int, endTree: SnapshotTree?) {
         self.turnID = turnID
         self.displayNumber = displayNumber
         self.endTree = endTree
     }
 
-    init(_ turn: TurnSummary) {
+    package init(_ turn: TurnSummary) {
         self.init(turnID: turn.turnID, displayNumber: turn.displayNumber, endTree: turn.endTree)
     }
 }
 
 /// Where the person moved the line from. Kept with each move for the
 /// record; nothing behaves differently by it yet.
-enum ViewedLineSource: String, Codable, Sendable {
+package enum ViewedLineSource: String, Codable, Sendable {
     case decisionBar
     case review
     case turnRow
@@ -38,19 +38,19 @@ enum ViewedLineSource: String, Codable, Sendable {
     case restore
     case unknown
 
-    init(from decoder: any Decoder) throws {
+    package init(from decoder: any Decoder) throws {
         let raw = try decoder.singleValueContainer().decode(String.self)
         self = Self(rawValue: raw) ?? .unknown
     }
 }
 
 /// One move of the line, kept so it can be taken back.
-struct ViewedLineChange: Equatable, Codable, Sendable, Identifiable {
-    let id: UUID
-    let from: ViewedLinePosition?
-    let to: ViewedLinePosition?
-    let source: ViewedLineSource
-    let at: Date
+package struct ViewedLineChange: Equatable, Codable, Sendable, Identifiable {
+    package let id: UUID
+    package let from: ViewedLinePosition?
+    package let to: ViewedLinePosition?
+    package let source: ViewedLineSource
+    package let at: Date
     /// The mark the move was made in: one press that moved several
     /// conversations' lines gives each move the same mark, and "Unmark as
     /// Viewed" takes back the moves of one mark together, whatever the
@@ -59,12 +59,12 @@ struct ViewedLineChange: Equatable, Codable, Sendable, Identifiable {
     /// moment apart would read as one after a relaunch. Optional because
     /// a file from before it was kept has none; such a move is taken back
     /// alone (`docs/data-migration.md`).
-    var markID: UUID?
+    package var markID: UUID?
     /// The mark's place among every mark the store made, every
     /// conversation's, from 1: what tells the latest mark across lines, as
     /// `at` keeps only whole seconds in the file. Optional for the same
     /// reason as `markID`; a move without it came before every move with it.
-    var sequence: Int?
+    package var sequence: Int?
 }
 
 /// How far the person has viewed one conversation: every turn
@@ -73,18 +73,18 @@ struct ViewedLineChange: Equatable, Codable, Sendable, Identifiable {
 /// Keyed by conversation rather than by run, so resuming the conversation
 /// in a new run keeps the line. Only the person moves it: opening a diff or
 /// a pane never does.
-struct ViewedLine: Equatable, Codable, Sendable {
+package struct ViewedLine: Equatable, Codable, Sendable {
     /// Moves kept for undo. Undo reaches the latest move only, so a few are
     /// plenty; the rest are dropped oldest first, except those a caller
     /// keeps (`trimHistory(keeping:)`).
     static let historyLimit = 20
 
-    let conversation: ConversationKey
-    private(set) var position: ViewedLinePosition?
+    package let conversation: ConversationKey
+    package private(set) var position: ViewedLinePosition?
     /// Oldest first.
-    private(set) var history: [ViewedLineChange]
+    package private(set) var history: [ViewedLineChange]
 
-    init(conversation: ConversationKey, position: ViewedLinePosition? = nil, history: [ViewedLineChange] = []) {
+    package init(conversation: ConversationKey, position: ViewedLinePosition? = nil, history: [ViewedLineChange] = []) {
         self.conversation = conversation
         self.position = position
         self.history = history
@@ -101,7 +101,7 @@ struct ViewedLine: Equatable, Codable, Sendable {
     /// seen, so it reads as not viewed until the line is moved below it
     /// again. An end taken where there was none (a snapshot that settled
     /// after the mark) is the same end, not a new one.
-    func isViewed(_ turn: ViewedLinePosition) -> Bool {
+    package func isViewed(_ turn: ViewedLinePosition) -> Bool {
         guard let position else { return false }
         guard turn.displayNumber == position.displayNumber else {
             return turn.displayNumber < position.displayNumber
@@ -119,7 +119,7 @@ struct ViewedLine: Equatable, Codable, Sendable {
     /// when the line is already there or further down: marking what is
     /// already viewed takes nothing back. `keeping` are the moves the
     /// history keeps past its limit (`trimHistory(keeping:)`).
-    mutating func advance(
+    package mutating func advance(
         to turn: ViewedLinePosition,
         source: ViewedLineSource,
         id: UUID = UUID(),
@@ -137,7 +137,7 @@ struct ViewedLine: Equatable, Codable, Sendable {
     /// later one read as not viewed. `earlier` is the latest turn before
     /// it, `nil` when it is the conversation's first. Nothing happens when
     /// the turn is already below the line. `keeping` as for `advance`.
-    mutating func retreat(
+    package mutating func retreat(
         toBefore turn: ViewedLinePosition,
         earlier: ViewedLinePosition?,
         source: ViewedLineSource,
@@ -158,7 +158,7 @@ struct ViewedLine: Equatable, Codable, Sendable {
     /// (`ViewedLineStore.noteRestoreMoves`). The limit counts the others.
     /// An undo of one of `kept` then puts the line back where that move
     /// found it, past any older move dropped in between.
-    mutating func trimHistory(keeping kept: Set<UUID>) {
+    package mutating func trimHistory(keeping kept: Set<UUID>) {
         var excess = history.count { !kept.contains($0.id) } - Self.historyLimit
         guard excess > 0 else { return }
         history.removeAll { change in
@@ -171,7 +171,7 @@ struct ViewedLine: Equatable, Codable, Sendable {
     /// Takes back the move `changeID` when it is the latest one, so an Undo
     /// left on screen cannot undo a later move it never showed. Returns the
     /// move taken back, or `nil` when nothing was.
-    mutating func undo(_ changeID: UUID) -> ViewedLineChange? {
+    package mutating func undo(_ changeID: UUID) -> ViewedLineChange? {
         guard let last = history.last, last.id == changeID else { return nil }
         history.removeLast()
         position = last.from
@@ -201,7 +201,7 @@ struct ViewedLine: Equatable, Codable, Sendable {
     }
 }
 
-extension ViewedLine {
+package extension ViewedLine {
     /// Whether `turn` is at or above the line (`isViewed(_:)`).
     func isViewed(_ turn: TurnSummary) -> Bool {
         isViewed(ViewedLinePosition(turn))
@@ -217,7 +217,15 @@ extension ViewedLine {
 
 /// What an Undo after marking turns viewed takes back: one move of one
 /// conversation's line.
-struct ViewedLineUndo: Codable, Hashable, Sendable {
-    let conversation: ConversationKey
-    let changeID: UUID
+package struct ViewedLineUndo: Codable, Hashable, Sendable {
+    package let conversation: ConversationKey
+    package let changeID: UUID
+
+    package init(
+        conversation: ConversationKey,
+        changeID: UUID
+    ) {
+        self.conversation = conversation
+        self.changeID = changeID
+    }
 }

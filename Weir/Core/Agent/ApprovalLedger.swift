@@ -3,6 +3,7 @@
 
 import Foundation
 import Observation
+import WeirDomain
 
 /// Every request the broker has shown as pending, and where each one stands.
 ///

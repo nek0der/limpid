@@ -2,6 +2,7 @@
 // Weir — the title bar's project dropdown: which projects, in what order, with what counts.
 
 import Foundation
+import WeirDomain
 
 /// The project dropdown's list: the projects in the order the
 /// window's sidebar lists them, narrowed by the search text, each with its attention and

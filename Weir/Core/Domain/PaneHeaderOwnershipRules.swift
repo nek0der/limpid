@@ -5,46 +5,86 @@ import Foundation
 
 /// We select owners from facts rather than display stores so invocation
 /// ordering and parent fallback do not depend on a window or actor.
-enum PaneHeaderOwnershipRules {
-    struct Endpoint: Hashable, Sendable {
-        let socketPath: String
-        let serverPID: String
-        let serverStartedAt: String
-        let paneID: String
+package enum PaneHeaderOwnershipRules {
+    package struct Endpoint: Hashable, Sendable {
+        package let socketPath: String
+        package let serverPID: String
+        package let serverStartedAt: String
+        package let paneID: String
+
+        package init(
+            socketPath: String,
+            serverPID: String,
+            serverStartedAt: String,
+            paneID: String
+        ) {
+            self.socketPath = socketPath
+            self.serverPID = serverPID
+            self.serverStartedAt = serverStartedAt
+            self.paneID = paneID
+        }
     }
 
-    struct Run: Equatable, Sendable {
+    package struct Run: Equatable, Sendable {
         /// The provider-qualified identity returned to the caller.
-        let id: String
+        package let id: String
         /// Parent references use the invocation ID, not the display identity.
-        let runID: String
+        package let runID: String
         /// Absent for a root invocation or a record without parent evidence.
-        var parentRunID: String?
+        package var parentRunID: String?
         /// Absent for a terminal outside tmux, where boot-scoped order is not used.
-        var endpoint: Endpoint?
-        var isKnown = true
-        var isVisible = true
-        var isActive = true
-        var runsWithoutAsking = false
-        let updatedAt: Date
+        package var endpoint: Endpoint?
+        package var isKnown = true
+        package var isVisible = true
+        package var isActive = true
+        package var runsWithoutAsking = false
+        package let updatedAt: Date
         /// Older records may lack a session start and use the update date instead.
-        var sessionStartedAt: Date?
+        package var sessionStartedAt: Date?
         /// Older invocations may lack a monotonic launch stamp.
-        var launchOrder: UInt64?
+        package var launchOrder: UInt64?
         /// Absent until an own-settings report has a monotonic observation.
-        var observedOrder: UInt64?
+        package var observedOrder: UInt64?
+
+        package init(
+            id: String,
+            runID: String,
+            parentRunID: String? = nil,
+            endpoint: Endpoint? = nil,
+            isKnown: Bool = true,
+            isVisible: Bool = true,
+            isActive: Bool = true,
+            runsWithoutAsking: Bool = false,
+            updatedAt: Date,
+            sessionStartedAt: Date? = nil,
+            launchOrder: UInt64? = nil,
+            observedOrder: UInt64? = nil
+        ) {
+            self.id = id
+            self.runID = runID
+            self.parentRunID = parentRunID
+            self.endpoint = endpoint
+            self.isKnown = isKnown
+            self.isVisible = isVisible
+            self.isActive = isActive
+            self.runsWithoutAsking = runsWithoutAsking
+            self.updatedAt = updatedAt
+            self.sessionStartedAt = sessionStartedAt
+            self.launchOrder = launchOrder
+            self.observedOrder = observedOrder
+        }
     }
 
-    struct Selection: Equatable, Sendable {
+    package struct Selection: Equatable, Sendable {
         /// Nil when no known visible owner can supply settings.
-        let ownerID: String?
-        let isAmbiguous: Bool
+        package let ownerID: String?
+        package let isAmbiguous: Bool
     }
 
     /// We first resolve successive roots and nested activity at each
     /// endpoint. Only then do visible splits compete for the shared header,
     /// retaining a warning even when another split has input focus.
-    static func select(from runs: [Run]) -> Selection {
+    package static func select(from runs: [Run]) -> Selection {
         let groups = Dictionary(grouping: runs, by: \.endpoint)
         var owners: [Run] = []
         var isAmbiguous = false

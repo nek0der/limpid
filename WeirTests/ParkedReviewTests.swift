@@ -5,6 +5,7 @@ import CoreGraphics
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// A window switching to another project in place leaves its review tab with
 /// the project it reads, whether or not a comment is being written in it, and

@@ -2,6 +2,7 @@
 // Weir — cancellable, bounded byte output for machine-readable Git queries.
 
 import Foundation
+import WeirDomain
 
 /// One Git query of the review, on the shared runner (`drainAndWait`) with
 /// the review's own timeout, graces, and cap on what Git writes.

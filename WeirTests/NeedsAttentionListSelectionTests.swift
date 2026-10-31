@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct NeedsAttentionListSelectionTests {
     private static func episode(_ name: String) -> EpisodeKey {

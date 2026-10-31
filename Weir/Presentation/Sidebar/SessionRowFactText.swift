@@ -2,6 +2,7 @@
 // Weir — a session row's second line and agent badge, in words.
 
 import Foundation
+import WeirDomain
 
 enum SessionRowFactText {
     /// Returns the row's fact at `now`, its second line after the checkout a

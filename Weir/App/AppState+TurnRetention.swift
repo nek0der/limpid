@@ -3,6 +3,7 @@
 
 import Foundation
 import OSLog
+import WeirDomain
 
 private let log = Logger.weir("turn.retention")
 
@@ -97,7 +98,7 @@ extension AppState {
             isRead: { [self, restored = restoredTurnIDs()] in isTurnRead($0, restored: restored) },
             readAt: { [turnReads] in turnReads.reads[$0.rawValue] },
             lineMovedAt: { [viewedLines] in viewedLines.line(of: $0)?.history.last?.at },
-            ranges: ranges,
+            rangeTurnIDs: Set(ranges.flatMap(\.turnIDs)),
             shownConversations: shown,
             openPanes: Set(panes.map(\.uuidString))
         ), now: Date())

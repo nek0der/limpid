@@ -3,6 +3,7 @@
 
 import Foundation
 import os
+import WeirDomain
 
 /// Copies the paths `IgnoredFileSelection` picked from the project's folder
 /// into a worktree just made. The copy runs on a queue of its own, so

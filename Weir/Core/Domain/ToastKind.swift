@@ -9,7 +9,7 @@ import Foundation
 /// undone (a turn marked as viewed, the code restored). Anything whose
 /// result is on screen says so in the decision bar instead, so it has no
 /// case here.
-enum ToastKind: Equatable, Sendable {
+package enum ToastKind: Equatable, Sendable {
     /// A window closed while another was shown; the sessions and
     /// agents of the project it showed keep running.
     case windowClosed(projectName: String)
@@ -54,7 +54,7 @@ enum ToastKind: Equatable, Sendable {
 
     /// Whether the toast carries Undo. A toast for news from elsewhere
     /// has nothing to take back.
-    var offersUndo: Bool {
+    package var offersUndo: Bool {
         switch self {
         case .windowClosed, .testNotificationSent, .keptAsideAtQuit: false
         case .markedViewed, .markedViewedInConversations, .markedUnviewedInConversations, .codeRestored, .restoreInterrupted,
@@ -66,7 +66,7 @@ enum ToastKind: Equatable, Sendable {
     /// What the toast's "Undo" takes back, for its tooltip and VoiceOver,
     /// where it is more than the message's one move: every conversation's
     /// line a mark across conversations moved. `nil` where "Undo" says it.
-    var undoLabel: LocalizedStringResource? {
+    package var undoLabel: LocalizedStringResource? {
         switch self {
         case let .markedViewedInConversations(_, _, others), let .markedUnviewedInConversations(_, _, others):
             LocalizedStringResource(
@@ -78,7 +78,7 @@ enum ToastKind: Equatable, Sendable {
         }
     }
 
-    var message: LocalizedStringResource {
+    package var message: LocalizedStringResource {
         switch self {
         case let .windowClosed(projectName):
             LocalizedStringResource(

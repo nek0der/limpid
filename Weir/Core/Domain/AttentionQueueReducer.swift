@@ -9,73 +9,149 @@ import Foundation
 /// Each pass works out the items that should be listed now, removes the
 /// ones that no longer should, updates the rest in place, and appends the
 /// new ones. Nothing is re-sorted: the list is the order things happened.
-enum AttentionQueueReducer {
+package enum AttentionQueueReducer {
     /// A request and where it shows.
-    struct PlacedApproval: Equatable, Sendable {
-        let fact: ApprovalFact
-        let subject: AttentionSubject
+    package struct PlacedApproval: Equatable, Sendable {
+        package let fact: ApprovalFact
+        package let subject: AttentionSubject
         /// When Weir first saw the request pending.
-        let arrivedAt: Date
+        package let arrivedAt: Date
         /// The episode of its run's wait that is this request seen from the
         /// hook; `nil` until the run has shown one.
-        var waitEpisodeToken: String?
+        package var waitEpisodeToken: String?
+
+        package init(
+            fact: ApprovalFact,
+            subject: AttentionSubject,
+            arrivedAt: Date,
+            waitEpisodeToken: String? = nil
+        ) {
+            self.fact = fact
+            self.subject = subject
+            self.arrivedAt = arrivedAt
+            self.waitEpisodeToken = waitEpisodeToken
+        }
     }
 
     /// A new session that stopped before its agent started: its
     /// row is there, its agent is not.
-    struct LaunchFailure: Equatable, Sendable {
-        let projectID: UUID
-        let worktreeRoot: URL
-        let stage: NewSessionStage
-        let logTail: String
+    package struct LaunchFailure: Equatable, Sendable {
+        package let projectID: UUID
+        package let worktreeRoot: URL
+        package let stage: NewSessionStage
+        package let logTail: String
         /// New for each failure (`SessionLaunch.Failure.token`).
-        let token: String
-        let failedAt: Date
+        package let token: String
+        package let failedAt: Date
+
+        package init(
+            projectID: UUID,
+            worktreeRoot: URL,
+            stage: NewSessionStage,
+            logTail: String,
+            token: String,
+            failedAt: Date
+        ) {
+            self.projectID = projectID
+            self.worktreeRoot = worktreeRoot
+            self.stage = stage
+            self.logTail = logTail
+            self.token = token
+            self.failedAt = failedAt
+        }
     }
 
     /// A workspace whose worktree was deleted outside Weir: its
     /// row is there, its folder is not.
-    struct MissingWorktree: Equatable, Sendable {
-        let projectID: UUID
-        let worktreeRoot: URL
+    package struct MissingWorktree: Equatable, Sendable {
+        package let projectID: UUID
+        package let worktreeRoot: URL
         /// When the sync first found it gone, which the list counts from.
-        let missingSince: Date
+        package let missingSince: Date
+
+        package init(
+            projectID: UUID,
+            worktreeRoot: URL,
+            missingSince: Date
+        ) {
+            self.projectID = projectID
+            self.worktreeRoot = worktreeRoot
+            self.missingSince = missingSince
+        }
     }
 
     /// A stop its run no longer reports (`StopLedger.retained`), in the
     /// pane it happened in.
-    struct RetainedStop: Equatable, Sendable {
-        let itemID: AttentionItemID
-        let runtimeID: String
-        let provider: AgentKind
-        let paneID: UUID
-        let tabID: UUID?
-        let projectID: UUID?
-        let reason: StopReason
-        let stoppedAt: Date
+    package struct RetainedStop: Equatable, Sendable {
+        package let itemID: AttentionItemID
+        package let runtimeID: String
+        package let provider: AgentKind
+        package let paneID: UUID
+        package let tabID: UUID?
+        package let projectID: UUID?
+        package let reason: StopReason
+        package let stoppedAt: Date
+
+        package init(
+            itemID: AttentionItemID,
+            runtimeID: String,
+            provider: AgentKind,
+            paneID: UUID,
+            tabID: UUID?,
+            projectID: UUID?,
+            reason: StopReason,
+            stoppedAt: Date
+        ) {
+            self.itemID = itemID
+            self.runtimeID = runtimeID
+            self.provider = provider
+            self.paneID = paneID
+            self.tabID = tabID
+            self.projectID = projectID
+            self.reason = reason
+            self.stoppedAt = stoppedAt
+        }
     }
 
-    struct Input: Equatable, Sendable {
-        var runtimes: [RuntimeFact] = []
+    package struct Input: Equatable, Sendable {
+        package var runtimes: [RuntimeFact] = []
         /// Every request the ledger keeps, settled ones included.
-        var approvals: [PlacedApproval] = []
+        package var approvals: [PlacedApproval] = []
         /// Whether the approval service runs. A wait at the agent's prompt is
         /// then usually a request that has not reached Weir yet, or one
         /// just answered whose hook has not moved on; it is listed but not
         /// announced, so the person does not hear one request twice.
-        var isApprovalServiceRunning = false
-        var launchFailures: [LaunchFailure] = []
-        var missingWorktrees: [MissingWorktree] = []
-        var retainedStops: [RetainedStop] = []
+        package var isApprovalServiceRunning = false
+        package var launchFailures: [LaunchFailure] = []
+        package var missingWorktrees: [MissingWorktree] = []
+        package var retainedStops: [RetainedStop] = []
         /// Stops the person dismissed while their run is still in error
         /// (`StopLedger.dismissed`).
-        var dismissedStops: Set<AttentionItemID> = []
+        package var dismissedStops: Set<AttentionItemID> = []
+
+        package init(
+            runtimes: [RuntimeFact] = [],
+            approvals: [PlacedApproval] = [],
+            isApprovalServiceRunning: Bool = false,
+            launchFailures: [LaunchFailure] = [],
+            missingWorktrees: [MissingWorktree] = [],
+            retainedStops: [RetainedStop] = [],
+            dismissedStops: Set<AttentionItemID> = []
+        ) {
+            self.runtimes = runtimes
+            self.approvals = approvals
+            self.isApprovalServiceRunning = isApprovalServiceRunning
+            self.launchFailures = launchFailures
+            self.missingWorktrees = missingWorktrees
+            self.retainedStops = retainedStops
+            self.dismissedStops = dismissedStops
+        }
     }
 
     /// The next list, and the effects of what changed: a VoiceOver
     /// announcement for each new item that blocks on the person, and a
     /// banner for each new request.
-    static func reduce(_ previous: AttentionQueue, input: Input) -> (AttentionQueue, [AttentionEffect]) {
+    package static func reduce(_ previous: AttentionQueue, input: Input) -> (AttentionQueue, [AttentionEffect]) {
         let wanted = wantedItems(input)
         let wantedIDs = Set(wanted.map(\.id))
         var queue = previous

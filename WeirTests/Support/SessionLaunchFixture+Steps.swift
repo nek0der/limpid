@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 extension SessionLaunchFixture {
     /// The request most of the suites start: Claude, after the setup.

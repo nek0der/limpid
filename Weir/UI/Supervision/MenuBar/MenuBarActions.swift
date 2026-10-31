@@ -2,6 +2,7 @@
 // Weir — what the menu bar extra does: open a row in Weir, answer it there, or decide, resume, or ask in place.
 
 import AppKit
+import WeirDomain
 
 @MainActor
 enum MenuBarActions {

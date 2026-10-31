@@ -2,6 +2,7 @@
 // Weir — what the new worktree sheet holds and what it will make.
 
 import Foundation
+import WeirDomain
 
 /// What opens the new worktree sheet in a window: the window's project,
 /// and, when ⌥⌘N could not make a worktree at once, why, which the sheet

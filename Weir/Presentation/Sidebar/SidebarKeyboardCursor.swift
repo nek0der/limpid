@@ -2,6 +2,7 @@
 // Weir — what the arrow keys, Return, and Move Project Up and Down do in the sidebar while it has the keyboard.
 
 import Foundation
+import WeirDomain
 
 /// The sidebar's keys while it has the keyboard (⌥⌘0), as a value: the
 /// line they are on and the key decide what happens, so the order is

@@ -2,6 +2,7 @@
 // Weir — builds the pane strip from the session's tabs and the attention list.
 
 import Foundation
+import WeirDomain
 
 @MainActor
 extension PaneStripModel {

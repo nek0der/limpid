@@ -2,6 +2,7 @@
 // Weir — which tab and which turn cards are marked while a conversation is under the pointer.
 
 import Foundation
+import WeirDomain
 
 /// The conversations under the pointer, and the kind of surface the pointer
 /// is on: one for a card or a pane's header, each one a split tab runs for a

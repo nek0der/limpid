@@ -5,6 +5,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @Suite("Changes panel text")
 struct ChangesPanelTextTests {

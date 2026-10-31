@@ -3,6 +3,7 @@
 
 import AppKit
 import Foundation
+import WeirDomain
 
 extension AppState {
     /// The sync that announces when a usage limit lifts, reading the

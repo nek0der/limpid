@@ -8,6 +8,7 @@ import AppKit
 import Foundation
 import GhosttyKit
 import OSLog
+import WeirDomain
 
 private let log = Logger.weir("ghostty.events")
 

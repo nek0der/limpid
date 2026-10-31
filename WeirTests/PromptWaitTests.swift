@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct PromptWaitTests {
     /// The words a run recorded, and the tool and subject read from them.

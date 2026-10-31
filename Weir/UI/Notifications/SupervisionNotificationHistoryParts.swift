@@ -2,6 +2,7 @@
 // Weir — the notification history's heading, ⋯ menu, notice, and states as the supervision window draws them.
 
 import SwiftUI
+import WeirDomain
 
 /// The panel's name, then what acts on the whole list: Mark All as Read
 /// while anything is unread, and ⋯ (`SupervisionHistoryMoreMenu`). The

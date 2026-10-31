@@ -2,6 +2,7 @@
 // Weir — one id for each line of the sidebar's list: project headers, fold lines, and rows alike.
 
 import Foundation
+import WeirDomain
 
 /// What the sidebar's list scrolls to and the arrow keys stop on: a
 /// project's header, the line one of its sections folds into, or a row.

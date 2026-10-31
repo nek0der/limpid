@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 extension InitialPromptFile {
     /// Writes `prompt` to a new file in `directory` as an earlier build's

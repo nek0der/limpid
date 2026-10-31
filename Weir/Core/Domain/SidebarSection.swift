@@ -6,7 +6,7 @@ import Foundation
 /// The lists a project's rows fall into. The working rows are listed in
 /// full; the others fold into one line each, since what they hold is not
 /// where the person works.
-enum SidebarSection: Hashable, Sendable, CaseIterable {
+package enum SidebarSection: Hashable, Sendable, CaseIterable {
     /// The folder, any other worktree Weir made or the person opened, and
     /// any row with something open or waiting in it.
     case working
@@ -24,35 +24,55 @@ enum SidebarSection: Hashable, Sendable, CaseIterable {
 
     /// The sections that fold into a line, in the order the sidebar lists
     /// them under the working rows.
-    static let folded: [SidebarSection] = [.missing, .cleanable, .other]
+    package static let folded: [SidebarSection] = [.missing, .cleanable, .other]
 }
 
 /// Decides a row's section from values alone.
-enum SidebarSectionRule {
+package enum SidebarSectionRule {
     /// What the rule reads of one row.
-    struct Facts: Equatable, Sendable {
+    package struct Facts: Equatable, Sendable {
         /// The project's own folder.
-        var isMainFolder = false
+        package var isMainFolder = false
         /// How the worktree came to be a row; `nil` when not known yet (a
         /// file from before admissions, before its first sync), which is
         /// read as one the person had, as every row was before.
-        var admission: WorktreeAdmission?
+        package var admission: WorktreeAdmission?
         /// A tab is open in it.
-        var hasTabs = false
+        package var hasTabs = false
         /// The attention list holds an item for it: a wait, a stop, an
         /// unread turn.
-        var hasItems = false
+        package var hasItems = false
         /// The window has it selected.
-        var isSelected = false
+        package var isSelected = false
         /// The state of the pull request on its branch; `nil` for none.
-        var prState: PRState?
+        package var prState: PRState?
         /// Files changed and not committed; 0 when not known.
-        var uncommittedFiles = 0
+        package var uncommittedFiles = 0
         /// Its folder is gone from disk.
-        var isMissing = false
+        package var isMissing = false
+
+        package init(
+            isMainFolder: Bool = false,
+            admission: WorktreeAdmission? = nil,
+            hasTabs: Bool = false,
+            hasItems: Bool = false,
+            isSelected: Bool = false,
+            prState: PRState? = nil,
+            uncommittedFiles: Int = 0,
+            isMissing: Bool = false
+        ) {
+            self.isMainFolder = isMainFolder
+            self.admission = admission
+            self.hasTabs = hasTabs
+            self.hasItems = hasItems
+            self.isSelected = isSelected
+            self.prState = prState
+            self.uncommittedFiles = uncommittedFiles
+            self.isMissing = isMissing
+        }
     }
 
-    static func section(_ facts: Facts) -> SidebarSection {
+    package static func section(_ facts: Facts) -> SidebarSection {
         // The folder and the selected row are always in sight: hiding them
         // would hide what the person is on.
         if facts.isMainFolder || facts.isSelected {
@@ -80,7 +100,7 @@ enum SidebarSectionRule {
     /// what puts it among the other worktrees, and what the places that
     /// cannot see the attention list or the window (the palette, the Git
     /// and forge readers) go by. A tab makes it a working row.
-    static func isUnopened(admission: WorktreeAdmission?, hasTabs: Bool) -> Bool {
+    package static func isUnopened(admission: WorktreeAdmission?, hasTabs: Bool) -> Bool {
         admission == .discovered && !hasTabs
     }
 }

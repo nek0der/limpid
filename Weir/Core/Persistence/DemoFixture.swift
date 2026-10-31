@@ -18,6 +18,7 @@
 
 import CoreGraphics
 import Foundation
+import WeirDomain
 
 enum DemoFixture {
     /// Set `WEIR_DEMO=1` (any non-empty value works) before launching

@@ -3,6 +3,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 /// What opens once the worktree is made, in a menu whose face is drawn as
 /// the base's: every agent the catalog has, each with its badge and its

@@ -2,6 +2,7 @@
 // Weir — builds the sidebar's rows from the session, the attention list, and the agents.
 
 import Foundation
+import WeirDomain
 
 extension SessionSidebarModel {
     /// How the sidebar lists a project's rows: the section of each, and the

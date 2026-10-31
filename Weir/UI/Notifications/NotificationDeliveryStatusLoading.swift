@@ -3,6 +3,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 /// The Notifications pane of System Settings, which the history's notice and
 /// its ⋯ open. macOS has no documented link to one app's row in it, so it

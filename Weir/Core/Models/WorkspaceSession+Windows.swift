@@ -2,6 +2,7 @@
 // Weir — the windows past the primary and each project's view: switched in place, saved with the session, made again at launch.
 
 import Foundation
+import WeirDomain
 
 @MainActor
 extension WorkspaceSession {

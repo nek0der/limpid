@@ -7,14 +7,14 @@ import Foundation
 /// sheet only makes the worktree; this is the one thing it starts there,
 /// with no instruction: the agent opens waiting, as the pane strip's ＋
 /// opens one.
-enum WorktreeOpenChoice: Hashable, Sendable {
+package enum WorktreeOpenChoice: Hashable, Sendable {
     case agent(AgentKind)
     case shell
     /// No tab: the row is made and selected, and nothing runs in it.
     case nothing
 
     /// The value stored in settings.json.
-    var stored: String {
+    package var stored: String {
         switch self {
         case let .agent(kind): kind.rawValue
         case .shell: Self.shellValue
@@ -28,7 +28,7 @@ enum WorktreeOpenChoice: Hashable, Sendable {
     /// `"none"`, which an earlier build stored for a terminal with no
     /// agent, reads as the shell: that build's "Terminal" is this one's
     /// shell.
-    init?(stored: String?) {
+    package init?(stored: String?) {
         guard let stored else { return nil }
         switch stored {
         case Self.shellValue, Self.legacyTerminalValue:
@@ -41,7 +41,7 @@ enum WorktreeOpenChoice: Hashable, Sendable {
         }
     }
 
-    var agent: AgentKind? {
+    package var agent: AgentKind? {
         if case let .agent(kind) = self {
             return kind
         }
@@ -50,29 +50,29 @@ enum WorktreeOpenChoice: Hashable, Sendable {
 
     /// Whether this choice can open now: an agent only once it was found
     /// (`installed`); a shell and nothing always.
-    func isAvailable(installed: [AgentKind]) -> Bool {
+    package func isAvailable(installed: [AgentKind]) -> Bool {
         agent.map(installed.contains) ?? true
     }
 
     /// One agent in the sheet's menu, and whether it can be chosen.
-    struct MenuAgent: Hashable, Sendable {
-        let kind: AgentKind
+    package struct MenuAgent: Hashable, Sendable {
+        package let kind: AgentKind
         /// Found on this Mac (`installed`). One not found is listed all the
         /// same, unchosen, so a person whose last choice it was sees why the
         /// sheet opened with another.
-        let isAvailable: Bool
+        package let isAvailable: Bool
     }
 
     /// The menu's agents: every one `catalog` has, in its order, so a new
     /// agent is listed once the catalog has it, with nothing in the sheet
     /// to change. The shell and nothing follow (`others`).
-    static func menuAgents(catalog: [AgentKind], installed: [AgentKind]) -> [MenuAgent] {
+    package static func menuAgents(catalog: [AgentKind], installed: [AgentKind]) -> [MenuAgent] {
         catalog.map { MenuAgent(kind: $0, isAvailable: installed.contains($0)) }
     }
 
     /// What the menu offers after the agents, apart from them: always
     /// available.
-    static let others: [WorktreeOpenChoice] = [.shell, .nothing]
+    package static let others: [WorktreeOpenChoice] = [.shell, .nothing]
 
     /// The choice the sheet opens with, and what ⌥⌘N opens: the first of
     /// `remembered` that reads and can open now, else the first agent
@@ -81,7 +81,7 @@ enum WorktreeOpenChoice: Hashable, Sendable {
     /// last one anywhere, then what an earlier build kept as the agent,
     /// for the project and anywhere, so a person used to "Create and
     /// Start" with Claude still gets Claude.
-    static func initial(remembered: [String?], installed: [AgentKind]) -> WorktreeOpenChoice {
+    package static func initial(remembered: [String?], installed: [AgentKind]) -> WorktreeOpenChoice {
         for value in remembered {
             if let choice = WorktreeOpenChoice(stored: value), choice.isAvailable(installed: installed) {
                 return choice

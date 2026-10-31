@@ -14,18 +14,18 @@ import Foundation
 /// agent starts a turn of its own, and that turn's end reports what is left.
 /// One the person stops from Claude's task list starts no turn, so the count
 /// keeps it until the next prompt.
-struct BackgroundWork: Codable, Equatable, Hashable, Sendable {
-    var shells: Int
-    var subagents: Int
+package struct BackgroundWork: Codable, Equatable, Hashable, Sendable {
+    package var shells: Int
+    package var subagents: Int
     /// Tasks of a kind the interface does not name.
-    var others: Int
+    package var others: Int
 
     /// Whether no task is counted.
-    var isEmpty: Bool {
+    package var isEmpty: Bool {
         shells == 0 && subagents == 0 && others == 0
     }
 
-    init(shells: Int = 0, subagents: Int = 0, others: Int = 0) {
+    package init(shells: Int = 0, subagents: Int = 0, others: Int = 0) {
         self.shells = shells
         self.subagents = subagents
         self.others = others
@@ -38,7 +38,7 @@ struct BackgroundWork: Codable, Equatable, Hashable, Sendable {
     /// A missing count is zero, as the projection spells the counts (it
     /// leaves a kind with none out); the synthesized decoder would require
     /// all three, which only the badge this app persists always writes.
-    init(from decoder: any Decoder) throws {
+    package init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         shells = try container.decodeIfPresent(Int.self, forKey: .shells) ?? 0
         subagents = try container.decodeIfPresent(Int.self, forKey: .subagents) ?? 0

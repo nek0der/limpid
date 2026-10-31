@@ -2,6 +2,7 @@
 // Weir — the rows of the title bar's Needs Attention list.
 
 import Foundation
+import WeirDomain
 
 /// The Needs Attention list: every item of the app's attention list,
 /// one row each, in the order they arrived, across all projects. It is not

@@ -148,6 +148,7 @@ lint: rust-lint
 	swiftlint lint --strict
 	scripts/check-localization.sh
 	scripts/test-check-localization.sh
+	scripts/test-check-module-strings.sh
 	scripts/test-screenshot-app.sh
 	scripts/test-derive-expected-events.sh
 

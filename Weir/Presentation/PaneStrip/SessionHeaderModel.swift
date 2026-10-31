@@ -2,6 +2,7 @@
 // Weir — the session header: the state glyph, the name, and the chips beside it.
 
 import Foundation
+import WeirDomain
 
 /// The 36pt line above the pane strip: the session's state glyph, its
 /// name, then its exception chips and its Git chips, the pull request's

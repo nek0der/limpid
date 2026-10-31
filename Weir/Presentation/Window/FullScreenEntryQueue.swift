@@ -2,6 +2,7 @@
 // Weir — takes the windows saved in full screen back into it one at a time.
 
 import Foundation
+import WeirDomain
 
 /// Which window saved in full screen goes back into it next. AppKit
 /// moves windows into full screen one at a time and can drop a request made

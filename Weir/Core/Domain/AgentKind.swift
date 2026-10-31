@@ -7,14 +7,14 @@
 
 import Foundation
 
-enum AgentKind: String, Codable, CaseIterable, Equatable, Sendable {
+package enum AgentKind: String, Codable, CaseIterable, Equatable, Sendable {
     case claude
     case codex
 
     /// What a pane types to start the agent. The name resolves to Weir's
     /// shim on the pane's `PATH`, which installs the hooks and finds the
     /// real binary.
-    var launchCommand: String {
+    package var launchCommand: String {
         rawValue
     }
 }

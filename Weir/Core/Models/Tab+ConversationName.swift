@@ -2,6 +2,7 @@
 // Weir — keeps a tab's first conversation name as passes run and panes move between tabs.
 
 import Foundation
+import WeirDomain
 
 extension Tab {
     /// Remembers the tab's first conversation from the badges on it

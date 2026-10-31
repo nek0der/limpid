@@ -2,6 +2,7 @@
 // Weir — which conversations each tab of a session runs, and which tab and pane run each conversation.
 
 import Foundation
+import WeirDomain
 
 /// The one mapping between a session's tabs and the agent conversations
 /// their panes run, read by every surface that matches a conversation to a

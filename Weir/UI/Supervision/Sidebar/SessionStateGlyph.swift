@@ -2,6 +2,7 @@
 // Weir — a session's state glyph, as its sidebar row and its header draw it.
 
 import SwiftUI
+import WeirDomain
 
 /// The glyph for a session's state: the state's own, or the shell's on
 /// a row with no agent. It says the state and nothing else; the pull

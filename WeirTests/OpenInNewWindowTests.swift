@@ -5,6 +5,7 @@ import CoreGraphics
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// A new window opens only when the person asks for one:
 /// ⌘-click or ⌘Return on another project's row opens the project in a new

@@ -2,6 +2,7 @@
 // Weir — what the changes panel's actions read and change, handed over by the app.
 
 import Foundation
+import WeirDomain
 
 /// The stores and the ways out the changes panel's actions use
 /// (`ChangesPanelActions`), and nothing else of the app. The app builds it

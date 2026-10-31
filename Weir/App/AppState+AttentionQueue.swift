@@ -2,6 +2,7 @@
 // Weir — keeps the attention list in step with the runtimes, the requests, and what the person sees.
 
 import Foundation
+import WeirDomain
 
 extension AppState {
     /// Rebuilds the attention list whenever one of its sources changes.

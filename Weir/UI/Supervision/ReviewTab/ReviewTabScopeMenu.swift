@@ -3,6 +3,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 /// "Review Scope": the menu that chooses what the tab reads, the
 /// conversation with it. It lists the worktree's unviewed turns, then each

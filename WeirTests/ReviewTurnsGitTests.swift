@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @Suite("Review turns in Git", .tags(.smoke))
 struct ReviewTurnsGitTests {

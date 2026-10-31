@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// A second window beside the primary moves on its own: an action
 /// run in it writes its selection and its history, never the primary's,

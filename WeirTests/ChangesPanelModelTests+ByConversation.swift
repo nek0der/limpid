@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// Apart from the suite's file, which is at its length limit.
 extension ChangesPanelModelTests {

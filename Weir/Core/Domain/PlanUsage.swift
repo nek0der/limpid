@@ -6,14 +6,14 @@ import Foundation
 /// The plan usage one agent reported: its limit windows, and when it was
 /// reported. Its wire form, as the Rust side
 /// writes it, is Infrastructure's (`PlanUsage+Wire`).
-struct PlanUsage: Equatable, Sendable {
-    let windows: [PlanUsageWindow]
-    let observedAt: Date
+package struct PlanUsage: Equatable, Sendable {
+    package let windows: [PlanUsageWindow]
+    package let observedAt: Date
     /// The resets the account may spend, when the agent grants them (Codex).
     /// Optional because Claude Code's status line says nothing of them.
-    let resetCredits: PlanResetCredits?
+    package let resetCredits: PlanResetCredits?
 
-    init(windows: [PlanUsageWindow], observedAt: Date, resetCredits: PlanResetCredits? = nil) {
+    package init(windows: [PlanUsageWindow], observedAt: Date, resetCredits: PlanResetCredits? = nil) {
         self.windows = windows
         self.observedAt = observedAt
         self.resetCredits = resetCredits
@@ -22,49 +22,60 @@ struct PlanUsage: Equatable, Sendable {
     /// The most pressing level among the windows that have not reset by
     /// `now`. A window past its reset time no longer says anything about the
     /// account: the next report starts it over.
-    func level(at now: Date) -> PlanUsageLevel {
+    package func level(at now: Date) -> PlanUsageLevel {
         windows.filter { !$0.hasReset(at: now) }.map(\.level).max() ?? .normal
     }
 }
 
 /// The resets an account may spend to start its limit windows over.
-struct PlanResetCredits: Equatable, Sendable {
+package struct PlanResetCredits: Equatable, Sendable {
     /// How many are left, more than zero.
-    let available: Int
+    package let available: Int
     /// When the first of them lapses. Optional because an agent may not say.
-    let expiresAt: Date?
+    package let expiresAt: Date?
+
+    package init(available: Int, expiresAt: Date?) {
+        self.available = available
+        self.expiresAt = expiresAt
+    }
 }
 
 /// One limit window: what share is used and when it resets.
-struct PlanUsageWindow: Equatable, Sendable {
+package struct PlanUsageWindow: Equatable, Sendable {
     /// `five_hour`, `seven_day`, or the agent's own name for another length.
-    let kind: String
+    package let kind: String
     /// From 0 to 100; a value past 100 reads as at the limit.
-    let usedPercent: Double
+    package let usedPercent: Double
     /// Optional because an agent may not say when the window resets.
-    let resetsAt: Date?
+    package let resetsAt: Date?
 
-    static let fiveHour = "five_hour"
-    static let sevenDay = "seven_day"
+    package init(kind: String, usedPercent: Double, resetsAt: Date?) {
+        self.kind = kind
+        self.usedPercent = usedPercent
+        self.resetsAt = resetsAt
+    }
+
+    package static let fiveHour = "five_hour"
+    package static let sevenDay = "seven_day"
 
     /// Whether the window's reset time has passed.
-    func hasReset(at now: Date) -> Bool {
+    package func hasReset(at now: Date) -> Bool {
         resetsAt.map { $0 <= now } ?? false
     }
 
     /// The share as a whole percent from 0 to 100, for display.
-    var displayPercent: Int {
+    package var displayPercent: Int {
         Int(min(max(usedPercent, 0), 100).rounded())
     }
 
-    var level: PlanUsageLevel {
+    package var level: PlanUsageLevel {
         PlanUsageLevel(usedPercent: usedPercent)
     }
 }
 
 /// How close a window is to its limit, which colors its bar and the rail's
 /// mark.
-enum PlanUsageLevel: Int, Comparable, Sendable {
+package enum PlanUsageLevel: Int, Comparable, Sendable {
     case normal
     /// At or past `nearLimitPercent`.
     case nearLimit
@@ -73,7 +84,7 @@ enum PlanUsageLevel: Int, Comparable, Sendable {
     /// Where a window starts to warrant a look before the limit stops work.
     static let nearLimitPercent = 80.0
 
-    init(usedPercent: Double) {
+    package init(usedPercent: Double) {
         if usedPercent >= 100 {
             self = .atLimit
         } else if usedPercent >= Self.nearLimitPercent {
@@ -83,7 +94,7 @@ enum PlanUsageLevel: Int, Comparable, Sendable {
         }
     }
 
-    static func < (lhs: PlanUsageLevel, rhs: PlanUsageLevel) -> Bool {
+    package static func < (lhs: PlanUsageLevel, rhs: PlanUsageLevel) -> Bool {
         lhs.rawValue < rhs.rawValue
     }
 }

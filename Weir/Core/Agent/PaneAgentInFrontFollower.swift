@@ -2,6 +2,7 @@
 // Weir — reads a pane's job in front when a command starts or ends, and keeps the agent it runs on the pane's tab.
 
 import Foundation
+import WeirDomain
 
 /// Keeps `Tab.agentsInFront` up to date with what each pane's terminal
 /// runs in front, so a pane wears its agent's badge from the moment

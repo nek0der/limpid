@@ -2,6 +2,7 @@
 // Weir — the port through which the attention list takes the person to an item.
 
 import Foundation
+import WeirDomain
 
 /// What the attention list needs from the app to move the person: which
 /// project a window shows, and how to bring an item into view. The app

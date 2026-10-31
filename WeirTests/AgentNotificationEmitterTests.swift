@@ -9,6 +9,7 @@ import Foundation
 import Testing
 import UserNotifications
 @testable import Weir
+@testable import WeirDomain
 
 @MainActor
 @Suite("AgentNotificationEmitter")

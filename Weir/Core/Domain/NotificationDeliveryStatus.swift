@@ -5,9 +5,9 @@ import Foundation
 
 /// What decides whether a banner reaches the person, shown at the foot of
 /// the notification history so they can check before stepping away.
-struct NotificationDeliveryStatus: Equatable, Sendable {
+package struct NotificationDeliveryStatus: Equatable, Sendable {
     /// Weir's notification permission in macOS.
-    enum Permission: Equatable, Sendable {
+    package enum Permission: Equatable, Sendable {
         /// Allowed, with banners or alerts.
         case allowed
         /// Allowed, but set to show nothing on screen (the alert style is
@@ -20,7 +20,7 @@ struct NotificationDeliveryStatus: Equatable, Sendable {
     }
 
     /// Whether a Focus is on.
-    enum Focus: Equatable, Sendable {
+    package enum Focus: Equatable, Sendable {
         case on
         case off
         /// Weir cannot read it. Reading Focus takes the Communication
@@ -29,6 +29,14 @@ struct NotificationDeliveryStatus: Equatable, Sendable {
         case unknown
     }
 
-    var permission: Permission
-    var focus: Focus = .unknown
+    package var permission: Permission
+    package var focus: Focus = .unknown
+
+    package init(
+        permission: Permission,
+        focus: Focus = .unknown
+    ) {
+        self.permission = permission
+        self.focus = focus
+    }
 }

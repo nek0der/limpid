@@ -2,6 +2,7 @@
 // Weir — the changes panel's foot: where the branch stands, "Create PR" and why not, and what comes after.
 
 import Foundation
+import WeirDomain
 
 /// "Commit & PR" at the foot of the changes panel. There is no
 /// commit button: committing is asked of the agent in its TUI, like any

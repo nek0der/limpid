@@ -2,6 +2,7 @@
 // Weir — project CRUD, a project's palette color, and the order snapshot a drag restores.
 
 import Foundation
+import WeirDomain
 
 extension WorkspaceSession {
 

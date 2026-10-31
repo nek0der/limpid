@@ -2,6 +2,7 @@
 // Weir — the review tab's way to its window's actions, handed to the views that draw it.
 
 import SwiftUI
+import WeirDomain
 
 /// What the review tab's views do through their window: the dropdown, "Add
 /// to Scope", the band's "Mark as Viewed" and destination, and ⌘⏎. Built once per window

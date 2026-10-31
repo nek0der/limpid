@@ -5,7 +5,7 @@ import Foundation
 
 /// An item's identity. One per request, stop, or turn, so dealing with one
 /// item never settles another in the same pane.
-enum AttentionItemID: Hashable, Codable, Sendable {
+package enum AttentionItemID: Hashable, Codable, Sendable {
     case approval(ApprovalKey)
     case question(ApprovalKey)
     /// The agent waits at its own prompt and Weir holds no request for
@@ -16,7 +16,7 @@ enum AttentionItemID: Hashable, Codable, Sendable {
 }
 
 /// Where an item happened, which is where the person goes to deal with it.
-enum AttentionSubject: Equatable, Sendable {
+package enum AttentionSubject: Equatable, Sendable {
     /// `tabID` is `nil` while the pane is not in any tab (being moved).
     case runtime(id: String, provider: AgentKind, paneID: UUID, tabID: UUID?, projectID: UUID?)
     /// A session row with no running agent: the CLI failed before it
@@ -28,7 +28,7 @@ enum AttentionSubject: Equatable, Sendable {
     case unplaced(provider: AgentKind)
 
     /// The agent the subject is about; `nil` for a session row's own.
-    var agentKind: AgentKind? {
+    package var agentKind: AgentKind? {
         switch self {
         case let .runtime(_, provider, _, _, _), let .unplaced(provider): provider
         case .sessionRow: nil
@@ -37,7 +37,7 @@ enum AttentionSubject: Equatable, Sendable {
 
     /// `nil` for a session row or an unplaced request, which have no pane
     /// to show.
-    var paneID: UUID? {
+    package var paneID: UUID? {
         switch self {
         case let .runtime(_, _, paneID, _, _): paneID
         case .sessionRow, .unplaced: nil
@@ -46,14 +46,14 @@ enum AttentionSubject: Equatable, Sendable {
 
     /// The runtime the item came from; `nil` for a session row or an
     /// unplaced request.
-    var runtimeID: String? {
+    package var runtimeID: String? {
         switch self {
         case let .runtime(id, _, _, _, _): id
         case .sessionRow, .unplaced: nil
         }
     }
 
-    var projectID: UUID? {
+    package var projectID: UUID? {
         switch self {
         case let .runtime(_, _, _, _, projectID): projectID
         case let .sessionRow(projectID, _): projectID
@@ -63,14 +63,14 @@ enum AttentionSubject: Equatable, Sendable {
 
     /// Whether this is the session row of the folder at `root`, compared
     /// as the stop's key compares it (`EpisodeKey.Origin.sessionRow`).
-    func isSessionRow(at root: URL) -> Bool {
+    package func isSessionRow(at root: URL) -> Bool {
         guard case let .sessionRow(_, worktreeRoot) = self else { return false }
         return EpisodeKey.Origin.sessionRow(worktreeRoot: worktreeRoot) == .sessionRow(worktreeRoot: root)
     }
 
     /// The agent the item is about; `nil` for a session row, whose agent
     /// never started.
-    var provider: AgentKind? {
+    package var provider: AgentKind? {
         switch self {
         case let .runtime(_, provider, _, _, _): provider
         case let .unplaced(provider): provider
@@ -83,7 +83,7 @@ enum AttentionSubject: Equatable, Sendable {
 /// Signing in and the approval service's connection are not stages:
 /// neither can be told from outside the agent, which asks in its own
 /// terminal.
-enum NewSessionStage: Equatable, Sendable {
+package enum NewSessionStage: Equatable, Sendable {
     case creatingWorktree
     /// The setup command at this index in the project's list.
     case setup(stepIndex: Int)
@@ -91,7 +91,7 @@ enum NewSessionStage: Equatable, Sendable {
 }
 
 /// Why an agent stopped.
-enum StopReason: Equatable, Sendable {
+package enum StopReason: Equatable, Sendable {
     case processExited
     /// The provider's own message, shown as is; `nil` when it gave none.
     case error(String?)
@@ -114,7 +114,7 @@ enum StopReason: Equatable, Sendable {
 /// plus two that only mean "not yet known". `unchanged` is reported only
 /// when the comparison succeeded and found nothing, so "No file changes" is
 /// never shown for a turn whose files we could not compare.
-enum ChangeSummary: Equatable, Sendable {
+package enum ChangeSummary: Equatable, Sendable {
     /// No turn record has been read for this turn, or the record says
     /// something this build does not know (a newer writer's kind).
     case unknown
@@ -129,7 +129,7 @@ enum ChangeSummary: Equatable, Sendable {
     /// Whether the turn may have changed files: it did, or what it did is
     /// not known yet or not readable by this build. Such a turn waits for
     /// "Mark as Viewed"; any other is read by opening its pane.
-    var mayHaveChangedFiles: Bool {
+    package var mayHaveChangedFiles: Bool {
         switch self {
         case .changed, .unknown, .pending: true
         case .unchanged, .unavailable: false
@@ -140,7 +140,7 @@ enum ChangeSummary: Equatable, Sendable {
     /// an unread turn"): it changed files, or its end snapshot is still
     /// being taken. Not a turn with no record (`unknown`), whose review
     /// would have no turn to show.
-    var opensReviewOnJump: Bool {
+    package var opensReviewOnJump: Bool {
         switch self {
         case .changed, .pending: true
         case .unknown, .unchanged, .unavailable: false
@@ -153,7 +153,7 @@ enum ChangeSummary: Equatable, Sendable {
     /// (not a Git work tree, snapshots off, a failed or skipped snapshot, a
     /// diff that could not be judged) is a comparison that cannot be
     /// trusted even with both trees there.
-    var isLostSnapshot: Bool {
+    package var isLostSnapshot: Bool {
         guard case let .unavailable(reason) = self else { return false }
         // The reasons `ChangeSummary::judge` in `weir-agent-model` gives.
         return reason == "beginMissing" || reason == "endMissing"
@@ -161,44 +161,56 @@ enum ChangeSummary: Equatable, Sendable {
 }
 
 /// The check a turn ran, as the record reports it.
-struct CheckSummary: Equatable, Sendable {
-    let command: String
+package struct CheckSummary: Equatable, Sendable {
+    package let command: String
     /// Whether the output was filtered (for example `--filter`), so a pass
     /// covers only part of the suite.
-    let isFiltered: Bool
+    package let isFiltered: Bool
     /// `nil` while the check runs, or when the status was not the check's
     /// own (interrupted, in the background, piped on, `|| true`): the
     /// command is shown with no ✓ or ✗.
-    let exitCode: Int?
+    package let exitCode: Int?
     /// How many of the turn's checks before this one failed: a pass after
     /// two failures says so, since the turn had trouble getting there.
-    var earlierFailures = 0
+    package var earlierFailures = 0
+
+    package init(
+        command: String,
+        isFiltered: Bool,
+        exitCode: Int?,
+        earlierFailures: Int = 0
+    ) {
+        self.command = command
+        self.isFiltered = isFiltered
+        self.exitCode = exitCode
+        self.earlierFailures = earlierFailures
+    }
 
     /// The check's own exit code says it failed: the ✗ the receipt draws
     /// in red. Not an exit code that was another command's.
-    var hasFailed: Bool {
+    package var hasFailed: Bool {
         exitCode.map { $0 != 0 } ?? false
     }
 }
 
 /// Turns that ended and have not been read, as one item: one turn, or the
 /// run of turns that changed files below the viewed line ("T6–T7").
-struct UnreadTurn: Equatable, Sendable {
+package struct UnreadTurn: Equatable, Sendable {
     /// The first turn the item stands for, which names it: a later turn
     /// joining the run updates the item rather than adding another.
-    let turnID: TurnID
+    package let turnID: TurnID
     /// The turns' numbers, first to last. `nil` for a finished episode no
     /// turn record stands for (a provider that keeps none).
-    let numbers: ClosedRange<Int>?
+    package let numbers: ClosedRange<Int>?
     /// What the turns changed, summed over a run of turns.
-    let changes: ChangeSummary
+    package let changes: ChangeSummary
     /// The last check the latest of the turns ran.
-    let check: CheckSummary?
+    package let check: CheckSummary?
     /// The conversation whose viewed line reads these turns; `nil` for an
     /// episode no turn record stands for.
-    let conversation: ConversationKey?
+    package let conversation: ConversationKey?
 
-    init(
+    package init(
         turnID: TurnID,
         numbers: ClosedRange<Int>? = nil,
         changes: ChangeSummary,
@@ -214,36 +226,52 @@ struct UnreadTurn: Equatable, Sendable {
 
     /// Whether the turns may have changed files, so they wait for "Mark as
     /// Viewed" rather than being read by opening their pane.
-    var mayHaveChangedFiles: Bool {
+    package var mayHaveChangedFiles: Bool {
         changes.mayHaveChangedFiles
     }
 }
 
 /// An unread item a runtime's turn records ask for, and when it arrived.
-struct UnreadTurnEntry: Equatable, Sendable {
-    let turn: UnreadTurn
+package struct UnreadTurnEntry: Equatable, Sendable {
+    package let turn: UnreadTurn
     /// When its latest turn ended; `nil` when the record does not say, and
     /// the runtime's own time stands in.
-    let arrivedAt: Date?
+    package let arrivedAt: Date?
 }
 
 /// What an approval or question item knows about its request.
-struct ApprovalFact: Equatable, Sendable {
-    let key: ApprovalKey
-    let provider: AgentKind
-    let isQuestion: Bool
+package struct ApprovalFact: Equatable, Sendable {
+    package let key: ApprovalKey
+    package let provider: AgentKind
+    package let isQuestion: Bool
     /// Whether Weir can answer this kind of request at all. Codex's
     /// questions are never held, so they are always answered in the TUI.
-    let supportsNativeAnswer: Bool
-    let state: ApprovalRequestState
+    package let supportsNativeAnswer: Bool
+    package let state: ApprovalRequestState
     /// Held by the request rather than its state, so the time left still
     /// shows after a failed send. `nil` when the service did not report its
     /// own clock (an older service): the card then shows no time left, and
     /// the broker's own expiry is the only timeout.
-    let deadline: ServiceDeadline?
+    package let deadline: ServiceDeadline?
+
+    package init(
+        key: ApprovalKey,
+        provider: AgentKind,
+        isQuestion: Bool,
+        supportsNativeAnswer: Bool,
+        state: ApprovalRequestState,
+        deadline: ServiceDeadline?
+    ) {
+        self.key = key
+        self.provider = provider
+        self.isQuestion = isQuestion
+        self.supportsNativeAnswer = supportsNativeAnswer
+        self.state = state
+        self.deadline = deadline
+    }
 }
 
-enum AttentionItemKind: Equatable, Sendable {
+package enum AttentionItemKind: Equatable, Sendable {
     case approval(ApprovalFact)
     case question(ApprovalFact)
     /// A wait at the agent's own prompt with no request behind it: the
@@ -255,19 +283,19 @@ enum AttentionItemKind: Equatable, Sendable {
 }
 
 /// One entry in the attention list.
-struct AttentionItem: Identifiable, Equatable, Sendable {
-    let id: AttentionItemID
-    let kind: AttentionItemKind
-    let subject: AttentionSubject
+package struct AttentionItem: Identifiable, Equatable, Sendable {
+    package let id: AttentionItemID
+    package let kind: AttentionItemKind
+    package let subject: AttentionSubject
     /// Assigned by the queue on insertion; the list's order.
     let arrivalSequence: UInt64
-    let arrivedAt: Date
+    package let arrivedAt: Date
 
     /// Whether the person answers the item at the agent's own prompt, and
     /// Weir can only take them to its pane: a wait Weir holds no
     /// request for, a request handed to the TUI or left there when its
     /// time ran out, or one Weir can never answer (Codex's questions).
-    var requiresTerminalAnswer: Bool {
+    package var requiresTerminalAnswer: Bool {
         switch kind {
         case let .approval(fact), let .question(fact):
             !fact.supportsNativeAnswer || fact.state.isLeftToTerminal
@@ -281,7 +309,7 @@ struct AttentionItem: Identifiable, Equatable, Sendable {
     /// Computed rather than stored so it cannot disagree with the request's
     /// state: a card's buttons follow the broker, not a flag someone forgot
     /// to clear.
-    var canAnswerInWeir: Bool {
+    package var canAnswerInWeir: Bool {
         switch kind {
         case let .approval(fact), let .question(fact):
             fact.supportsNativeAnswer && fact.state.acceptsDecision

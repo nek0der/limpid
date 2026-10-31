@@ -12,6 +12,7 @@
 // normal "Show Hidden Worktrees" / context-menu paths.
 
 import Foundation
+import WeirDomain
 
 @MainActor
 @Observable

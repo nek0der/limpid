@@ -4,6 +4,7 @@
 // change.
 
 import SwiftUI
+import WeirDomain
 
 struct ToastHost: View {
     /// The gap below the toast, measured from the window's bottom edge.

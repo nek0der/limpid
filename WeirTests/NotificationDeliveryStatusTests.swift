@@ -5,6 +5,7 @@ import Foundation
 import Testing
 import UserNotifications
 @testable import Weir
+@testable import WeirDomain
 
 struct NotificationDeliveryStatusTests {
     private static let english = Locale(identifier: "en")

@@ -4,6 +4,7 @@
 // container decides where the tab shows up in the sidebar.
 
 import Foundation
+import WeirDomain
 
 struct Tab: Codable, Equatable, Identifiable {
 

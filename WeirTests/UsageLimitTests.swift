@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct UsageLimitTests {
     private static let start = Date(timeIntervalSince1970: 1_790_000_000)

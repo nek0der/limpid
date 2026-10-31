@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 extension AttentionItem {
     /// Claude's wait at its own prompt in `pane`, one Weir holds no

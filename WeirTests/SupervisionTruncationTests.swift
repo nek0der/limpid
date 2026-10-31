@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct SupervisionTruncationTests {
     /// Prose and names keep their start; a path, a subject, and a branch keep

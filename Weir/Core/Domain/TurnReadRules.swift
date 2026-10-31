@@ -5,16 +5,30 @@ import Foundation
 
 /// What `TurnReadRules` needs of a runtime: which run it is, where it
 /// shows, which conversation it numbers turns in, and its current turn.
-struct TurnReadRuntime: Equatable, Sendable {
+package struct TurnReadRuntime: Equatable, Sendable {
     /// The run's ID, as each of its turns names it (`TurnSummary.runID`).
-    let runID: String
+    package let runID: String
     /// The panes that would show the run if they were on screen; a tmux
     /// pane that is not its window's active one is left out, since it does
     /// not show the agent. The rules meet these with the panes seen.
-    let activeAttachmentPaneIDs: Set<UUID>
-    let conversation: ConversationKey?
-    let currentTurnID: TurnID?
-    let isFinished: Bool
+    package let activeAttachmentPaneIDs: Set<UUID>
+    package let conversation: ConversationKey?
+    package let currentTurnID: TurnID?
+    package let isFinished: Bool
+
+    package init(
+        runID: String,
+        activeAttachmentPaneIDs: Set<UUID>,
+        conversation: ConversationKey?,
+        currentTurnID: TurnID?,
+        isFinished: Bool
+    ) {
+        self.runID = runID
+        self.activeAttachmentPaneIDs = activeAttachmentPaneIDs
+        self.conversation = conversation
+        self.currentTurnID = currentTurnID
+        self.isFinished = isFinished
+    }
 }
 
 /// The read rule for turns that changed no files: a turn that
@@ -24,10 +38,10 @@ struct TurnReadRuntime: Equatable, Sendable {
 /// viewed line passes it, which these rules never decide; so is one whose
 /// changes this build cannot read (`unknown`), which may have changed files.
 /// An end-only record nobody prompted is never unread at all.
-enum TurnReadRules {
+package enum TurnReadRules {
     /// The turns that are read: those a pane in sight shows that changed no
     /// files, and every ended turn nobody prompted, wherever it is.
-    static func turnsRead(
+    package static func turnsRead(
         inSight seenPaneIDs: Set<UUID>,
         runtimes: [TurnReadRuntime],
         history: [ConversationKey: [TurnSummary]]
@@ -42,7 +56,7 @@ enum TurnReadRules {
     /// end snapshot can take seconds; the person may have looked away by
     /// the time it settles. One that settles as no change is read then; one
     /// that settles as a change waits for the viewed line, as any change.
-    static func turnsRead(
+    package static func turnsRead(
         inSight seenPaneIDs: Set<UUID>,
         runtimes: [TurnReadRuntime],
         history: [ConversationKey: [TurnSummary]],
@@ -118,7 +132,7 @@ enum TurnReadRules {
     /// (`isRead`: the turn read store, or the viewed line): only once every
     /// one of them is. `nil` when no turn stands for the episode, and the
     /// episode's own viewed mark decides as it always has.
-    static func isEpisodeRead(
+    package static func isEpisodeRead(
         _ runtime: TurnReadRuntime,
         history: [ConversationKey: [TurnSummary]],
         isRead: (TurnSummary) -> Bool

@@ -2,6 +2,7 @@
 // Weir — one turn's card in the changes panel: its number, prompt, facts, reply, and the moves it offers.
 
 import SwiftUI
+import WeirDomain
 
 /// One turn, as a card of two lines: "T7" over its conversation's bar and
 /// badge beside its prompt and when it started; then what it changed,

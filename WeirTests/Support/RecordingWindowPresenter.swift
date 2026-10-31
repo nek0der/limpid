@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 /// Stands in for the app's window controllers: records which windows were
 /// shown, beside which window, which are on screen, and which closed.

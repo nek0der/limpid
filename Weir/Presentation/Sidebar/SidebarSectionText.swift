@@ -2,6 +2,7 @@
 // Weir — the words the sidebar's fold lines say and VoiceOver reads for them.
 
 import Foundation
+import WeirDomain
 
 /// The names of the lists that fold into a line, read by the sidebar
 /// and by the tests, so a test pins the words on screen.

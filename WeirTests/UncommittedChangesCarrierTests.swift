@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @Suite(.timeLimit(.minutes(1)))
 struct UncommittedChangesCarrierTests {

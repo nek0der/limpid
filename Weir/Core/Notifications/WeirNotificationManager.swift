@@ -12,6 +12,7 @@
 import AppKit
 import OSLog
 import UserNotifications
+import WeirDomain
 
 private let log = Logger.weir("notifications")
 

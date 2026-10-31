@@ -4,6 +4,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 // Every selection names its window and why it is made, so none
 // falls back to a window or a reason its caller did not choose. Most suites

@@ -5,6 +5,7 @@ import CoreGraphics
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// A window switching projects in place keeps, for the project it leaves,
 /// the turn at the top of the changes panel with the turn selected in it,

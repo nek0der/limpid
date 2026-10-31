@@ -2,6 +2,7 @@
 // Weir — which conversations' turns changed each file of a review range, for the stacked diff's headers.
 
 import Foundation
+import WeirDomain
 
 /// The tags on the stacked diff's file headers: for each file, every
 /// conversation whose turns within the range changed it, with those turns.

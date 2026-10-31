@@ -2,6 +2,7 @@
 // Weir — which turn deletions are on their way or waiting, and what a finished batch leaves behind.
 
 import Foundation
+import WeirDomain
 
 /// The adapter's record of the turns the retention sweep asked to delete:
 /// which are on their way, which wait after a refusal, and each one's

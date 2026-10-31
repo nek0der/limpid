@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct RestoreJournalFixtureTests {
     /// An optional key the fixture is not given (`operation`, `turnNumber`,

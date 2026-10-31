@@ -9,6 +9,7 @@
 // the approval ledger's entry for its own request instead.
 
 import Foundation
+import WeirDomain
 
 /// Live state of the runtime behind an agent notification row.
 enum NotificationLiveStatus: Equatable {

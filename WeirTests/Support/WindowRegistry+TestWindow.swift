@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 /// A window holds the selection the session keeps for it, and its views
 /// read that one. Most suites that make a window test what the window

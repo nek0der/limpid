@@ -14,6 +14,7 @@
 // matching `AgentKind` case via `kind`.
 
 import Foundation
+import WeirDomain
 
 // MARK: - Unified Badge
 

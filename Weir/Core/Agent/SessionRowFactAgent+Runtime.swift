@@ -2,6 +2,7 @@
 // Weir — a run as the row's rules take it, read from what the attention list holds.
 
 import Foundation
+import WeirDomain
 
 extension SessionRowFact.Agent {
     /// `runtime` as the row's rules weigh it. Here rather than in the

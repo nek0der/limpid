@@ -2,6 +2,7 @@
 // Weir — what a project showed when a window last left it, put back when a window shows it again.
 
 import Foundation
+import WeirDomain
 
 /// What a project showed when a window last left it: its selected
 /// container and tab, and the conversation the changes panel's filter

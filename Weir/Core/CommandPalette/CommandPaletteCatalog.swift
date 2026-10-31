@@ -2,6 +2,7 @@
 // Weir — builds the palette item list from live `WorkspaceSession` and `SettingsStore`.
 
 import Foundation
+import WeirDomain
 
 @MainActor
 enum CommandPaletteCatalog {

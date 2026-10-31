@@ -2,6 +2,7 @@
 // Weir — Swift entry point for reading an agent's plan usage answer through the Rust bridge.
 
 import Foundation
+import WeirDomain
 import WeirRustBridge
 
 /// A usage call that could not be completed, with the C ABI's own status

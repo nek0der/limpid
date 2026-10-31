@@ -2,6 +2,7 @@
 // Weir — a conversation in words, wherever one is named: its name, where it runs, when it last worked, and its counts.
 
 import Foundation
+import WeirDomain
 
 /// The words for a conversation (`ConversationChoice`), apart from any one
 /// surface: the changes panel's filter and row badges, the review tab's

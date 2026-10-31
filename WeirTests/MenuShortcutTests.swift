@@ -6,6 +6,7 @@
 import AppKit
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @Suite("MenuShortcut")
 @MainActor

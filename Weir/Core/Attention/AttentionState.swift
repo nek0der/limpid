@@ -12,6 +12,7 @@
 // `@Environment(AttentionState.self)` from `AppState`.
 
 import Foundation
+import WeirDomain
 
 @MainActor
 @Observable

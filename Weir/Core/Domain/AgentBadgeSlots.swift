@@ -8,12 +8,12 @@ import Foundation
 /// marks. Three kinds fill them; past that the first two stay and the third
 /// mark counts the rest ("+2"). "+1" never shows: it would take a whole
 /// mark's width to hide what a badge in that width names.
-enum AgentBadgeSlots {
-    static let count = 3
+package enum AgentBadgeSlots {
+    package static let count = 3
 
     /// `items`, in the order given, split into those with a mark of their
     /// own and those the count stands for.
-    static func fit<Item>(_ items: [Item]) -> (shown: [Item], hidden: [Item]) {
+    package static func fit<Item>(_ items: [Item]) -> (shown: [Item], hidden: [Item]) {
         guard items.count > count else { return (items, []) }
         return (Array(items.prefix(count - 1)), Array(items.dropFirst(count - 1)))
     }

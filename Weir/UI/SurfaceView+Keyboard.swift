@@ -16,6 +16,7 @@
 
 import AppKit
 import GhosttyKit
+import WeirDomain
 
 extension SurfaceView {
 

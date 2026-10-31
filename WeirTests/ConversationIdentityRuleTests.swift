@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct ConversationIdentityRuleTests {
     private static func key(_ id: String) -> ConversationKey {

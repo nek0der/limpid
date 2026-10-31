@@ -2,6 +2,7 @@
 // Weir — the port through which window state asks for a window to be shown or hidden.
 
 import Foundation
+import WeirDomain
 
 /// Shows, hides, and closes the window for a `ProjectWindowState`.
 ///

@@ -2,6 +2,7 @@
 // Weir — the review tab in words: its title, the scope choices, its bar, and the turns it offers to add.
 
 import Foundation
+import WeirDomain
 
 /// The review tab's words, apart from the rules that choose them.
 enum ReviewTabText {

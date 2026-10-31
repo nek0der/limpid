@@ -2,6 +2,7 @@
 // Weir — why a selection is written, and where it lands.
 
 import Foundation
+import WeirDomain
 
 /// Why a window's selection is written. Every write names one, so
 /// a way into the selection that is not the person's cannot pass for

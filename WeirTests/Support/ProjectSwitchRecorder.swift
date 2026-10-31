@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 /// Has a session switch windows between projects in place, as the
 /// supervision window's does (`WorkspaceSession.projectSwitching`), and

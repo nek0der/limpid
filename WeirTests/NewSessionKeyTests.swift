@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct NewSessionKeyTests {
     /// A key press in the sheet, and what the sheet does with it.

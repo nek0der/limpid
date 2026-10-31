@@ -11,6 +11,7 @@ import AppKit
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @Suite("Live display language")
 @MainActor

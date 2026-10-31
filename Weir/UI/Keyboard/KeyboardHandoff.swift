@@ -2,6 +2,7 @@
 // Weir — when a surface that opens takes the keyboard, and how it goes back to the terminal when it closes.
 
 import AppKit
+import WeirDomain
 
 /// The keyboard passing between a terminal and a surface over it: a panel,
 /// a sheet, or a list that takes the keys as it opens, and the terminal

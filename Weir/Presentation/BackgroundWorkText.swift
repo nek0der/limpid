@@ -2,6 +2,7 @@
 // Weir — what an agent left running after its turn, in words.
 
 import Foundation
+import WeirDomain
 
 /// The one sentence for work an agent left running when its turn ended
 /// (`BackgroundWork`), which the decision bar says after a turn's receipt

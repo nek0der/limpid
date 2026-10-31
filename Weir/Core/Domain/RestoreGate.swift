@@ -12,54 +12,102 @@ import Foundation
 /// The worktree is shared by every agent in it, so any agent of the
 /// worktree at work or waiting for the person keeps the restore back, not
 /// only the turn's own.
-enum RestoreGate {
+package enum RestoreGate {
     /// "Restore Code to Before This Turn…", the entry every surface shows;
     /// here so the palette, which is not Presentation, names it too.
-    static let entryTitle = LocalizedStringResource(
+    package static let entryTitle = LocalizedStringResource(
         "Restore Code to Before This Turn…",
         comment: "Changes panel, decision bar, and palette: opens the confirmation to restore the code to the start of the turn"
     )
 
     /// An agent whose working tree is the turn's.
-    struct Agent: Equatable, Sendable {
-        let provider: AgentKind
-        let state: AgentState
+    package struct Agent: Equatable, Sendable {
+        package let provider: AgentKind
+        package let state: AgentState
         /// Whether this is the agent whose turn is restored.
-        let isTurnsOwn: Bool
+        package let isTurnsOwn: Bool
+
+        package init(
+            provider: AgentKind,
+            state: AgentState,
+            isTurnsOwn: Bool
+        ) {
+            self.provider = provider
+            self.state = state
+            self.isTurnsOwn = isTurnsOwn
+        }
     }
 
-    struct Input: Equatable, Sendable {
-        let turn: TurnSummary
-        let agents: [Agent]
+    package struct Input: Equatable, Sendable {
+        package let turn: TurnSummary
+        package let agents: [Agent]
         /// Whether an approval or a question of the worktree's agents waits
         /// for the person.
-        let isWaiting: Bool
+        package let isWaiting: Bool
         /// Whether a restore or an undo of the worktree is already under way.
-        let isRestoring: Bool
+        package let isRestoring: Bool
+
+        package init(
+            turn: TurnSummary,
+            agents: [Agent],
+            isWaiting: Bool,
+            isRestoring: Bool
+        ) {
+            self.turn = turn
+            self.agents = agents
+            self.isWaiting = isWaiting
+            self.isRestoring = isRestoring
+        }
     }
 
     /// What the app knows now that the gate weighs (`input`).
-    struct Facts {
-        var runtimes: [Runtime]
+    package struct Facts {
+        package var runtimes: [Runtime]
         /// The panes of the tabs the worktree's folder holds.
-        var worktreeTabPanes: Set<UUID> = []
+        package var worktreeTabPanes: Set<UUID> = []
         /// The panes where an approval, a question, or a prompt waits.
-        var waitingPanes: Set<UUID> = []
+        package var waitingPanes: Set<UUID> = []
         /// Whether a restore or an undo of the worktree is under way.
-        var isRestoring = false
+        package var isRestoring = false
+
+        package init(
+            runtimes: [Runtime],
+            worktreeTabPanes: Set<UUID> = [],
+            waitingPanes: Set<UUID> = [],
+            isRestoring: Bool = false
+        ) {
+            self.runtimes = runtimes
+            self.worktreeTabPanes = worktreeTabPanes
+            self.waitingPanes = waitingPanes
+            self.isRestoring = isRestoring
+        }
     }
 
     /// A running agent as the gate reads it.
-    struct Runtime: Equatable, Sendable {
-        let provider: AgentKind
-        let state: AgentState
-        let conversation: ConversationKey?
-        let paneIDs: Set<UUID>
+    package struct Runtime: Equatable, Sendable {
+        package let provider: AgentKind
+        package let state: AgentState
+        package let conversation: ConversationKey?
+        package let paneIDs: Set<UUID>
         /// Where its latest prompt was given (the run record's
         /// `worktreeRoot`) and where its turn was recorded (`turnRoot`), as
         /// far as it recorded them. Rust holds the restore back when either
         /// is the worktree, and so does the gate.
-        let roots: [String]
+        package let roots: [String]
+
+        package init(
+            provider: AgentKind,
+            state: AgentState,
+            conversation: ConversationKey?,
+            paneIDs: Set<UUID>,
+            roots: [String]
+        ) {
+            self.provider = provider
+            self.state = state
+            self.conversation = conversation
+            self.paneIDs = paneIDs
+            self.roots = roots
+        }
     }
 
     /// What the gate weighs for `turn`, as Rust weighs it under the lock:
@@ -69,7 +117,7 @@ enum RestoreGate {
     /// holds. A wait (an approval, a question, a prompt) in a pane of the
     /// worktree's agents, or of those tabs where no agent recorded another
     /// root, holds the restore back too.
-    static func input(
+    package static func input(
         for turn: TurnSummary,
         facts: Facts,
         isTurnsWorktree: (String) -> Bool
@@ -99,7 +147,7 @@ enum RestoreGate {
         )
     }
 
-    enum Blocker: Equatable, Sendable {
+    package enum Blocker: Equatable, Sendable {
         /// The turn's start was not captured: there is nothing to go back to.
         case notRecorded
         /// The turn is still running.
@@ -115,7 +163,7 @@ enum RestoreGate {
 
     /// Why the restore cannot run now, or `nil` when it can. The first
     /// that applies, in the order a person can do something about it.
-    static func blocker(_ input: Input) -> Blocker? {
+    package static func blocker(_ input: Input) -> Blocker? {
         guard input.turn.beginTree != nil else { return .notRecorded }
         if input.isRestoring {
             return .restoring

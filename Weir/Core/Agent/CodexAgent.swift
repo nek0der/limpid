@@ -3,6 +3,7 @@
 // `ClaudeAgent`: its `AgentKind` case and the `codex resume` arguments.
 
 import Foundation
+import WeirDomain
 
 enum CodexAgent: AgentSpec {
     static var kind: AgentKind {

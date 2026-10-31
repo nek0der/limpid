@@ -3,6 +3,7 @@
 // the application.
 
 import Foundation
+import WeirDomain
 
 /// Where what leaves the projection goes: notifications, worktree move
 /// suggestions, and the approval requests a notification can name.

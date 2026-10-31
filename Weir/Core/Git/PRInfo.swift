@@ -22,6 +22,7 @@
 // above and churn the UI for a render that cannot look any different.
 
 import Foundation
+import WeirDomain
 
 struct PRInfo: Equatable {
     /// Number as the forge's own UI shows it — `number` on GitHub,

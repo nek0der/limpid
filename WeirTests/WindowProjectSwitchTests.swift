@@ -5,6 +5,7 @@ import CoreGraphics
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// A window shows one project at a time and a project is shown in one
 /// window at a time. The person's choice of another project's

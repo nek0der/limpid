@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 extension NotificationEntry {
     /// An unread desktop notification from no pane, recorded now, changed

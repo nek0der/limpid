@@ -2,6 +2,7 @@
 // Weir — the attention count in words: the banner after a wake, and the pill's breakdown.
 
 import Foundation
+import WeirDomain
 
 /// "Needs Attention · 3" over "1 Approval · 2 Unread", in the words the
 /// title bar uses.

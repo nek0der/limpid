@@ -6,6 +6,7 @@
 // Tab.swift) decides which.
 
 import Foundation
+import WeirDomain
 
 // MARK: - WorkingDirectoryMode
 

@@ -3,6 +3,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 /// The menu bar extra's label: the lamp lit by the attention state, in the
 /// title bar pill's tone (`MenuBarLabelModel`).

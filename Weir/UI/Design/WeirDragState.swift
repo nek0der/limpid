@@ -15,6 +15,7 @@
 
 import OSLog
 import SwiftUI
+import WeirDomain
 
 /// Module-internal so the sidebar's `.draggable` sites can log
 /// drag-start events through a single category (`sidebar.drag`) —

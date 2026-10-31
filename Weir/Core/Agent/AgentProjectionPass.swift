@@ -2,6 +2,7 @@
 // Weir — the part of a projection pass that runs off the main actor, and what crosses to it and back.
 
 import Foundation
+import WeirDomain
 
 /// A projection pass in two halves: `AgentProjectionAdapter` reads what
 /// only the main actor can and applies the answer there, and `run` does

@@ -2,6 +2,7 @@
 // Weir — handing a review's comments to the pane below it.
 
 import Foundation
+import WeirDomain
 
 /// The order the insert has to happen in, away from the view that starts it.
 ///

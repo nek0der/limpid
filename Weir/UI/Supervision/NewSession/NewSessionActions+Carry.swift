@@ -2,6 +2,7 @@
 // Weir — Create carrying the shown worktree's uncommitted changes into the new one, and what it says when they stay.
 
 import Foundation
+import WeirDomain
 
 extension NewSessionActions {
 

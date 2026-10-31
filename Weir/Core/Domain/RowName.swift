@@ -14,30 +14,30 @@ import Foundation
 /// HEAD has no branch, so its first conversation names it, and its folder
 /// when no agent has run there. The tabs' own titles never name the row:
 /// OSC 2 changes them with whatever the agent or the shell is doing.
-struct RowName: Equatable, Sendable {
+package struct RowName: Equatable, Sendable {
     /// Which of the four the name came from: a branch is cut in its middle
     /// where it does not fit, any other name at its end.
-    enum Source: Equatable, Sendable {
+    package enum Source: Equatable, Sendable {
         case manual
         case conversation
         case branch
         case folder
     }
 
-    let text: String
-    let source: Source
+    package let text: String
+    package let source: Source
 
     /// The label the person gave, which the row's rename field starts
     /// from; `nil` for a row that goes by its branch, conversation, or
     /// folder, whose field starts empty, so that name is never mistaken
     /// for what the field edits.
-    var label: String? {
+    package var label: String? {
         source == .manual ? text : nil
     }
 
     /// The first of the four that is there; an empty name counts as none,
     /// so clearing a name hands the row back to the next.
-    static func make(manual: String?, conversation: String?, branch: String?, folder: String) -> Self {
+    package static func make(manual: String?, conversation: String?, branch: String?, folder: String) -> Self {
         if let manual, !manual.isEmpty {
             return Self(text: manual, source: .manual)
         }
@@ -68,7 +68,7 @@ struct RowName: Equatable, Sendable {
     /// the start is what most folders of one
     /// project share, and the tooltip keeps the name whole
     /// (`RowCheckout.shortened`).
-    func checkoutBeside(branch: String?, folder: String?, repository: String? = nil) -> RowCheckout? {
+    package func checkoutBeside(branch: String?, folder: String?, repository: String? = nil) -> RowCheckout? {
         guard source == .manual else { return nil }
         let checkout: RowCheckout
         if let branch, !branch.isEmpty {
@@ -85,18 +85,18 @@ struct RowName: Equatable, Sendable {
 
 /// The branch, or the folder, a row the person labeled is shown with
 /// (`RowName.checkoutBeside`).
-struct RowCheckout: Equatable, Sendable {
+package struct RowCheckout: Equatable, Sendable {
     /// The branch, or the folder's name in full, for the tooltip and
     /// VoiceOver, where nothing is short of room.
-    let name: String
+    package let name: String
     /// What the row's line and the places that offer the row show: the
     /// branch, or the folder less a leading "<project's folder name>-",
     /// when something follows it.
-    let shown: String
+    package let shown: String
     /// Whether this is the branch rather than the folder, for what
     /// VoiceOver calls it and whether the worktree ▾ still adds the
     /// branch.
-    let isBranch: Bool
+    package let isBranch: Bool
 
     /// `folder` less a leading "<repository>-", compared without case, as
     /// Weir names a worktree it makes beside the project
@@ -104,7 +104,7 @@ struct RowCheckout: Equatable, Sendable {
     /// that start is the same on the project's every worktree, so it tells
     /// none apart, and it pushes the row's fact off its line. Whole when it
     /// has no such start, or when nothing would be left after it.
-    static func shortened(_ folder: String, repository: String?) -> String {
+    package static func shortened(_ folder: String, repository: String?) -> String {
         guard let repository, !repository.isEmpty,
               let prefix = folder.range(of: repository + "-", options: [.anchored, .caseInsensitive]),
               prefix.upperBound < folder.endIndex

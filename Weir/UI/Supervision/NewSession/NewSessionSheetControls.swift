@@ -3,6 +3,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 /// A menu's face as the sheet's fields are drawn: on the window's color,
 /// edged in `line`, as tall as a field, the chevron at its end, faded as a

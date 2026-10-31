@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// Records the ref moves a store asks for, in order.
 private final class RecordingRefs: ViewedLineRefWriting, @unchecked Sendable {

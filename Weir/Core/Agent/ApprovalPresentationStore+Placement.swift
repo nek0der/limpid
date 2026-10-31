@@ -2,6 +2,7 @@
 // Weir — where each request shows (its run, that run's panes, the wait that is its own) and when its turn is over.
 
 import Foundation
+import WeirDomain
 
 extension ApprovalPresentationStore {
     /// Whether the wait `runtimeID` shows now is a request whose banner

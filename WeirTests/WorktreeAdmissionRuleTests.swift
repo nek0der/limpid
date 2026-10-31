@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct WorktreeAdmissionRuleTests {
     private static let home = "/Users/someone"

@@ -2,6 +2,7 @@
 // Weir — the changes panel's conversations: which hold a color, which tab runs each, and each one's name.
 
 import Foundation
+import WeirDomain
 
 extension ChangesPanelModel {
     /// The conversations that hold an identity color: those running in a

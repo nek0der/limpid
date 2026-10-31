@@ -5,6 +5,7 @@ import AppKit
 import SwiftUI
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// The sheet's segments share the controls' column equally and cut their
 /// words rather than grow, and the lines under its controls wrap within

@@ -20,6 +20,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 /// Measures the available size via `GeometryReader` and pushes it
 /// into the `NSViewRepresentable`. Second size channel alongside

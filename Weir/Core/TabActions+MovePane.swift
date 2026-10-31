@@ -4,6 +4,7 @@
 // the SwiftLint `type_body_length` error threshold.
 
 import Foundation
+import WeirDomain
 
 @MainActor
 extension TabActions {

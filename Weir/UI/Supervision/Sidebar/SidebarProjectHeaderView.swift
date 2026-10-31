@@ -3,6 +3,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 /// A project's header, 28pt: `[mark] name ─── count ▼`. The rule
 /// runs from the name to the count, so where one project ends and the next

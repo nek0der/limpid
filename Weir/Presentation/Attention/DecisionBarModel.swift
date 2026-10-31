@@ -2,6 +2,7 @@
 // Weir — an agent pane's decision bar in words.
 
 import Foundation
+import WeirDomain
 
 /// What the bar under an agent's pane reads: a short tag for what it is
 /// on, the sentence, where to answer, and its place among the pane's items.

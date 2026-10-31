@@ -15,6 +15,7 @@
 
 import Foundation
 import OSLog
+import WeirDomain
 
 private let snapshotLog = Logger.weir("session.snapshot")
 

@@ -14,11 +14,17 @@ import Foundation
 /// conversions from and to AppKit and SwiftUI live in the files that
 /// already import them (`KeyboardShortcut+Capture.swift`,
 /// `StoredShortcut+AppKitMenu.swift`, `KeyboardShortcut.swift`).
-struct KeyModifiers: OptionSet, Codable, Hashable, Sendable {
-    let rawValue: UInt8
+package struct KeyModifiers: OptionSet, Codable, Hashable, Sendable {
+    package let rawValue: UInt8
 
-    static let command = KeyModifiers(rawValue: 1 << 0)
-    static let shift = KeyModifiers(rawValue: 1 << 1)
-    static let option = KeyModifiers(rawValue: 1 << 2)
-    static let control = KeyModifiers(rawValue: 1 << 3)
+    package init(
+        rawValue: UInt8
+    ) {
+        self.rawValue = rawValue
+    }
+
+    package static let command = KeyModifiers(rawValue: 1 << 0)
+    package static let shift = KeyModifiers(rawValue: 1 << 1)
+    package static let option = KeyModifiers(rawValue: 1 << 2)
+    package static let control = KeyModifiers(rawValue: 1 << 3)
 }

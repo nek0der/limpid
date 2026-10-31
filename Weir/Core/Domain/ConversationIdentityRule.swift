@@ -9,7 +9,7 @@ import Foundation
 /// color that matches its tab to its cards never moves under the person's
 /// eye when another conversation starts or ends. Pure: what was handed out
 /// before is passed in (`ConversationIdentityStore` keeps it).
-enum ConversationIdentityRule {
+package enum ConversationIdentityRule {
     /// The index of each conversation in `active`.
     ///
     /// - `active`: the conversations running in a pane of the session and
@@ -24,7 +24,7 @@ enum ConversationIdentityRule {
     ///
     /// Empty while fewer than two are active: one conversation needs
     /// nothing to tell it apart, as with the kind's number.
-    static func assign(
+    package static func assign(
         active: [ConversationKey],
         previous: [ConversationKey: Int],
         paletteCount: Int

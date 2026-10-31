@@ -16,6 +16,7 @@
 // observer (`observeRepeatedly` schedules onChange via Task — async).
 
 import Foundation
+import WeirDomain
 
 @MainActor
 extension WorkspaceSession {

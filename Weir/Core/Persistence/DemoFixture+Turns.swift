@@ -2,6 +2,7 @@
 // Weir — the turns demo mode stages for the supervision scene: four conversations, their viewed lines, and their checks.
 
 import Foundation
+import WeirDomain
 
 extension DemoFixture {
     /// The selected workspace's Claude conversation: five turns, the first

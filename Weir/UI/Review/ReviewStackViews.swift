@@ -3,6 +3,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 /// A file's "+94 −2" (`DiffStatLabel`), or "binary" for a file Git does not
 /// count lines in; nothing for a file it has no counts for (untracked).

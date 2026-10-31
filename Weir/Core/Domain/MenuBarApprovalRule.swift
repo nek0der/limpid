@@ -9,11 +9,11 @@ import Foundation
 /// where the card (the row's Answer…) shows its context, or in the
 /// terminal it was handed to (the row itself, which goes to its pane).
 /// "Always allow" is offered nowhere.
-enum MenuBarApprovalRule {
+package enum MenuBarApprovalRule {
     /// The longest command the menu shows whole, and so may allow.
     static let maxCommandLength = 60
 
-    enum Offer: Equatable {
+    package enum Offer: Equatable {
         /// "Allow Once" and "Deny".
         case allowOrDeny
         /// A high-impact command (`HighImpactCommand`): answered in Weir.
@@ -45,7 +45,7 @@ enum MenuBarApprovalRule {
 
     /// What the menu offers for a request. `command` is the shell command
     /// an approval runs; `nil` for any other tool and for a question.
-    static func offer(isQuestion: Bool, supportsNativeAnswer: Bool, command: String?, state: ApprovalRequestState) -> Offer {
+    package static func offer(isQuestion: Bool, supportsNativeAnswer: Bool, command: String?, state: ApprovalRequestState) -> Offer {
         switch state {
         case .handedToTerminal:
             return .handedToTerminal
@@ -76,7 +76,7 @@ enum MenuBarApprovalRule {
     }
 
     /// How much of a command the menu can show as it will run.
-    enum Visibility: Equatable {
+    package enum Visibility: Equatable {
         /// Short, on one line, and every character shows as itself.
         case whole
         /// Longer than `maxCommandLength`, or on more than one line.
@@ -90,7 +90,7 @@ enum MenuBarApprovalRule {
     /// Whether the menu shows `command` as it will run (`Visibility`). A
     /// line break is a control character too, but a command on several
     /// lines reads as a long one, so it is told apart first.
-    static func visibility(of command: String) -> Visibility {
+    package static func visibility(of command: String) -> Visibility {
         let scalars = command.unicodeScalars
         let breaksLine = scalars.contains { scalar in
             switch scalar.properties.generalCategory {

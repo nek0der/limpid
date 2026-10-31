@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// The fixture is put together the way the app puts it together at launch
 /// (stand-in runtimes, staged turns, staged viewed lines, Git facts, pull

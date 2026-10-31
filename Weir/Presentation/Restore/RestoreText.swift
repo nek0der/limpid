@@ -2,6 +2,7 @@
 // Weir — what restoring the code to the start of a turn says: the confirmation, why it cannot run, how it ended, and the record.
 
 import Foundation
+import WeirDomain
 
 /// The words of a restore. The record and the strip say what
 /// the working tree holds now and what the conversation does not know; a

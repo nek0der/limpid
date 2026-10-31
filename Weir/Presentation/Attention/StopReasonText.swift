@@ -2,6 +2,7 @@
 // Weir — why an agent stopped, as the Needs Attention list, the sidebar rows, and the decision bar say it.
 
 import Foundation
+import WeirDomain
 
 /// Why an agent stopped, in words. The list and the sidebar's
 /// second line read the same sentence; the decision bar reads the reason

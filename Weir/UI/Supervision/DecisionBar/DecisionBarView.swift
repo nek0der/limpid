@@ -2,6 +2,7 @@
 // Weir — the 32pt line under an agent's pane: what waits on the person there, or what the agent is doing.
 
 import SwiftUI
+import WeirDomain
 
 /// The decision bar of one pane. Always there while an agent runs in
 /// the pane, so the terminal's rows change only when the agent starts and

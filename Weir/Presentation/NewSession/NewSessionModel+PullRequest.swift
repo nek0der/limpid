@@ -2,6 +2,7 @@
 // Weir — the new worktree sheet's pull request source, and the line under its carry: the field, the lookup, the branch, the plan.
 
 import Foundation
+import WeirDomain
 
 extension NewSessionModel {
     /// The longest a branch is shown in one of the sheet's sentences, in

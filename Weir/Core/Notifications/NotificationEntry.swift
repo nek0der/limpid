@@ -3,6 +3,7 @@
 // banner Weir ever fires (OSC 9 / OSC 777 / COMMAND_FINISHED / bell).
 
 import Foundation
+import WeirDomain
 
 struct NotificationEntry: Codable, Identifiable, Equatable {
     enum Kind: String, Codable {

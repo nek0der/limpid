@@ -2,6 +2,7 @@
 // Weir — where a project's lists were scrolled, kept while no window shows it and brought back as a window switches to it.
 
 import Foundation
+import WeirDomain
 
 /// Where a window had a project's changes panel scrolled as it left the
 /// project: the turn at the top of its list, with the turn

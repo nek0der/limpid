@@ -2,6 +2,7 @@
 // Weir — what the changes panel's "Commit & PR" reads from the app and what its buttons do.
 
 import Foundation
+import WeirDomain
 
 /// The "Commit & PR" section's way to the app: the session's Git facts, its
 /// pull request, and its agents read into `CommitAndPRModel`, and the tabs

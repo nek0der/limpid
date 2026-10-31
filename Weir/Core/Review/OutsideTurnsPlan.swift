@@ -2,6 +2,7 @@
 // Weir — which stretches of a worktree's history no turn of any agent accounts for.
 
 import Foundation
+import WeirDomain
 
 /// The comparisons that find what changed outside every turn in a worktree:
 /// the gaps between turns, while no agent's turn ran, and what

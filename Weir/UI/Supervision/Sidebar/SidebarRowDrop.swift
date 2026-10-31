@@ -2,6 +2,7 @@
 // Weir — a tab or pane dragged across the sidebar: the rows and headers that take it, the project it marks, and where it lands.
 
 import SwiftUI
+import WeirDomain
 
 /// What a tab or pane dragged across one window's sidebar does: which project it
 /// holds open and marks, and the move once it is dropped.

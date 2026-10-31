@@ -2,6 +2,7 @@
 // Weir — the changes panel: the worktree's turns as one timeline, with each row's viewed state, beside the terminal.
 
 import SwiftUI
+import WeirDomain
 
 /// The changes panel: the window's session read as a table of contents.
 /// Its head counts the worktree's turns and opens the unviewed ones in the

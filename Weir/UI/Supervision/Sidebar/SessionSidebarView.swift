@@ -3,6 +3,7 @@
 
 import AppKit
 import SwiftUI
+import WeirDomain
 
 /// The sidebar: the heading, then every project under its own header
 /// in the window's order, each open header with its rows in the two-line

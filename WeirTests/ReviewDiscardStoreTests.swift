@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// A worktree's discard records are the worktree's: every window and every
 /// review of it reads and writes the same ones, whatever the review's

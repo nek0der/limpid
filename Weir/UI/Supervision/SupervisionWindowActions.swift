@@ -3,6 +3,7 @@
 
 import os
 import SwiftUI
+import WeirDomain
 
 private let log = Logger.weir("supervision.keys")
 

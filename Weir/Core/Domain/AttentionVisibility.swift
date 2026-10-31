@@ -11,20 +11,30 @@ import Foundation
 /// not count, and an unfocused split leaf does. This is separate from which
 /// terminals draw (`PaneVisibility`): a window behind another app still
 /// draws, but nobody is looking at it.
-struct AttentionVisibility: Equatable, Sendable {
+package struct AttentionVisibility: Equatable, Sendable {
     /// The union of every on-screen window's attended panes.
-    var attendedPanes: Set<UUID> = []
-    var isAppActive = false
+    package var attendedPanes: Set<UUID> = []
+    package var isAppActive = false
     /// VoiceOver does not read the terminal's text, so a request handed to
     /// the TUI would be one the person cannot hear.
-    var isVoiceOverRunning = false
+    package var isVoiceOverRunning = false
+
+    package init(
+        attendedPanes: Set<UUID> = [],
+        isAppActive: Bool = false,
+        isVoiceOverRunning: Bool = false
+    ) {
+        self.attendedPanes = attendedPanes
+        self.isAppActive = isAppActive
+        self.isVoiceOverRunning = isVoiceOverRunning
+    }
 
     /// Every pane `isSeen` holds for: none while another app is in front.
-    var seenPanes: Set<UUID> {
+    package var seenPanes: Set<UUID> {
         isAppActive ? attendedPanes : []
     }
 
-    func isSeen(_ paneID: UUID) -> Bool {
+    package func isSeen(_ paneID: UUID) -> Bool {
         isAppActive && attendedPanes.contains(paneID)
     }
 
@@ -32,7 +42,7 @@ struct AttentionVisibility: Equatable, Sendable {
     /// shown in `paneIDs` (more than one under tmux, when the session is
     /// attached in several panes). Any seen pane is enough. No known pane
     /// means we cannot tell where it would show, so the request is held.
-    func allowsHandOff(toAnyOf paneIDs: [UUID]) -> Bool {
+    package func allowsHandOff(toAnyOf paneIDs: [UUID]) -> Bool {
         !isVoiceOverRunning && paneIDs.contains(where: isSeen)
     }
 }

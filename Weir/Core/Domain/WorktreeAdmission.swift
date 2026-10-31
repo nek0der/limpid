@@ -8,7 +8,7 @@ import Foundation
 /// worktree an agent made for itself, which Git only reports, waits among
 /// the other worktrees until the person opens it. Stored as its raw value
 /// in `state.json` (`Worktree.admission`).
-enum WorktreeAdmission: String, Equatable, Sendable {
+package enum WorktreeAdmission: String, Equatable, Sendable {
     /// Weir made it: New Worktree…, or a tab moved into a worktree the
     /// move suggestion added.
     case created
@@ -22,8 +22,14 @@ enum WorktreeAdmission: String, Equatable, Sendable {
 
 /// What Move to Other Worktrees took from a row, for its Undo: the admission
 /// it had, `nil` for one not admitted yet.
-struct WorktreeRelease: Equatable, Sendable {
-    let previous: WorktreeAdmission?
+package struct WorktreeRelease: Equatable, Sendable {
+    package let previous: WorktreeAdmission?
+
+    package init(
+        previous: WorktreeAdmission?
+    ) {
+        self.previous = previous
+    }
 }
 
 /// Admits a worktree that a `state.json` from before `admission` holds with
@@ -31,27 +37,43 @@ struct WorktreeRelease: Equatable, Sendable {
 /// or a window's selection is the person's, wherever an agent put it. Only
 /// a worktree with none of them is placed by its path, as an agent's when
 /// it sits where agents put theirs.
-enum WorktreeAdmissionRule {
+package enum WorktreeAdmissionRule {
     /// What the rule reads of one worktree, all of it values.
-    struct Facts: Equatable, Sendable {
+    package struct Facts: Equatable, Sendable {
         /// A tab is open in it.
-        var hasTabs = false
+        package var hasTabs = false
         /// It remembers a tab to restore (`Worktree.lastActiveTabID`): the
         /// person had one open there.
-        var hasLastActiveTab = false
+        package var hasLastActiveTab = false
         /// A window, or the view of a project no window shows, has it
         /// selected.
-        var isSelected = false
+        package var isSelected = false
         /// The worktree's folder.
-        var path: String
+        package var path: String
         /// Its HEAD is detached: Git names no branch for it.
-        var isDetached = false
+        package var isDetached = false
         /// The person's home folder, under which Codex keeps its worktrees.
-        var homePath: String
+        package var homePath: String
+
+        package init(
+            hasTabs: Bool = false,
+            hasLastActiveTab: Bool = false,
+            isSelected: Bool = false,
+            path: String,
+            isDetached: Bool = false,
+            homePath: String
+        ) {
+            self.hasTabs = hasTabs
+            self.hasLastActiveTab = hasLastActiveTab
+            self.isSelected = isSelected
+            self.path = path
+            self.isDetached = isDetached
+            self.homePath = homePath
+        }
     }
 
     /// The admission of a worktree that has none recorded.
-    static func classify(_ facts: Facts) -> WorktreeAdmission {
+    package static func classify(_ facts: Facts) -> WorktreeAdmission {
         if facts.hasTabs || facts.hasLastActiveTab || facts.isSelected {
             return .opened
         }

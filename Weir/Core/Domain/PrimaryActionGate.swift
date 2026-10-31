@@ -8,7 +8,7 @@ import Foundation
 /// answered in the terminal or on the approval card. Each carries the item
 /// it was shown for, so the press acts on that item even if the bar moves
 /// on before it runs.
-enum PrimaryAction: Equatable, Sendable {
+package enum PrimaryAction: Equatable, Sendable {
     /// Unread turns that changed files are marked as reviewed, through
     /// the last turn the bar showed (`throughTurn`, its number), so a turn
     /// joining the item a moment before the press is not marked unseen;
@@ -28,15 +28,25 @@ enum PrimaryAction: Equatable, Sendable {
 
 /// One press of Return or the keypad's Enter with ⌘ held, in a terminal
 /// pane.
-struct PrimaryKeyPress: Equatable, Sendable {
+package struct PrimaryKeyPress: Equatable, Sendable {
     /// ⌘ and nothing else. With ⌥, ⇧, or ⌃ too it is never the bar's, and
     /// it reaches the gate only when no binding took it.
-    let isCommandOnly: Bool
+    package let isCommandOnly: Bool
     /// An input method is composing text; the key confirms it there and
     /// sends no Return of its own.
-    let isComposing: Bool
+    package let isComposing: Bool
     /// The key held down. A held ⌘⏎ performs at most once.
-    var isRepeat = false
+    package var isRepeat = false
+
+    package init(
+        isCommandOnly: Bool,
+        isComposing: Bool,
+        isRepeat: Bool = false
+    ) {
+        self.isCommandOnly = isCommandOnly
+        self.isComposing = isComposing
+        self.isRepeat = isRepeat
+    }
 }
 
 /// Decides each ⌘⏎ press against the pane's agent and what its decision bar
@@ -49,8 +59,10 @@ struct PrimaryKeyPress: Equatable, Sendable {
 /// as Return, so a press with no button to take it would answer whatever
 /// confirmation the agent shows, and that may be an approval. A pane with
 /// no agent is the terminal's.
-struct PrimaryActionGate: Sendable {
-    enum Decision: Equatable, Sendable {
+package struct PrimaryActionGate: Sendable {
+
+    package init() {}
+    package enum Decision: Equatable, Sendable {
         case perform(PrimaryAction)
         /// Taken and dropped: neither the bar nor the terminal sees it.
         case swallow
@@ -60,18 +72,30 @@ struct PrimaryActionGate: Sendable {
 
     /// What one pane's bar shows, and since when.
     private struct Shown: Sendable {
-        let itemID: AttentionItemID?
-        let primaryAction: PrimaryAction?
-        var since: SuspendingClock.Instant
+        package let itemID: AttentionItemID?
+        package let primaryAction: PrimaryAction?
+        package var since: SuspendingClock.Instant
         /// The bars drawing this. SwiftUI may draw a pane's new bar (after
         /// a split, a zoom, or review closing) beside the old one for a
         /// moment, and either may go first, so the entry goes only with the
         /// last of them.
         var owners: Set<UUID>
+
+        package init(
+            itemID: AttentionItemID?,
+            primaryAction: PrimaryAction?,
+            since: SuspendingClock.Instant,
+            owners: Set<UUID>
+        ) {
+            self.itemID = itemID
+            self.primaryAction = primaryAction
+            self.since = since
+            self.owners = owners
+        }
     }
 
     /// How long an item is on screen before ⌘⏎ acts on it.
-    static let settleTime: Duration = .milliseconds(600)
+    package static let settleTime: Duration = .milliseconds(600)
 
     /// By pane, while its bar is drawn.
     private var shown: [UUID: Shown] = [:]
@@ -85,7 +109,7 @@ struct PrimaryActionGate: Sendable {
     /// when the item or its primary button changes, so the bar drawing the
     /// same item again, or a new bar for the same pane, does not hold the
     /// key back.
-    mutating func noteShown(
+    package mutating func noteShown(
         _ itemID: AttentionItemID?,
         primaryAction: PrimaryAction?,
         inPane paneID: UUID,
@@ -105,7 +129,7 @@ struct PrimaryActionGate: Sendable {
 
     /// `owner`'s bar for the pane is gone. The entry stays while another bar
     /// still draws it.
-    mutating func forget(pane paneID: UUID, by owner: UUID) {
+    package mutating func forget(pane paneID: UUID, by owner: UUID) {
         guard var current = shown[paneID] else { return }
         current.owners.remove(owner)
         shown[paneID] = current.owners.isEmpty ? nil : current
@@ -114,7 +138,7 @@ struct PrimaryActionGate: Sendable {
     /// The window came back to the front: what its bars show is
     /// new to the person again, and a press from habit (⌘⏎ is full screen
     /// in other terminals) must not act at once.
-    mutating func restartSettling(at now: SuspendingClock.Instant) {
+    package mutating func restartSettling(at now: SuspendingClock.Instant) {
         for paneID in shown.keys {
             shown[paneID]?.since = now
         }
@@ -124,7 +148,7 @@ struct PrimaryActionGate: Sendable {
     /// gives it a bar. `isApprovalCardFocused`: the approval card has the
     /// keyboard; the card takes ⌘⏎ and ignores it, so the key reaches
     /// neither the bar nor the terminal.
-    mutating func decide(
+    package mutating func decide(
         _ press: PrimaryKeyPress,
         inPane paneID: UUID,
         hasAgent: Bool,

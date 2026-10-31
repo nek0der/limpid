@@ -2,6 +2,7 @@
 // Weir — the changes panel in words: the counts, the filter, each turn's row, and the viewed line.
 
 import Foundation
+import WeirDomain
 
 /// The words of the changes panel. The receipt's own facts (what a turn
 /// changed, its last check) read as the decision bar reads them

@@ -2,6 +2,7 @@
 // Weir — why a window switches to another project, and what the app layer is told as it does.
 
 import Foundation
+import WeirDomain
 
 /// Why a window switches to another project. What the app
 /// layer keeps of the project left depends on it.

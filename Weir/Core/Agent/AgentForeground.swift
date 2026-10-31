@@ -2,6 +2,7 @@
 // Weir — what job is in front of a terminal (an agent, a shell, or something else), from the names of its foreground process group.
 
 import Foundation
+import WeirDomain
 
 /// The job in front of a terminal, read from the names of its foreground
 /// process group, leader first (`SurfaceView.foregroundGroupProcessNames`).

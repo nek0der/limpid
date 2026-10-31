@@ -7,7 +7,7 @@ import Foundation
 /// provider's permission request, or its own question tool. Records from
 /// before the field leave it out, and a kind this build does not know reads
 /// as none.
-enum PromptWaitKind: String, Codable, Sendable {
+package enum PromptWaitKind: String, Codable, Sendable {
     case approval
     case question
     /// The agent cannot go on until the person signs in again, as only its
@@ -29,7 +29,7 @@ enum PromptWaitKind: String, Codable, Sendable {
 /// the same way: an approval and a question as the requests Weir holds
 /// are worded, and a wait we cannot name in the state's own neutral word
 /// ("Needs response").
-enum PromptWait: Equatable, Sendable {
+package enum PromptWait: Equatable, Sendable {
     case approval(PromptApproval)
     /// The agent's own question, as its record says; its words, `nil` when
     /// it gave none.
@@ -43,7 +43,7 @@ enum PromptWait: Equatable, Sendable {
     /// The wait as the record states it. A question stays one whatever its
     /// words look like; an approval names its tool even when no list here
     /// knows it. With no kind, the words alone decide (`init(detail:)`).
-    init(detail: String?, kind: PromptWaitKind?, tool: String?) {
+    package init(detail: String?, kind: PromptWaitKind?, tool: String?) {
         switch kind {
         case .question:
             self = .question(detail: Self.words(detail).flatMap(Self.questionText))
@@ -59,7 +59,7 @@ enum PromptWait: Equatable, Sendable {
     /// The wait read from its words alone, for a record from before it said
     /// what its wait is. The question tool's bare name, which earlier hooks
     /// recorded for a question with no text, still says it is one.
-    init(detail: String?) {
+    package init(detail: String?) {
         guard let text = Self.words(detail) else {
             self = .unclassified(detail: nil)
             return
@@ -73,7 +73,7 @@ enum PromptWait: Equatable, Sendable {
 
     /// The agent's words in full, for the tooltip that the cut-short line
     /// leaves out.
-    var detail: String? {
+    package var detail: String? {
         switch self {
         case let .approval(approval): approval.detail
         case let .question(detail), let .unclassified(detail): detail
@@ -96,27 +96,27 @@ enum PromptWait: Equatable, Sendable {
 /// The tool names Weir tells apart, in one place: the decision bar words
 /// a file change and a command differently, for a request Weir holds
 /// (`ApprovalRequestText`) and for one it does not (`PromptApproval`).
-enum AgentTools {
+package enum AgentTools {
     /// Claude's editing tools and Codex's patch.
-    static let fileChange: Set<String> = ["Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"]
+    package static let fileChange: Set<String> = ["Edit", "Write", "MultiEdit", "NotebookEdit", "apply_patch"]
 
     /// Tools that run a command: Claude's shell, and Codex's under the
     /// names its hooks and approvals report.
-    static let command: Set<String> = ["Bash", "PowerShell", "exec", "exec_command", "shell", "local_shell", "unified_exec"]
+    package static let command: Set<String> = ["Bash", "PowerShell", "exec", "exec_command", "shell", "local_shell", "unified_exec"]
 
     /// Other tools Claude and Codex ask permission for. Only the words of a
     /// record from before `waitKind` need it: a name outside these lists
     /// counts there only with an MCP server's prefix, since a bare word
     /// before a colon is as likely the start of a question.
-    static let other: Set<String> = [
+    package static let other: Set<String> = [
         "Read", "Glob", "Grep", "LS", "WebFetch", "WebSearch", "Task", "Agent", "Skill", "SlashCommand",
         "NotebookRead", "TodoWrite", "BashOutput", "KillShell", "ExitPlanMode", "web_search", "view_image"
     ]
 
     /// Claude's question tool.
-    static let question = "AskUserQuestion"
+    package static let question = "AskUserQuestion"
 
-    static func action(of tool: String) -> PromptApproval.Action {
+    package static func action(of tool: String) -> PromptApproval.Action {
         if fileChange.contains(tool) {
             .fileChange
         } else if command.contains(tool) {
@@ -127,16 +127,16 @@ enum AgentTools {
     }
 
     /// Whether the words name a tool, for a record from before `tool`.
-    static func isKnown(_ name: String) -> Bool {
+    package static func isKnown(_ name: String) -> Bool {
         fileChange.contains(name) || command.contains(name) || other.contains(name)
             || (name.hasPrefix("mcp__") && !name.contains(where: \.isWhitespace))
     }
 }
 
 /// A tool's request at the agent's prompt.
-struct PromptApproval: Equatable, Sendable {
+package struct PromptApproval: Equatable, Sendable {
     /// What the tool does, which the decision bar words differently.
-    enum Action: Equatable, Sendable {
+    package enum Action: Equatable, Sendable {
         case fileChange
         case command
         case other
@@ -144,22 +144,22 @@ struct PromptApproval: Equatable, Sendable {
 
     /// `nil` when nothing names the tool, as for a request that only says
     /// permission is needed.
-    let tool: String?
-    let action: Action
+    package let tool: String?
+    package let action: Action
     /// The command on one line, or the name of the file (its last path
     /// component, as the line has no room for the folders); `nil` when only
     /// the tool is known.
-    let subject: String?
+    package let subject: String?
     /// The words as recorded; `nil` when the run recorded none.
-    let detail: String?
+    package let detail: String?
 
     /// What "Waiting for approval:" names: the command or file, else the
     /// tool; `nil` when neither is known.
-    var fact: String? {
+    package var fact: String? {
         subject ?? tool
     }
 
-    init(tool: String?, action: Action, subject: String?, detail: String?) {
+    package init(tool: String?, action: Action, subject: String?, detail: String?) {
         self.tool = tool
         self.action = action
         self.subject = subject
@@ -169,7 +169,7 @@ struct PromptApproval: Equatable, Sendable {
     /// An approval the record says it is, of `tool` when it names one. The
     /// words give the argument when they are that tool's ("Bash: swift
     /// test"), else whatever request they read as.
-    init(recorded text: String?, tool: String?) {
+    package init(recorded text: String?, tool: String?) {
         if let tool {
             let action = AgentTools.action(of: tool)
             let argument = text.flatMap { text in
@@ -186,7 +186,7 @@ struct PromptApproval: Equatable, Sendable {
     }
 
     /// The words, read as a tool's request; `nil` when they are not one.
-    init?(_ text: String) {
+    package init?(_ text: String) {
         if let separator = text.range(of: ": ") {
             let tool = String(text[..<separator.lowerBound])
             let argument = text[separator.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
@@ -210,7 +210,7 @@ struct PromptApproval: Equatable, Sendable {
     /// What a request is about, as short as the row and the banner need it:
     /// a command on one line, a path as its file's name, anything else on
     /// one line. The held request's banner shortens its summary the same way.
-    static func subject(_ argument: String, action: Action) -> String {
+    package static func subject(_ argument: String, action: Action) -> String {
         let line = argument.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         guard action != .command else { return line }
         return fileName(argument) ?? line
@@ -219,7 +219,7 @@ struct PromptApproval: Equatable, Sendable {
     /// The last component of a path, whichever separator it uses; `nil`
     /// for words that are not one. A relative path counts only without
     /// spaces, so a sentence with a slash in it is left whole.
-    static func fileName(_ text: String) -> String? {
+    package static func fileName(_ text: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.contains(where: \.isNewline), trimmed.contains(where: { $0 == "/" || $0 == "\\" }) else { return nil }
         let isAbsolute = trimmed.hasPrefix("/") || trimmed.hasPrefix("~") || trimmed.dropFirst().hasPrefix(":\\")

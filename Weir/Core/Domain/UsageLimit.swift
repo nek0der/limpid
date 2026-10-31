@@ -4,12 +4,20 @@
 import Foundation
 
 /// The usage limit an agent's turn stopped at, as its run reports it.
-struct UsageLimit: Codable, Equatable, Hashable, Sendable {
+package struct UsageLimit: Codable, Equatable, Hashable, Sendable {
     /// When the limit resets; `nil` when the provider did not say.
-    var resetAt: Date?
+    package var resetAt: Date?
     /// Which limit, as the provider names it (Claude's `five_hour`,
     /// `seven_day`, …); `nil` when not given.
-    var window: String?
+    package var window: String?
+
+    package init(
+        resetAt: Date? = nil,
+        window: String? = nil
+    ) {
+        self.resetAt = resetAt
+        self.window = window
+    }
 
     /// Whether the limit holds every agent of the account. Claude's weekly
     /// limits of one model (`seven_day_opus`, `seven_day_sonnet`) stop only
@@ -19,7 +27,7 @@ struct UsageLimit: Codable, Equatable, Hashable, Sendable {
     }
 
     /// Whether the reset is known and still ahead at `now`.
-    func resetsLater(than now: Date) -> Bool {
+    package func resetsLater(than now: Date) -> Bool {
         resetAt.map { $0 > now } ?? false
     }
 
@@ -27,7 +35,7 @@ struct UsageLimit: Codable, Equatable, Hashable, Sendable {
     /// one that resets last of those still ahead, else one whose reset is
     /// not known; `nil` when every one has reset. A reset that has passed
     /// never hides a limit whose time is not known.
-    static func holding(_ limits: [UsageLimit], at now: Date) -> UsageLimit? {
+    package static func holding(_ limits: [UsageLimit], at now: Date) -> UsageLimit? {
         let ahead = limits.filter { $0.resetsLater(than: now) }
         if let last = ahead.max(by: { ($0.resetAt ?? now) < ($1.resetAt ?? now) }) {
             return last
@@ -40,7 +48,7 @@ struct UsageLimit: Codable, Equatable, Hashable, Sendable {
 /// resuming before the reset only meets the limit again, so the bar's
 /// primary is "Notify When It Resets", and once asked (or when the setting
 /// asks for every reset) the bar says the notice will come.
-enum UsageLimitResetNotice: Equatable, Sendable {
+package enum UsageLimitResetNotice: Equatable, Sendable {
     case offered
     case requested
 
@@ -49,7 +57,7 @@ enum UsageLimitResetNotice: Equatable, Sendable {
     /// (`UsageLimits.releaseAt`), so the bar never offers to resume into a
     /// limit that still holds nor to notify of one that has passed. Any
     /// other stop resumes as it would.
-    static func of(_ item: AttentionItem, in limits: UsageLimits, isRequested: (AgentKind) -> Bool, now: Date) -> Self? {
+    package static func of(_ item: AttentionItem, in limits: UsageLimits, isRequested: (AgentKind) -> Bool, now: Date) -> Self? {
         guard case .stop(.usageLimit) = item.kind, let provider = item.subject.provider,
               limits.releaseAt(of: provider, now: now) != nil
         else { return nil }
@@ -60,15 +68,15 @@ enum UsageLimitResetNotice: Equatable, Sendable {
 /// The usage limits that hold each provider's agents now, read from the
 /// attention list's stops: one plan per provider on this Mac stands for the
 /// account, so every agent of that provider is held until it resets.
-struct UsageLimits: Equatable, Sendable {
+package struct UsageLimits: Equatable, Sendable {
     /// Each limited provider's limits, one per stop. Which holds it is
     /// chosen against the clock (`UsageLimit.holding`), since a reset that
     /// passes changes the answer.
-    private(set) var limits: [AgentKind: [UsageLimit]] = [:]
+    package private(set) var limits: [AgentKind: [UsageLimit]] = [:]
 
     /// `lifted` are the stops whose limit no longer holds
     /// (`AttentionQueue.liftedUsageLimits`).
-    init(items: [AttentionItem], lifted: Set<AttentionItemID> = []) {
+    package init(items: [AttentionItem], lifted: Set<AttentionItemID> = []) {
         for item in items where !lifted.contains(item.id) {
             guard case let .stop(.usageLimit(limit)) = item.kind, let provider = item.subject.provider else { continue }
             limits[provider, default: []].append(limit)
@@ -76,7 +84,7 @@ struct UsageLimits: Equatable, Sendable {
     }
 
     /// The limits the attention list's stops hold, less the ones since lifted.
-    init(queue: AttentionQueue) {
+    package init(queue: AttentionQueue) {
         self.init(items: queue.items, lifted: queue.liftedUsageLimits)
     }
 
@@ -92,7 +100,7 @@ struct UsageLimits: Equatable, Sendable {
     /// the plan, or signed in to another account, and went on in a new
     /// conversation) would mark every row of the provider at its limit,
     /// with no end when the provider gave no reset time.
-    static func isLifted(_ item: AttentionItem, by runtime: RuntimeFact) -> Bool {
+    package static func isLifted(_ item: AttentionItem, by runtime: RuntimeFact) -> Bool {
         guard case let .stop(.usageLimit(limit)) = item.kind, limit.isAccountWide,
               runtime.provider == item.subject.provider, runtime.state == .finished
         else { return false }
@@ -101,7 +109,7 @@ struct UsageLimits: Equatable, Sendable {
 
     /// `provider`'s limits that hold every agent of the account, for the
     /// rows they mark.
-    func accountWide(of provider: AgentKind) -> [UsageLimit] {
+    package func accountWide(of provider: AgentKind) -> [UsageLimit] {
         (limits[provider] ?? []).filter(\.isAccountWide)
     }
 
@@ -111,7 +119,7 @@ struct UsageLimits: Equatable, Sendable {
     /// holds it with a time ahead. One time per provider, as the plan is
     /// the account's: an agent on a model whose own weekly limit outlasts
     /// it is told at that time too, which it learns from its own stop.
-    func releaseAt(of provider: AgentKind, now: Date) -> Date? {
+    package func releaseAt(of provider: AgentKind, now: Date) -> Date? {
         guard let all = limits[provider] else { return nil }
         let accountWide = all.filter(\.isAccountWide)
         let candidates = accountWide.contains { $0.resetsLater(than: now) || $0.resetAt == nil } ? accountWide : all
@@ -122,7 +130,7 @@ struct UsageLimits: Equatable, Sendable {
     /// second past each known reset still ahead. `UsageLimitResetSync`
     /// reads them again then, rather than on a clock, and the views that
     /// word them are drawn again with it.
-    func changeTimes(after now: Date) -> [Date] {
+    package func changeTimes(after now: Date) -> [Date] {
         limits.values.joined().compactMap(\.resetAt).filter { $0 > now }.sorted().map { $0.addingTimeInterval(1) }
     }
 
@@ -130,7 +138,7 @@ struct UsageLimits: Equatable, Sendable {
     /// provider while the setting asks for every reset, else for the
     /// providers the person asked of from a stop. One per provider, at
     /// its `releaseAt`. A limit with no time, or one past, has none.
-    func pendingResetNotifications(isEnabled: Bool, requested: Set<AgentKind> = [], now: Date) -> [AgentKind: Date] {
+    package func pendingResetNotifications(isEnabled: Bool, requested: Set<AgentKind> = [], now: Date) -> [AgentKind: Date] {
         Dictionary(uniqueKeysWithValues: limits.keys.compactMap { provider in
             guard isEnabled || requested.contains(provider), let release = releaseAt(of: provider, now: now) else { return nil }
             return (provider, release)

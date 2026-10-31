@@ -2,6 +2,7 @@
 // Weir — dropping a dragged tab before or after another in the pane strip, and a dragged pane into a tab.
 
 import SwiftUI
+import WeirDomain
 
 /// What a tab of the pane strip does with what is dropped on it.
 @MainActor

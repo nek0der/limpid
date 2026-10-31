@@ -2,6 +2,7 @@
 // Weir — generic resume-command composer for any `AgentSpec` flavor.
 
 import Foundation
+import WeirDomain
 
 /// The resume typed into a restored pane at launch: the session and the
 /// command, so the stop ledger can watch the one the command resumes

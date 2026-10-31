@@ -11,8 +11,8 @@ import Foundation
 /// unread turn, and last the row at rest. Work an agent left running when
 /// its turn ended is not a running turn: it marks the rest it sits on, or
 /// the unread turn of the run that left it (`Agent.isWorkingAfterTurn`).
-struct SessionRowFact: Equatable, Sendable {
-    enum Glyph: Equatable, Sendable {
+package struct SessionRowFact: Equatable, Sendable {
+    package enum Glyph: Equatable, Sendable {
         case needsAnswer
         case needsApproval
         /// A wait at the agent's prompt we cannot name as an approval or a
@@ -38,7 +38,7 @@ struct SessionRowFact: Equatable, Sendable {
         case shell
     }
 
-    enum Fact: Equatable, Sendable {
+    package enum Fact: Equatable, Sendable {
         /// The start of the question; `nil` when the request is not known.
         case question(String?)
         /// The command waiting on approval.
@@ -79,7 +79,7 @@ struct SessionRowFact: Equatable, Sendable {
     /// with no tool, a request or a stop with no words, an unread turn
     /// whose changes are not known. A row that shows its folder on its
     /// second line drops such a fact for the folder, which says more.
-    static func repeatsGlyph(_ fact: Fact) -> Bool {
+    package static func repeatsGlyph(_ fact: Fact) -> Bool {
         switch fact {
         case .idle, .unknown, .running(nil), .question(nil), .approval(nil):
             true
@@ -104,36 +104,36 @@ struct SessionRowFact: Equatable, Sendable {
     /// has no agent. The row's badges show every agent in it
     /// (`SessionSidebarModel.Row.agentKinds`); this says which one the line is
     /// about.
-    enum Badge: Equatable, Sendable {
+    package enum Badge: Equatable, Sendable {
         case agent(AgentKind)
         case shell
     }
 
     /// The row's state, and only its state: never the pull request.
-    let glyph: Glyph
-    let fact: Fact
-    let badge: Badge
+    package let glyph: Glyph
+    package let fact: Fact
+    package let badge: Badge
     /// The pull request on the row's branch, which the row shows as a mark
     /// beside its badge whatever its state: the left of a row
     /// says its state, the right what is attached to it, so a stopped or
     /// waiting row still shows its request. `nil` when it has none.
-    var pullRequest: PullRequest?
+    package var pullRequest: PullRequest?
 
     /// One agent running in the row.
-    struct Agent: Equatable, Sendable {
-        let provider: AgentKind
-        let state: AgentState
+    package struct Agent: Equatable, Sendable {
+        package let provider: AgentKind
+        package let state: AgentState
         /// What it reported last: the tool it runs, or its message.
-        let detail: String?
+        package let detail: String?
         /// What its run left running when its turn ended
         /// (`AgentBadge.backgroundWork`); `nil` when nothing was.
-        let backgroundWork: BackgroundWork?
+        package let backgroundWork: BackgroundWork?
         /// The run it is (`AgentRuntimePresentation.id`), so an unread turn
         /// is marked with the work of its own run only; `nil` for an agent
         /// known only by its pane's badge, which no item names.
-        let runtimeID: String?
+        package let runtimeID: String?
 
-        init(
+        package init(
             provider: AgentKind,
             state: AgentState,
             detail: String?,
@@ -163,28 +163,56 @@ struct SessionRowFact: Equatable, Sendable {
     }
 
     /// A pull request on the row's branch.
-    struct PullRequest: Equatable, Sendable {
-        let number: Int
-        let state: PRState
-        let isDraft: Bool
+    package struct PullRequest: Equatable, Sendable {
+        package let number: Int
+        package let state: PRState
+        package let isDraft: Bool
+
+        package init(
+            number: Int,
+            state: PRState,
+            isDraft: Bool
+        ) {
+            self.number = number
+            self.state = state
+            self.isDraft = isDraft
+        }
     }
 
     /// What decides a row.
-    struct Input: Sendable {
+    package struct Input: Sendable {
         /// The attention items of the row's panes.
-        var items: [AttentionItem] = []
+        package var items: [AttentionItem] = []
         /// What the list shows of a request: the question's start, or the
         /// command. Missing when the ledger no longer holds it.
-        var requestText: [ApprovalKey: String] = [:]
-        var agents: [Agent] = []
-        var pullRequest: PullRequest?
+        package var requestText: [ApprovalKey: String] = [:]
+        package var agents: [Agent] = []
+        package var pullRequest: PullRequest?
         /// The folder's files changed and not committed, and the commits a
         /// pull request from it would carry (`GitFacts`); 0 when not known.
-        var uncommittedFiles = 0
-        var proposedCommits = 0
+        package var uncommittedFiles = 0
+        package var proposedCommits = 0
         /// The folder's Git facts have been read, so 0 above means none
         /// rather than not known.
-        var hasGitFacts = false
+        package var hasGitFacts = false
+
+        package init(
+            items: [AttentionItem] = [],
+            requestText: [ApprovalKey: String] = [:],
+            agents: [Agent] = [],
+            pullRequest: PullRequest? = nil,
+            uncommittedFiles: Int = 0,
+            proposedCommits: Int = 0,
+            hasGitFacts: Bool = false
+        ) {
+            self.items = items
+            self.requestText = requestText
+            self.agents = agents
+            self.pullRequest = pullRequest
+            self.uncommittedFiles = uncommittedFiles
+            self.proposedCommits = proposedCommits
+            self.hasGitFacts = hasGitFacts
+        }
     }
 
     /// The agent a row with no attention item speaks for: the first one
@@ -193,13 +221,13 @@ struct SessionRowFact: Equatable, Sendable {
     /// with none. That work ranks below a turn, which is what the person
     /// asked for, and above a plain rest, so the row's mark of it and the
     /// line beside it are the same agent's.
-    static func leadAgentIndex(of agents: [Agent]) -> Int? {
+    package static func leadAgentIndex(of agents: [Agent]) -> Int? {
         agents.firstIndex(where: \.isRunningATurn)
             ?? agents.firstIndex(where: \.isWorkingAfterTurn)
             ?? (agents.isEmpty ? nil : 0)
     }
 
-    static func make(_ input: Input) -> Self {
+    package static func make(_ input: Input) -> Self {
         var row = state(of: input)
         row.pullRequest = input.pullRequest
         return row
@@ -297,7 +325,7 @@ struct SessionRowFact: Equatable, Sendable {
     /// speaks the item says (the row, the list, the announcement): a wait
     /// at the agent's prompt is the approval or question its record says,
     /// else a wait for a response we cannot name.
-    static func glyph(of kind: AttentionItemKind) -> Glyph {
+    package static func glyph(of kind: AttentionItemKind) -> Glyph {
         switch kind {
         case .question, .prompt(.question): .needsAnswer
         case .approval, .prompt(.approval): .needsApproval

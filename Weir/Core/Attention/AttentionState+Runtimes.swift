@@ -2,6 +2,7 @@
 // Weir — invocation-scoped attention independent of client attachments.
 
 import Foundation
+import WeirDomain
 
 extension AttentionState {
     /// In `AgentKind`'s order rather than the dictionary's, which can differ

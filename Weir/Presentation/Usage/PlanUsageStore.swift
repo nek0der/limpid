@@ -3,6 +3,7 @@
 
 import Foundation
 import Observation
+import WeirDomain
 
 /// The plan usage of each agent, as last reported. Claude Code's is the
 /// record its status line relay writes, which the record source watches.

@@ -2,6 +2,7 @@
 // Weir — what the approval card offers and says for where its request stands.
 
 import Foundation
+import WeirDomain
 
 /// What the approval card shows for one request: the actions it offers, the
 /// line that says where the request stands, and whether the time left is

@@ -8,7 +8,7 @@ import Foundation
 /// Code's (`PermissionMode` in `weir-agent-model`). Codex reports only
 /// `default` and `bypassPermissions`: the latter for an approval policy that
 /// never asks.
-enum AgentPermissionMode: String, Sendable, CaseIterable {
+package enum AgentPermissionMode: String, Sendable, CaseIterable {
     case `default`
     case acceptEdits
     case plan
@@ -19,14 +19,14 @@ enum AgentPermissionMode: String, Sendable, CaseIterable {
     /// Whether the agent runs every action without asking. The pane header
     /// warns of this mode with words and a symbol, never by color alone, and
     /// keeps the warning at every width that shows the state mark.
-    var runsWithoutAsking: Bool {
+    package var runsWithoutAsking: Bool {
         self == .bypassPermissions
     }
 
     /// The mode's name beside the model in the pane header, or `nil` for the
     /// default mode, which the header leaves unsaid, and for the mode that
     /// runs without asking, which the warning names instead.
-    var headerName: LocalizedStringResource? {
+    package var headerName: LocalizedStringResource? {
         switch self {
         case .default, .bypassPermissions: nil
         case .acceptEdits:
@@ -43,7 +43,7 @@ enum AgentPermissionMode: String, Sendable, CaseIterable {
     /// The mode's full description, for the header's hover text and
     /// VoiceOver, and the warning's words for the mode that runs without
     /// asking.
-    var spokenName: LocalizedStringResource {
+    package var spokenName: LocalizedStringResource {
         switch self {
         case .default:
             LocalizedStringResource("Asks as its settings say", comment: "Pane header hover: what a mode lets the agent do")

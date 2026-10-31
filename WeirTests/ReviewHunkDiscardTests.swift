@@ -4,6 +4,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 struct ReviewHunkDiscardTests {
     private static let english = Locale(identifier: "en")

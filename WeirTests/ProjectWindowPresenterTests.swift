@@ -6,6 +6,7 @@ import Foundation
 import SwiftUI
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 /// The tests find their window among `NSApp.windows`, where the host app
 /// may own one too (its presenter opens the restored windows), so a test

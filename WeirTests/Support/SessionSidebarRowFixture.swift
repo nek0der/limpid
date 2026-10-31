@@ -3,6 +3,7 @@
 
 import Foundation
 @testable import Weir
+@testable import WeirDomain
 
 extension SessionSidebarModel.RowInput {
     /// A worktree's row named `name`, there on disk, cut as a name, with nothing to

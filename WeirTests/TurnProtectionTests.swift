@@ -5,6 +5,7 @@
 import Foundation
 import Testing
 @testable import Weir
+@testable import WeirDomain
 
 @MainActor
 @Suite("Turn protection")
@@ -38,7 +39,7 @@ struct TurnProtectionTests {
             hasLoaded: true,
             history: [Fixture.conversation: [read, unread, running, unprompted, inRange]],
             isRead: { $0.turnID != unread.turnID },
-            ranges: [range],
+            rangeTurnIDs: Set(range.turnIDs),
             shownConversations: [Fixture.conversation]
         )))
 

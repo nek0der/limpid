@@ -15,20 +15,34 @@ import Foundation
 /// a moment (a tmux client between attachments), or whose pane moves to
 /// another tab, is the same run in the same panes, and its line does not
 /// end for that.
-struct PaneRunLedger: Equatable, Sendable {
+package struct PaneRunLedger: Equatable, Sendable {
+
+    package init() {}
     /// A runtime as the ledger sees it.
-    struct Run: Equatable, Sendable {
-        let runtimeID: String
-        let paneIDs: Set<UUID>
-        let state: AgentState
+    package struct Run: Equatable, Sendable {
+        package let runtimeID: String
+        package let paneIDs: Set<UUID>
+        package let state: AgentState
         /// The turn the run is in, or ended last; `nil` before its first.
-        let turnID: TurnID?
+        package let turnID: TurnID?
+
+        package init(
+            runtimeID: String,
+            paneIDs: Set<UUID>,
+            state: AgentState,
+            turnID: TurnID?
+        ) {
+            self.runtimeID = runtimeID
+            self.paneIDs = paneIDs
+            self.state = state
+            self.turnID = turnID
+        }
     }
 
     /// Where a run was last seen.
     private struct Place: Equatable, Sendable {
-        var turnID: TurnID?
-        var paneIDs: Set<UUID>
+        package var turnID: TurnID?
+        package var paneIDs: Set<UUID>
         /// Whether the run rests in error (`StopFailure`: a usage limit, an
         /// API error). The agent is still in its pane and can go on in the
         /// same run, but it may also have exited, its record left in error
@@ -40,7 +54,17 @@ struct PaneRunLedger: Equatable, Sendable {
         /// moving on (`StopLedger.hasMovedOn`), and `note` takes those
         /// panes as moved on too. A line set while stopped (a restore's,
         /// say) ends then, not at the new conversation's first turn.
-        var isStopped: Bool
+        package var isStopped: Bool
+
+        package init(
+            turnID: TurnID? = nil,
+            paneIDs: Set<UUID>,
+            isStopped: Bool
+        ) {
+            self.turnID = turnID
+            self.paneIDs = paneIDs
+            self.isStopped = isStopped
+        }
     }
 
     private var places: [String: Place] = [:]
@@ -58,7 +82,7 @@ struct PaneRunLedger: Equatable, Sendable {
     /// are the panes whose stop ended as the person moved on to another
     /// conversation there (`StopLedger.Ended.movedOn`), which a run
     /// arriving alone does not say.
-    mutating func note(_ runs: [Run], movedOnFromStops: Set<UUID> = []) -> Set<UUID> {
+    package mutating func note(_ runs: [Run], movedOnFromStops: Set<UUID> = []) -> Set<UUID> {
         var next: [String: Place] = [:]
         var movedOn = movedOnFromStops
         // An unknown state is a session that ended (`SessionEnd`), as the
@@ -105,7 +129,7 @@ struct PaneRunLedger: Equatable, Sendable {
     /// is. Compared with the epoch taken as an item was shown, it tells
     /// whether the item left with the turn or the agent rather than being
     /// answered: a different epoch, or none, means the pane moved on.
-    func epoch(inPane paneID: UUID) -> Int? {
+    package func epoch(inPane paneID: UUID) -> Int? {
         epochs[paneID]
     }
 }

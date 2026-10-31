@@ -3,6 +3,7 @@
 
 import Foundation
 import Observation
+import WeirDomain
 
 /// What one window shows: its selected container and tab, its history, and
 /// its layout. The projects, tabs, agents, and terminals themselves are
