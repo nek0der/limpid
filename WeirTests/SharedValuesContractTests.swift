@@ -18,6 +18,7 @@ struct SharedValuesContractTests {
         let maximumProjectionInputBytes: Int
         let worktreeRoutingFileName: String
         let paneIdentifierVariable: String
+        let codexTurnEndEvent: String
         let atWorkStates: [String]
         let notAtWorkStates: [String]
         let worktreeFolders: WorktreeFolders
@@ -59,6 +60,10 @@ struct SharedValuesContractTests {
             basePath: "/usr/bin"
         )
         #expect(env[shared.paneIdentifierVariable] != nil)
+    }
+
+    @Test func theRolloutWatcher_looksForTheEventTheCrateReads() throws {
+        #expect(try Self.sharedValues().codexTurnEndEvent == RolloutReader.turnEndEvent)
     }
 
     @Test func theWorktreeFolders_areTheOnesTheHookMakes() throws {

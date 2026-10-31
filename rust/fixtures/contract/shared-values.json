@@ -6,6 +6,7 @@
   "atWorkStates": ["running", "needsInput", "compacting"],
   "notAtWorkStates": ["idle", "finished", "error", "unknown"],
   "claudeStatusLineRelayArguments": "statusline claude",
+  "codexTurnEndEvent": "task_complete",
   "worktreeFolders": {
     "projectRoot": "/projects/repo",
     "customParent": "/elsewhere",

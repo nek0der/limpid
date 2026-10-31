@@ -182,15 +182,15 @@ pub(crate) fn normalize(
 pub(crate) const WEIR_TURN_FAILED_EVENT: &str = "WeirTurnFailed";
 /// This key holds the kind of failure the watcher read (Codex's
 /// `codex_error_info`), for a report whose rollout cannot be read again.
-const ERROR_KIND_KEY: &str = "weir_error_kind";
+pub(crate) const ERROR_KIND_KEY: &str = "weir_error_kind";
 /// For a usage limit, the watcher's reading of Codex's message, in Unix
 /// seconds.
-const MESSAGE_RESET_KEY: &str = "weir_message_resets_at";
+pub(crate) const MESSAGE_RESET_KEY: &str = "weir_message_resets_at";
 /// This key names the session whose rollout the watcher reads, from the
 /// `SessionStart` it began on.
-const WATCHED_SESSION_KEY: &str = "session_id";
+pub(crate) const WATCHED_SESSION_KEY: &str = "session_id";
 /// This key holds when the rollout says the turn failed, in Unix seconds.
-const FAILED_AT_KEY: &str = "weir_failed_at";
+pub(crate) const FAILED_AT_KEY: &str = "weir_failed_at";
 
 /// The failure the watcher read, for a report whose rollout could not be
 /// read again: its kind, and a usage limit with no time when that is the

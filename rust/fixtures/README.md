@@ -26,8 +26,8 @@ fixtures/
 
 `contract/shared-values.json` holds the values each side defines for itself
 but the other depends on: the broker's decision limit, the projection input
-limit, the routing file's name, the pane id variable, which run states count
-as at work, and the folder a branch's worktree gets under each placement. The
+limit, the routing file's name, the pane id variable, the event a Codex turn
+ends with, which run states count as at work, and the folder a branch's worktree gets under each placement. The
 bridge's `contract_tests` and the app's `SharedValuesContractTests` each
 compare their own constants with the file (the worktree folders from the hook's
 own `worktree.rs` tests, because the rule is private to that crate), so a value

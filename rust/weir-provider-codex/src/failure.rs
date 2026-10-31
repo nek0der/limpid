@@ -15,9 +15,14 @@
 //! no time rather than no limit.
 
 use crate::json::string;
-use serde_json::{Map, Value};
+use crate::normalize::{
+    ERROR_KIND_KEY, FAILED_AT_KEY, MESSAGE_RESET_KEY, WATCHED_SESSION_KEY, WEIR_TURN_FAILED_EVENT,
+};
+use serde_json::{Map, Value, json};
 use std::time::{Duration, UNIX_EPOCH};
-use weir_agent_model::{PlanUsageWindow, UsageLimit, format_utc_seconds};
+use weir_agent_model::{
+    FailureReport, FailureWatch, PlanUsageWindow, UsageLimit, format_utc_seconds, parse_utc_seconds,
+};
 
 /// The kind Codex gives a turn its plan's usage limit ended.
 pub(crate) const USAGE_LIMIT_KIND: &str = "usage_limit_exceeded";
@@ -80,6 +85,81 @@ pub(crate) fn rollout_failure(rollout: &[u8]) -> Option<RolloutFailure> {
         error: message.unwrap_or_else(|| USAGE_LIMIT_KIND.to_owned()),
         usage_limit: Some(limit),
     })
+}
+
+/// The event a turn ends with. The helper's watcher looks for this text before
+/// it asks about a line (`rust/fixtures/contract/shared-values.json`).
+const TURN_END_EVENT: &str = "task_complete";
+
+/// The report for `line` when it is a turn that failed: an `event_msg` whose
+/// `task_complete` carries an `error`. Read as JSON, so the words in an agent's
+/// own answer are not taken for it.
+pub(crate) fn turn_failure_report(line: &[u8], watch: &FailureWatch<'_>) -> Option<FailureReport> {
+    if !line
+        .windows(TURN_END_EVENT.len())
+        .any(|window| window == TURN_END_EVENT.as_bytes())
+    {
+        return None;
+    }
+    let Ok(Value::Object(record)) = serde_json::from_slice::<Value>(line) else {
+        return None;
+    };
+    if string(&record, "type") != Some("event_msg") {
+        return None;
+    }
+    let payload = record.get("payload")?.as_object()?;
+    if string(payload, "type") != Some(TURN_END_EVENT) {
+        return None;
+    }
+    let error = payload.get("error")?.as_object()?;
+    let kind = error_kind(error);
+    let written_at = string(&record, "timestamp").and_then(line_seconds);
+    let mut report = json!({
+        "hook_event_name": WEIR_TURN_FAILED_EVENT,
+        "transcript_path": watch.transcript_path,
+        WATCHED_SESSION_KEY: watch.session_id,
+        FAILED_AT_KEY: written_at.unwrap_or(watch.read_at),
+    });
+    if let Some(kind) = &kind {
+        report[ERROR_KIND_KEY] = json!(kind);
+    }
+    Some(FailureReport {
+        payload: report,
+        written_at,
+        usage_limit_message: (kind.as_deref() == Some(USAGE_LIMIT_KIND))
+            .then(|| string(error, "message").map(str::to_owned))
+            .flatten(),
+        message_reset_key: MESSAGE_RESET_KEY,
+    })
+}
+
+/// A line's time in whole Unix seconds. Codex writes UTC with fractions of a
+/// second; the shape is undocumented, so an offset is read too.
+fn line_seconds(timestamp: &str) -> Option<u64> {
+    let (seconds, zone) = timestamp.split_at_checked(19)?;
+    let zone = match zone.split_once('.') {
+        None => zone,
+        Some(("", fraction)) => fraction.trim_start_matches(|digit: char| digit.is_ascii_digit()),
+        Some(_) => return None,
+    };
+    let utc = parse_utc_seconds(&format!("{seconds}Z"))?;
+    if zone == "Z" {
+        return Some(utc);
+    }
+    let (sign, offset) = zone.split_at_checked(1)?;
+    let (hours, minutes) = offset.split_once(':')?;
+    let number = |text: &str, limit: u64| {
+        let is_two_digits = text.len() == 2 && text.bytes().all(|byte| byte.is_ascii_digit());
+        text.parse::<u64>()
+            .ok()
+            .filter(|value| is_two_digits && *value < limit)
+    };
+    let offset = number(hours, 24)? * 3600 + number(minutes, 60)? * 60;
+    match sign {
+        "+" => utc.checked_sub(offset),
+        "-" => utc.checked_add(offset),
+        _ => None,
+    }
 }
 
 /// The kind of a failure: `codex_error_info` as a name, or as the one key of
@@ -154,6 +234,116 @@ mod tests {
 
     fn rollout(lines: &[&str]) -> Vec<u8> {
         lines.join("\n").into_bytes()
+    }
+
+    const WATCH: FailureWatch<'static> = FailureWatch {
+        transcript_path: "/tmp/rollout.jsonl",
+        session_id: "session-a",
+        read_at: 1_791_853_260,
+    };
+
+    fn failed_line(timestamp: &str, error: &str) -> String {
+        format!(
+            r#"{{{timestamp}"type":"event_msg","payload":{{"type":"task_complete","error":{error}}}}}"#
+        )
+    }
+
+    #[test]
+    fn a_report_names_the_session_the_kind_and_when_the_turn_failed() {
+        let line = failed_line(
+            r#""timestamp":"2026-10-13T01:00:00.500Z","#,
+            r#"{"message":"Try again at 10:29 AM.","codex_error_info":"usage_limit_exceeded"}"#,
+        );
+        let report = turn_failure_report(line.as_bytes(), &WATCH).unwrap();
+        assert_eq!(
+            report.written_at,
+            Some(1_791_853_200),
+            "the line's own time"
+        );
+        assert_eq!(report.payload["hook_event_name"], "WeirTurnFailed");
+        assert_eq!(report.payload["transcript_path"], "/tmp/rollout.jsonl");
+        assert_eq!(report.payload["session_id"], "session-a");
+        assert_eq!(report.payload["weir_failed_at"], 1_791_853_200);
+        assert_eq!(report.payload["weir_error_kind"], "usage_limit_exceeded");
+        assert_eq!(
+            report.usage_limit_message.as_deref(),
+            Some("Try again at 10:29 AM.")
+        );
+        assert_eq!(report.message_reset_key, "weir_message_resets_at");
+    }
+
+    #[test]
+    fn a_line_with_no_time_or_kind_is_reported_at_the_time_it_was_read() {
+        let report = turn_failure_report(failed_line("", "{}").as_bytes(), &WATCH).unwrap();
+        assert_eq!(report.written_at, None);
+        assert_eq!(report.payload["weir_failed_at"], WATCH.read_at);
+        assert!(report.payload.get("weir_error_kind").is_none());
+        assert_eq!(report.usage_limit_message, None);
+    }
+
+    #[test]
+    fn only_a_usage_limit_hands_its_message_to_the_host() {
+        let line = failed_line(
+            "",
+            r#"{"message":"Overloaded","codex_error_info":{"http_connection_failed":{}}}"#,
+        );
+        let report = turn_failure_report(line.as_bytes(), &WATCH).unwrap();
+        assert_eq!(report.payload["weir_error_kind"], "http_connection_failed");
+        assert_eq!(report.usage_limit_message, None);
+    }
+
+    #[test]
+    fn a_time_is_read_with_or_without_a_fraction_or_an_offset() {
+        let utc = Some(1_791_853_200);
+        assert_eq!(line_seconds("2026-10-13T01:00:00Z"), utc);
+        assert_eq!(line_seconds("2026-10-13T01:00:00.500Z"), utc);
+        assert_eq!(line_seconds("2026-10-13T10:00:00+09:00"), utc);
+        assert_eq!(line_seconds("2026-10-13T10:00:00.500+09:00"), utc);
+        assert_eq!(line_seconds("2026-10-12T21:00:00-04:00"), utc);
+        assert_eq!(line_seconds("t"), None);
+        assert_eq!(line_seconds("2026-10-13T10:00:00+99:99"), None);
+        assert_eq!(line_seconds("2026-10-13T10:00:00++9:00"), None);
+        assert_eq!(line_seconds("2026-10-13T01:00:00"), None);
+    }
+
+    #[test]
+    fn a_usage_limit_with_no_message_is_still_named() {
+        let line = failed_line("", r#"{"codex_error_info":"usage_limit_exceeded"}"#);
+        let report = turn_failure_report(line.as_bytes(), &WATCH).unwrap();
+        assert_eq!(report.payload["weir_error_kind"], "usage_limit_exceeded");
+        assert_eq!(report.usage_limit_message, None);
+    }
+
+    /// Taken from what Codex CLI 0.165.0 wrote for a model it does not have.
+    #[test]
+    fn a_model_codex_does_not_have_is_named_by_its_kind() {
+        let line = r#"{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":null,"error":{"message":"The 'no-such-model' model is not supported.","codex_error_info":"model_not_found"}}}"#;
+        let report = turn_failure_report(line.as_bytes(), &WATCH).unwrap();
+        assert_eq!(report.payload["weir_error_kind"], "model_not_found");
+        assert_eq!(report.usage_limit_message, None);
+    }
+
+    #[test]
+    fn anything_but_a_failed_turn_end_has_no_report() {
+        for line in [
+            DONE,
+            r#"{"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"usage_limit_exceeded"}}"#,
+            "not json task_complete",
+            r#"{"type":"response_item","payload":{"type":"task_complete","error":{}}}"#,
+            r#"{"type":"event_msg","payload":{"type":"agent_message","message":"task_complete"}}"#,
+        ] {
+            assert_eq!(turn_failure_report(line.as_bytes(), &WATCH), None, "{line}");
+        }
+    }
+
+    #[test]
+    fn the_text_the_watcher_looks_for_is_the_event_a_turn_ends_with() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../fixtures/contract/shared-values.json"
+        );
+        let shared: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        assert_eq!(shared["codexTurnEndEvent"], TURN_END_EVENT);
     }
 
     #[test]
