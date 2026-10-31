@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.1.14](https://github.com/nek0der/limpid/compare/v0.1.13...v0.1.14) (2026-10-31)
+
+
+### Features
+
+* **agent:** show the actions Claude's auto mode refused on each turn's Changes card ([#189](https://github.com/nek0der/limpid/issues/189)) ([a6b2a26](https://github.com/nek0der/limpid/commit/a6b2a26bf4cd20b21786b7b5e881836f2049d45f))
+* **notifications:** lead each history row with what it is about, and frame each source's rows as one group ([#193](https://github.com/nek0der/limpid/issues/193)) ([b7fea13](https://github.com/nek0der/limpid/commit/b7fea13dcf140ccafdcc951b7acab37b82496d77))
+* **sidebar:** drag a tab or pane onto any project's row, and give every pane a header ([#195](https://github.com/nek0der/limpid/issues/195)) ([2e6ffa7](https://github.com/nek0der/limpid/commit/2e6ffa7a09302e1bab0ceca386ebe4ed0a13e5f9))
+* **sidebar:** keep a project's header in sight while its rows scroll, and reorder projects on a layer over the list ([#197](https://github.com/nek0der/limpid/issues/197)) ([b818dca](https://github.com/nek0der/limpid/commit/b818dca3d4fc8ec7519169bd938f13252689967d))
+* **sidebar:** look up a row's pull request as an agent's turn ends, and check open ones more often ([#198](https://github.com/nek0der/limpid/issues/198)) ([c56fa8d](https://github.com/nek0der/limpid/commit/c56fa8dedb358c8c86c0f910b7e1c924db0c7c21))
+* **sidebar:** put the repository's row first with a tag, and say each row's Git counts and time with their units ([#188](https://github.com/nek0der/limpid/issues/188)) ([482bfbf](https://github.com/nek0der/limpid/commit/482bfbf017d44f13cee541ffc6d4ff3e7bf4e2c1))
+* **supervision:** replace the Changes panel's viewed-turns button with a plain line that opens once ([#185](https://github.com/nek0der/limpid/issues/185)) ([eb28c70](https://github.com/nek0der/limpid/commit/eb28c70e29b28dffd18856d7078eea0394bb672c))
+* **supervision:** show each agent pane's model and permission mode in its header, and warn when it runs without asking ([#187](https://github.com/nek0der/limpid/issues/187)) ([baaeca3](https://github.com/nek0der/limpid/commit/baaeca3586f6dbb8b66dc3ec37dccb9b867b811b))
+* **supervision:** show each agent's effort and tokens in its pane header, and the worktree's tokens in the Changes panel ([#207](https://github.com/nek0der/limpid/issues/207)) ([14e89cb](https://github.com/nek0der/limpid/commit/14e89cbebd9a260b595eb5690eb518db9286a496))
+* **supervision:** show every agent on a row and a tab, and mark each pane with its agent's badge ([#199](https://github.com/nek0der/limpid/issues/199)) ([d65dcc6](https://github.com/nek0der/limpid/commit/d65dcc6db4ee4f8cdf0fbe3012656ade70f6ee4f))
+
+
+### Bug Fixes
+
+* **agent:** end a stop, and the decision bar lines set during it, when the person starts another conversation in its pane ([#181](https://github.com/nek0der/limpid/issues/181)) ([5ce4ee1](https://github.com/nek0der/limpid/commit/5ce4ee141e6cf2384a16036f6eca5bd92f345574))
+* **agent:** lift a provider's usage limit once another of its runs finishes a turn after the stop ([#183](https://github.com/nek0der/limpid/issues/183)) ([417ad08](https://github.com/nek0der/limpid/commit/417ad085a386712b12339100fac2c97c0f3522bc))
+* **approval:** end a request left to the terminal once its agent's session ends ([#184](https://github.com/nek0der/limpid/issues/184)) ([05af190](https://github.com/nek0der/limpid/commit/05af1905ac969278fff0414671f96c5133482715))
+* **codex:** take the session's folder from where Codex runs the hook, now that a tool's cwd is the folder the tool runs in ([#186](https://github.com/nek0der/limpid/issues/186)) ([378d9bc](https://github.com/nek0der/limpid/commit/378d9bc752bc668b05154d1ee0975c55556c5555))
+* **design:** stop an inline rename's text moving 2pt as its edit opens on macOS 27.2 ([#191](https://github.com/nek0der/limpid/issues/191)) ([be0bac4](https://github.com/nek0der/limpid/commit/be0bac4b73f29569eb94566c217740860b62f42b))
+* **design:** stop the running arc in All Projects drifting out of place as it turns ([#192](https://github.com/nek0der/limpid/issues/192)) ([67d250f](https://github.com/nek0der/limpid/commit/67d250fc221667bd09c45bbc9a8c9ee698789fc0))
+* **notifications:** keep the macOS notification notice's button neutral on its amber band ([#203](https://github.com/nek0der/limpid/issues/203)) ([747ac9a](https://github.com/nek0der/limpid/commit/747ac9afdbc43794b9bf6923c54ebece7d945d17))
+* **notifications:** stop a selected history row drawing a second frame inside its group's ([#205](https://github.com/nek0der/limpid/issues/205)) ([21b46ba](https://github.com/nek0der/limpid/commit/21b46ba2e0780a7ca48e90318ebe2ddbcc9a35b2))
+* **sidebar:** show the scratch row's agents and state instead of a fixed mark ([#208](https://github.com/nek0der/limpid/issues/208)) ([a07eea8](https://github.com/nek0der/limpid/commit/a07eea8aaaec5e029ff9929be8316f3d339fe9e2))
+* **supervision:** draw a pane's attention frame around its header and decision bar ([#202](https://github.com/nek0der/limpid/issues/202)) ([26812b5](https://github.com/nek0der/limpid/commit/26812b5156be121d249354fdc968f5e169fc59db))
+* **supervision:** stop the highlight of the pane strip's add button running into the rule ([#204](https://github.com/nek0der/limpid/issues/204)) ([21794f2](https://github.com/nek0der/limpid/commit/21794f2af540b7013857caae0a0d55518e78bad1))
+* **supervision:** take a pane header's model and permission mode from the agent the pane shows, and keep a split's warning in sight ([#194](https://github.com/nek0der/limpid/issues/194)) ([c168ac0](https://github.com/nek0der/limpid/commit/c168ac0f56a8dab1a5aa727b6be07f8c54282249))
+
 ## [0.1.13](https://github.com/nek0der/limpid/compare/v0.1.12...v0.1.13) (2026-10-29)
 
 
