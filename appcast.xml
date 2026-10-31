@@ -1,17 +1,17 @@
 <?xml version="1.0" standalone="yes"?>
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
-        <title>Limpid</title>
+        <title>Weir</title>
         <item>
-            <title>0.1.13</title>
-            <pubDate>Thu, 29 Oct 2026 23:57:30 +0000</pubDate>
-            <link>https://github.com/nek0der/limpid</link>
-            <sparkle:version>0.1.13</sparkle:version>
-            <sparkle:shortVersionString>0.1.13</sparkle:shortVersionString>
+            <title>0.1.14</title>
+            <pubDate>Sat, 31 Oct 2026 11:33:57 +0000</pubDate>
+            <link>https://github.com/nek0der/weir</link>
+            <sparkle:version>0.1.14</sparkle:version>
+            <sparkle:shortVersionString>0.1.14</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
             <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
-            <sparkle:releaseNotesLink>https://nek0der.github.io/limpid/Limpid-0.1.13.md</sparkle:releaseNotesLink>
-            <enclosure url="https://github.com/nek0der/limpid/releases/download/v0.1.13/Limpid-0.1.13.dmg" length="21553768" type="application/octet-stream" sparkle:edSignature="EfyLX5VQJ3ARxTSeVgMkO7onnCpLJzZmWQdvmJzlqZoUvzj4slNhjAQBQfz0OqngXNyczIxFdkmm/kluXbkVBA=="/>
+            <sparkle:releaseNotesLink>https://nek0der.github.io/weir/Weir-0.1.14.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/nek0der/weir/releases/download/v0.1.14/Weir-0.1.14.dmg" length="20999105" type="application/octet-stream" sparkle:edSignature="zMpugQCODTUdTuKwh/iLzjLC0rJV+wTnbYlIoMtdaJEU1PN31vDCgQ5Bn7v8baeWOp6P/El3la4DQ/Ppsl77DQ=="/>
         </item>
     </channel>
 </rss>
