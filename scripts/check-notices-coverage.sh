@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Limpid guardrail — fail if a bundled third-party component is missing from
+# Weir guardrail — fail if a bundled third-party component is missing from
 # THIRD-PARTY-NOTICES, or is named there without the license text its terms
 # require us to ship. Six checks:
 #
@@ -11,7 +11,7 @@
 #      line of that text, so a summary line alone does not pass.
 #   3. libghostty components. `ghostty_components` is the static list of
 #      what the macOS build of GhosttyKit.xcframework links or embeds into
-#      Limpid (not everything ghostty vendors: zlib, stb, libintl, harfbuzz,
+#      Weir (not everything ghostty vendors: zlib, stb, libintl, harfbuzz,
 #      fontconfig and the Linux and wasm deps stay out). Each needs a
 #      `Component: <name> <version>` header and a line of its license text.
 #      Re-derive the list when the vendor/ghostty pin moves; the header
@@ -31,12 +31,12 @@
 #      compared with the list as well.
 #   6. A built app, when one is at hand. The archive also holds zlib, stb,
 #      libintl and others that the app does not link; the list in check 3
-#      assumes they stay out. When a built Limpid binary exists, `nm` proves
+#      assumes they stay out. When a built Weir binary exists, `nm` proves
 #      it: zlib must still come from the system's libz, and none of the
 #      unshipped libraries may define a symbol. Defined symbols are read from
 #      the binary's dSYM when there is one, since a stripped binary no longer
 #      lists them. Without a binary (CI's guardrail job) the check is
-#      skipped; LIMPID_NOTICES_REQUIRE_BINARY=1 makes that a failure.
+#      skipped; WEIR_NOTICES_REQUIRE_BINARY=1 makes that a failure.
 #
 # Every license line is matched inside the block of its own header (the
 # lines between the rules that follow that header and the next rule), so
@@ -52,7 +52,7 @@ cd "$(git rev-parse --show-toplevel)"
 
 notices="THIRD-PARTY-NOTICES"
 
-# Every non-Rust third-party component that ships inside Limpid.app / the DMG.
+# Every non-Rust third-party component that ships inside Weir.app / the DMG.
 required=(
   "Ghostty"        # libghostty, statically linked (MIT)
   "Sparkle"        # auto-update framework (MIT)
@@ -117,7 +117,7 @@ texts=(
 # "Component header prefix|a line of its license text", for each part of
 # GhosttyKit.xcframework that the macOS app links or embeds. We derived it by
 # checking which archive members of ghostty-internal.a define symbols that
-# are defined in a linked Limpid binary (`nm`), and by searching the Release
+# are defined in a linked Weir binary (`nm`), and by searching the Release
 # binary for each library's strings and each font's bytes. A component that
 # is only in the xcframework (its objects never linked) does not belong here.
 # The list holds for the e6ee5cd9e pin, rebased onto upstream 0fe113a35. Its
@@ -184,7 +184,7 @@ rust_targets=("aarch64-apple-darwin")
 # re-derive the lists when rust-toolchain.toml moves:
 #   1. `ls "$(rustc --print sysroot)/lib/rustlib/aarch64-apple-darwin/lib"`
 #      lists the rlibs the toolchain ships for the target.
-#   2. `ar t target/<profile>/liblimpid_rust_bridge.a` names, by rlib, the
+#   2. `ar t target/<profile>/libweir_rust_bridge.a` names, by rlib, the
 #      objects the bridge bundles; an rlib with no member there goes to
 #      rust_std_not_linked.
 #   3. The release's library/Cargo.lock
@@ -303,13 +303,13 @@ fi
 # A bundled resource that carries a GPL header obliges us to ship the GPL's
 # text, whatever the manifest says, so a new GPL script cannot slip in under a
 # link to gnu.org.
-if grep -rlqF "GNU General Public License" Limpid/Resources 2>/dev/null; then
+if grep -rlqF "GNU General Public License" Weir/Resources 2>/dev/null; then
   gpl_listed=0
   for entry in "${texts[@]}"; do
     [[ "${entry%%|*}" == "GNU General Public License"* ]] && gpl_listed=1
   done
   if (( ! gpl_listed )); then
-    echo "✗ Limpid/Resources ships a GPL-licensed file, but this script checks no GPL text." >&2
+    echo "✗ Weir/Resources ships a GPL-licensed file, but this script checks no GPL text." >&2
     fail=1
   fi
 fi
@@ -466,13 +466,13 @@ fi
 
 # -- 6. A built app ------------------------------------------------------------
 
-# Built binaries to check: LIMPID_NOTICES_BINARY (colon-separated), and the
+# Built binaries to check: WEIR_NOTICES_BINARY (colon-separated), and the
 # `make release-check` archive when it exists. Each must link libghostty.
 binaries=()
-if [[ -n "${LIMPID_NOTICES_BINARY:-}" ]]; then
-  IFS=: read -r -a binaries <<< "$LIMPID_NOTICES_BINARY"
+if [[ -n "${WEIR_NOTICES_BINARY:-}" ]]; then
+  IFS=: read -r -a binaries <<< "$WEIR_NOTICES_BINARY"
 fi
-release_check_binary="build/ReleaseCheck/Limpid.xcarchive/Products/Applications/Limpid.app/Contents/MacOS/Limpid"
+release_check_binary="build/ReleaseCheck/Weir.xcarchive/Products/Applications/Weir.app/Contents/MacOS/Weir"
 [[ -f "$release_check_binary" ]] && binaries+=("$release_check_binary")
 
 # zlib functions libpng and FreeType call; each must stay an import from libz.
@@ -507,7 +507,7 @@ checked_binaries=0
 if (( ${#binaries[@]} )) && command -v nm >/dev/null 2>&1; then
   for binary in "${binaries[@]}"; do
     if [[ ! -f "$binary" ]]; then
-      echo "✗ LIMPID_NOTICES_BINARY names $binary, which does not exist." >&2
+      echo "✗ WEIR_NOTICES_BINARY names $binary, which does not exist." >&2
       fail=1
       continue
     fi
@@ -545,7 +545,7 @@ if (( ${#binaries[@]} )) && command -v nm >/dev/null 2>&1; then
         dsym_uuids="$(dwarfdump --uuid "$dsym" 2>/dev/null | awk '$1 == "UUID:" { print $2, $3 }' | LC_ALL=C sort || true)"
       fi
       if [[ -z "$binary_uuids" || -z "$dsym_uuids" ]]; then
-        if [[ "${LIMPID_NOTICES_REQUIRE_BINARY:-0}" == 1 ]]; then
+        if [[ "${WEIR_NOTICES_REQUIRE_BINARY:-0}" == 1 ]]; then
           echo "✗ Could not read the UUIDs of $binary and $dsym (is dwarfdump installed?), so the dSYM cannot stand in for the stripped binary." >&2
           fail=1
         else
@@ -583,8 +583,8 @@ fi
 
 # The release-archive CI job sets this, so a renamed archive path or a
 # missing nm cannot turn the check into a silent skip there.
-if [[ "${LIMPID_NOTICES_REQUIRE_BINARY:-0}" == 1 ]] && (( checked_binaries == 0 )); then
-  echo "✗ LIMPID_NOTICES_REQUIRE_BINARY is set, but no built binary was checked (none found at $release_check_binary or in LIMPID_NOTICES_BINARY, or nm is missing)." >&2
+if [[ "${WEIR_NOTICES_REQUIRE_BINARY:-0}" == 1 ]] && (( checked_binaries == 0 )); then
+  echo "✗ WEIR_NOTICES_REQUIRE_BINARY is set, but no built binary was checked (none found at $release_check_binary or in WEIR_NOTICES_BINARY, or nm is missing)." >&2
   fail=1
 fi
 

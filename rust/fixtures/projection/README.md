@@ -1,6 +1,6 @@
 # Projection corpus
 
-Input for the reader side: the record sets that `limpid_agent_core::project`
+Input for the reader side: the record sets that `weir_agent_core::project`
 reduces into badges, tab titles, notification transitions, and commands.
 
 ## Why the records are generated

@@ -1,5 +1,5 @@
 // CodexTurnFailureWatch.swift
-// Limpid — watches a Codex session's rollout for a turn that fails, which Codex runs no hook for.
+// Weir — watches a Codex session's rollout for a turn that fails, which Codex runs no hook for.
 
 import Darwin
 import Foundation
@@ -10,7 +10,7 @@ import Foundation
 /// the next prompt. The rollout records the failure, as a `task_complete`
 /// with an `error`. After Codex's `SessionStart`, the helper leaves one
 /// watcher per session that reads the rollout as it grows and, on that line,
-/// reports `LimpidTurnFailed` through the same hook runtime in the same
+/// reports `WeirTurnFailed` through the same hook runtime in the same
 /// environment as Codex's own hooks, so the run's record, its turn, and the
 /// notification follow as for a failure a hook reports. The report names the
 /// session and the time it observed (`CodexTurnFailureReport`), since the
@@ -32,18 +32,18 @@ enum CodexTurnFailureWatch {
         do {
             return try RustProviderBridge.processNames(provider: "codex")
         } catch {
-            logHookDiagnostic("Limpid hook helper: Codex's process names could not be read: \(error)")
+            logHookDiagnostic("Weir hook helper: Codex's process names could not be read: \(error)")
             return []
         }
     }
 
     /// Leaves a watcher for the rollout `payload` names, when it is Codex's
-    /// `SessionStart` in a Limpid run. Everything the watcher needs is taken
+    /// `SessionStart` in a Weir run. Everything the watcher needs is taken
     /// here, while Codex waits for this hook: its process, the session, and
     /// the size the rollout has before the session's first turn. A failure
     /// to start one costs only the detection.
     static func start(after payload: Data, environment: [String: String], helper: URL) {
-        guard environment["LIMPID_AGENT_RUN_ID"]?.isEmpty == false,
+        guard environment["WEIR_AGENT_RUN_ID"]?.isEmpty == false,
               let object = try? JSONSerialization.jsonObject(with: payload) as? [String: Any],
               object["hook_event_name"] as? String == "SessionStart",
               let rollout = object["transcript_path"] as? String,
@@ -60,7 +60,7 @@ enum CodexTurnFailureWatch {
         do {
             try process.run()
         } catch {
-            logHookDiagnostic("Limpid hook helper: the Codex failure watcher did not start: \(error)")
+            logHookDiagnostic("Weir hook helper: the Codex failure watcher did not start: \(error)")
         }
     }
 
@@ -70,7 +70,7 @@ enum CodexTurnFailureWatch {
     static func run(arguments: ArraySlice<String>, environment: [String: String]) {
         let arguments = Array(arguments)
         guard arguments.count == 4, let codex = pid_t(arguments[0]), let offset = UInt64(arguments[1]),
-              let runID = environment["LIMPID_AGENT_RUN_ID"], !runID.isEmpty
+              let runID = environment["WEIR_AGENT_RUN_ID"], !runID.isEmpty
         else { return }
         let session = arguments[2]
         let rollout = arguments[3]
@@ -105,7 +105,7 @@ enum CodexTurnFailureWatch {
     /// in the same run) finds the lock taken. Kept in the temporary
     /// directory, outside the record directories the projection reads.
     private static func claim(runID: String, rollout: String) -> Int32? {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("limpid-codex-failure-watch", isDirectory: true)
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("weir-codex-failure-watch", isDirectory: true)
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let name = "\(runID)-\(URL(fileURLWithPath: rollout).deletingPathExtension().lastPathComponent).lock"
         let descriptor = open(directory.appendingPathComponent(name).path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
@@ -123,9 +123,9 @@ enum CodexTurnFailureWatch {
 
     private static func report(_ payload: [String: Any], environment: [String: String]) {
         var environment = environment
-        // A call of its own, as every hook call is (`limpid-hook`), so the
+        // A call of its own, as every hook call is (`weir-hook`), so the
         // turn records apply it once.
-        environment["LIMPID_HOOK_INVOCATION_ID"] = UUID().uuidString
+        environment["WEIR_HOOK_INVOCATION_ID"] = UUID().uuidString
         do {
             _ = try RustProviderBridge.runHook(
                 provider: "codex",
@@ -134,13 +134,13 @@ enum CodexTurnFailureWatch {
                 environment: environment
             )
         } catch {
-            logHookDiagnostic("Limpid hook helper: the Codex failure was not reported: \(error)")
+            logHookDiagnostic("Weir hook helper: the Codex failure was not reported: \(error)")
         }
     }
 }
 
 /// The process tree above the hook. Under tmux the hook's environment names
-/// a tmux client rather than Codex (`LIMPID_CODEX_PID` is the shim's `$$`
+/// a tmux client rather than Codex (`WEIR_CODEX_PID` is the shim's `$$`
 /// outside the session), so Codex is found as the nearest ancestor by name,
 /// as the hook runtime finds an agent's process.
 enum ProcessAncestry {

@@ -1,0 +1,496 @@
+#!/bin/sh
+# Weir claude shim — intercepts `claude` invocations inside a Weir
+# pty so SessionStart / SessionEnd hooks fire into Weir via
+# `claude --settings <inline JSON>`. We never touch the user's
+# ~/.claude/settings.json; Claude Code merges --settings over the
+# settings files, so existing user hooks / permissions stay intact.
+# The flag itself does not compose, though: a second --settings
+# replaces the first rather than merging with it, so we fold a
+# user-supplied one into ours instead of letting either side lose.
+#
+# Bypass: set WEIR_DISABLE_CLAUDE_RESUME=1 to exec the real claude
+# directly with no --settings override.
+#
+# Locate the real claude: WEIR_REAL_CLAUDE (an explicit override, a
+# test's stub), then the PATH without our own directory, then
+# WEIR_FOUND_CLAUDE (the one the new workspace sheet found), then the
+# agent catalog's known locations.
+
+set -u
+
+self="$(command -v -- "$0" 2>/dev/null || printf '%s\n' "$0")"
+case "$self" in
+  /*) ;;
+  *) self="$PWD/$self" ;;
+esac
+self_dir="$(cd -- "$(dirname -- "$self")" && pwd -P)"
+runtime_common="$self_dir/../agent-shim/runtime-common.sh"
+if [ -r "$runtime_common" ]; then
+  . "$runtime_common"
+  weir_ensure_run_id
+fi
+# A person's own `--settings`, moved here by the shim that started an
+# enclosing claude, belongs to that one: this launch sets its own below.
+unset WEIR_CLAUDE_USER_SETTINGS
+
+# Claude Code resolves a relative `CLAUDE_CONFIG_DIR` against the directory
+# it starts in, and so does the status line relay, which reads the person's
+# settings there. A tmux session starts in a directory of its own, so the
+# value is made absolute here: it names the same directory to Claude, to
+# the relay, and to a hosted session.
+case "${CLAUDE_CONFIG_DIR:-}" in
+  "" | /*) ;;
+  *)
+    CLAUDE_CONFIG_DIR="$PWD/$CLAUDE_CONFIG_DIR"
+    export CLAUDE_CONFIG_DIR
+    ;;
+esac
+
+# The user's own arguments, before we add any: whether this launch takes
+# the first instruction (`weir_take_initial_prompt`). One-shot and
+# resume flags, the flags that start no session here, and the subcommands
+# of `claude --help` keep it; a hidden or new subcommand keeps it by the
+# shape rule when it comes first.
+weir_prompt_allowed=0
+if command -v weir_prompt_allowed_for >/dev/null 2>&1 &&
+  weir_prompt_allowed_for "-p --print --version -v -V -h --help --bg --background -r --resume -c --continue --from-pr --teleport --init-only --cloud --remote --desktop --environment --sdk-url agents attach auth auto-mode doctor gateway import install logs mcp plugin plugins purge respawn rm setup-token stop kill ultrareview update upgrade" "$@"; then
+  weir_prompt_allowed=1
+fi
+
+# Rebuild PATH with our own dir filtered out so command -v finds the
+# real claude. POSIX-only — no awk dependency, just IFS splitting.
+filtered_path=""
+old_ifs="$IFS"
+IFS=":"
+for entry in $PATH; do
+  [ "$entry" = "$self_dir" ] && continue
+  if [ -z "$filtered_path" ]; then
+    filtered_path="$entry"
+  else
+    filtered_path="$filtered_path:$entry"
+  fi
+done
+IFS="$old_ifs"
+
+# What the new workspace sheet found Claude as, staged for the pane it
+# started (`WorkspaceSession.StagedLaunch`). Read once and taken out of the
+# environment, so neither the agent nor a tmux server it starts carries
+# it on; the pane's shell keeps its copy, a fallback below its own PATH.
+found_claude="${WEIR_FOUND_CLAUDE:-}"
+unset WEIR_FOUND_CLAUDE
+
+real_claude="${WEIR_REAL_CLAUDE:-}"
+# Whether the lookup below, rather than the PATH or the override, found it:
+# its folder is then off the PATH (`weir_add_agent_folder`).
+found_off_path=0
+if [ -z "$real_claude" ]; then
+  real_claude=$(PATH="$filtered_path" command -v claude 2>/dev/null || true)
+fi
+# Only when this pane's PATH has none: a `.nvmrc`, a mise pin or direnv
+# chooses the CLI by folder, and the sheet's came from a pane of this project's
+# folder or the login shell. What it found closes the case where no PATH
+# here has the agent at all; one gone since is passed over.
+if [ -z "$real_claude" ] && [ -n "$found_claude" ] && [ -f "$found_claude" ] && [ -x "$found_claude" ]; then
+  real_claude="$found_claude"
+  found_off_path=1
+fi
+# Then where the new workspace sheet looked before it offered Claude, in
+# its order. Weir hands every pane the catalog's list rather than this
+# script keeping a copy, so an agent the sheet offers is one this finds.
+if [ -z "$real_claude" ] && command -v weir_find_known_agent >/dev/null 2>&1 &&
+  weir_find_known_agent "${WEIR_CLAUDE_KNOWN_LOCATIONS:-}" "$self"; then
+  real_claude="$weir_known_agent"
+  found_off_path=1
+fi
+
+if [ -z "$real_claude" ]; then
+  printf 'weir: claude not found in PATH or the usual install folders (searched without %s)\n' "$self_dir" >&2
+  exit 127
+fi
+
+# Set when Claude is a script for the node beside it, found off the PATH
+# (`weir_add_agent_folder`).
+claude_node=""
+if [ "$found_off_path" = 1 ] && command -v weir_add_agent_folder >/dev/null 2>&1 &&
+  weir_add_agent_folder "$real_claude"; then
+  claude_node="$weir_agent_node"
+fi
+
+# ----- Optional tmux hosting (Settings > Advanced > tmux) -----
+# Weir sets `WEIR_AGENT_TMUX` to the tmux it located, and only when
+# the user asked for this, so the variable carries both the opt-in and
+# the binary and there is nothing to search for here.
+#
+# The session goes on a server of our own, because the options we set
+# are server-wide and not ours to set on a server the user also uses.
+# `escape-time` guards the Esc that interrupts a turn on a tmux old
+# enough to still default it high — 3.6a already uses 10, measured — and
+# the terminal overrides are what keep the agent's colors.
+# `WEIR_AGENT_TMUX_SOCKET` is namespaced per build for the same
+# reason, and because a session created on a server that already exists
+# inherits that server's environment for everything outside tmux's
+# `update-environment`: a Dev agent on a Release server would write its
+# records into the Release directories. `-f /dev/null` completes the
+# separation — `-L` picks the socket but the user's `~/.tmux.conf` is
+# still read otherwise, which would bring their hooks and plugins onto
+# our server.
+
+# The first arguments that begin an interactive session. Everything else
+# runs directly.
+interactive_first_args="-r --resume -c --continue"
+# Non-interactive wherever they appear.
+one_shot_flags="--version -v -V --help -h -p --print --bg --background"
+# Passed through explicitly rather than left to inheritance, for the
+# reason above. `PATH` among them: the pane's, which a mise, direnv or
+# `.nvmrc` folder changes and the agent's folder may have joined, where
+# the server's is the first pane's that started it. `CLAUDE_CONFIG_DIR`
+# too: the session's Claude and its status line relay read the settings of
+# the pane's account, not the server's.
+hosted_env_names="WEIR_PANE_ID WEIR_SESSIONS_DIR WEIR_AGENT_STATES_DIR WEIR_CWD_EVENTS_DIR WEIR_USAGE_DIR WEIR_CLAUDE_USER_SETTINGS WEIR_AGENT_RUN_ID WEIR_AGENT_PARENT_RUN_ID WEIR_AGENT_LAUNCH_ORDER WEIR_AGENT_TMUX_HOST_MODE WEIR_AGENT_TMUX PATH CLAUDE_CONFIG_DIR"
+
+hosts_in_tmux=0
+# Decided against the user's own arguments, before we add any of ours
+# (`weir_should_host_in_tmux`). Without the shared helpers there is no
+# hosting: the agent runs as it would with the setting off.
+if command -v weir_should_host_in_tmux >/dev/null 2>&1 &&
+  weir_should_host_in_tmux "$interactive_first_args" "$one_shot_flags" "$@"; then
+  hosts_in_tmux=1
+fi
+if [ "$hosts_in_tmux" = 1 ]; then
+  WEIR_AGENT_TMUX_HOST_MODE="weirHosted"
+elif [ -n "${TMUX:-}" ]; then
+  WEIR_AGENT_TMUX_HOST_MODE="manual"
+fi
+export WEIR_AGENT_TMUX_HOST_MODE
+
+# Hand off to the real agent, inside a tmux session of its own when the
+# user asked for that. Every exit from this script goes through here.
+exec_agent() {
+  # The first instruction goes last, after `--`, as one argument whatever
+  # it holds: quotes and `$(...)` reach the agent as typed. A reader in
+  # front of the agent passes it, inside tmux as outside
+  # (`weir_prompt_reader`).
+  if command -v weir_take_initial_prompt >/dev/null 2>&1 && weir_take_initial_prompt; then
+    set -- /bin/sh -c "$weir_prompt_reader" weir-prompt "$weir_initial_prompt_file" 1 "$@"
+  fi
+  [ "$hosts_in_tmux" = 1 ] || exec "$@"
+  # Unique per invocation. `-A` is deliberately absent: with the name
+  # already taken it attaches and silently drops the command, handing
+  # back the running agent instead of starting the one that was asked
+  # for.
+  ea_session="weir-$(printf '%s' "$WEIR_PANE_ID" | tr -cd 'A-Za-z0-9' | cut -c1-8)-$$"
+  # The agent command is in "$@" and the tmux command line has to come
+  # before it. We append the tmux side after it and then rotate the
+  # agent command to the end, which is how a list whose values may hold
+  # spaces is built in POSIX sh.
+  ea_count=$#
+  set -- "$@" -L "${WEIR_AGENT_TMUX_SOCKET:-weir}" -f /dev/null \
+    set -s escape-time 10 ";" \
+    set -s default-terminal tmux-256color ";" \
+    set -sa terminal-overrides ",*:RGB" ";" \
+    set -g prefix None ";" \
+    new-session -s "$ea_session"
+  # A variable set to empty is passed on empty: a session on a server that
+  # already runs takes every variable not given here from the server's
+  # environment, and a demo pane empties the record directories precisely
+  # so the agent writes no records into another build's.
+  # One this pane does not set is unset in the session, for the same
+  # reason: left out, the session would take the server's value, which
+  # is the pane's that started the server (another pane's home, another
+  # run's id). tmux's `-e` only sets (`NAME=value`), so `/usr/bin/env -u`
+  # takes it out as the agent starts.
+  ea_unset=""
+  for ea_name in $hosted_env_names; do
+    eval "ea_is_set=\${$ea_name+set}"
+    if [ -z "$ea_is_set" ]; then
+      ea_unset="$ea_unset $ea_name"
+      continue
+    fi
+    eval "ea_value=\${$ea_name}"
+    set -- "$@" -e "$ea_name=$ea_value"
+  done
+  # `/usr/bin/env` guarantees more than one argument after the options,
+  # which is what makes tmux exec our argv directly rather than passing
+  # a single string to `sh -c` — so nothing here needs quoting.
+  set -- "$@" /usr/bin/env
+  for ea_name in $ea_unset; do
+    set -- "$@" -u "$ea_name"
+  done
+  while [ "$ea_count" -gt 0 ]; do
+    ea_arg="$1"
+    shift
+    set -- "$@" "$ea_arg"
+    ea_count=$((ea_count - 1))
+  done
+  exec "$WEIR_AGENT_TMUX" "$@"
+}
+
+# The real claude with the given arguments, on the node beside it when the
+# lookup found one: the same process the `#!/usr/bin/env node` line would
+# start, but on the version it was installed with rather than whichever
+# node the PATH has first.
+exec_claude() {
+  [ -z "$claude_node" ] || exec_agent "$claude_node" "$real_claude" "$@"
+  exec_agent "$real_claude" "$@"
+}
+
+if [ "${WEIR_DISABLE_CLAUDE_RESUME:-0}" = "1" ]; then
+  exec_claude "$@"
+fi
+
+hook="$self_dir/weir-hook"
+if [ ! -x "$hook" ]; then
+  # If the hook is missing for any reason just exec the real claude —
+  # never break the user's claude session because of shim breakage.
+  exec_claude "$@"
+fi
+
+# Worktree-routing hook is an optional companion: when present we wire
+# a second `PreToolUse` matcher so Claude's `git worktree add`
+# invocations land in the active Project's placement / bootstrap
+# rules. When absent we leave the placeholder unresolved — Claude
+# Code logs a "command not found" for that hook but the rest of the
+# session keeps working.
+wt_pretool_hook="$self_dir/weir-pretool-worktree-hook"
+approval_helper="$self_dir/../../MacOS/AgentIntegrationHookHelper"
+
+# Claude Code passes each `command` field to `sh -c` and any space in
+# the path turns into argv tokens — even JSON quoting / single-quote
+# wrapping inside the field gets stripped before exec. Our shim path
+# typically contains `Weir Dev.app` or `Weir.app`, so we side-
+# step the issue by exposing the hooks under a no-space TMPDIR
+# symlink. Re-created on every invocation; cheap and idempotent. The app
+# identity keeps concurrently installed Dev and Release builds from changing
+# the live target underneath each other's sessions.
+hook_namespace="${WEIR_CLAUDE_HOOK_NAMESPACE:-default}"
+case "$hook_namespace" in
+  '' | *[!A-Za-z0-9._-]*) hook_namespace="default" ;;
+esac
+[ "${#hook_namespace}" -le 128 ] || hook_namespace="default"
+#
+# The links live in the user's own temporary folder: TMPDIR, or the one
+# macOS gives each user when TMPDIR is not set (an ssh login, a tmux server
+# started with a stripped environment), never a shared /tmp. Another user
+# who made the folder first, or put a link in its place, would otherwise
+# choose the programs Claude runs as hooks. A folder that is a link or not
+# ours is not used, and the hooks keep their own paths.
+link_base="${TMPDIR:-}"
+[ -n "$link_base" ] || link_base="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)"
+link_base="${link_base%/}"
+link_dir=""
+if [ -n "$link_base" ]; then
+  link_dir="$link_base/weir-claude-shim-$hook_namespace"
+  mkdir -m 700 "$link_dir" 2>/dev/null
+  if [ -L "$link_dir" ] || [ ! -d "$link_dir" ] || [ ! -O "$link_dir" ] || ! chmod 700 "$link_dir" 2>/dev/null; then
+    link_dir=""
+  fi
+fi
+
+# Fall back to the original path if symlink creation failed; better
+# to fire a busted hook (and log a stderr message) than to silently
+# drop SessionStart records.
+hook_link="$hook"
+if [ -n "$link_dir" ]; then
+  hook_link="$link_dir/weir-hook"
+  ln -sf "$hook" "$hook_link" 2>/dev/null
+  [ -L "$hook_link" ] || hook_link="$hook"
+fi
+
+wt_pretool_hook_link="$wt_pretool_hook"
+if [ -n "$link_dir" ] && [ -x "$wt_pretool_hook" ]; then
+  wt_pretool_hook_link="$link_dir/weir-pretool-worktree-hook"
+  ln -sf "$wt_pretool_hook" "$wt_pretool_hook_link" 2>/dev/null
+  [ -L "$wt_pretool_hook_link" ] || wt_pretool_hook_link="$wt_pretool_hook"
+fi
+
+if [ -x "$approval_helper" ]; then
+  approval_helper_link="$approval_helper"
+  if [ -n "$link_dir" ]; then
+    approval_helper_link="$link_dir/AgentIntegrationHookHelper"
+    ln -sf "$approval_helper" "$approval_helper_link" 2>/dev/null
+    [ -L "$approval_helper_link" ] || approval_helper_link="$approval_helper"
+  fi
+else
+  # An unavailable helper must leave Claude's native permission prompt in
+  # charge, so point the optional hook at a command that produces no output.
+  approval_helper_link="/usr/bin/true"
+fi
+
+# Load hook definitions from the bundled JSON template and substitute
+# the placeholders with the symlinked hook paths. Keeping the JSON in
+# its own file means adding a new hook event is a plain JSON edit, not
+# a shell-escape job inside this script.
+# WEIR_CLAUDE_SETTINGS_TEMPLATE exists for the test suites, which run this
+# script from the source tree where no bundle surrounds it. The template is
+# owned by the provider crate and copied in beside this script at build time.
+template="${WEIR_CLAUDE_SETTINGS_TEMPLATE:-$self_dir/settings.template.json}"
+if [ ! -f "$template" ]; then
+  # Same defensive fall-through as a missing hook script: better to
+  # launch a usable claude than to refuse to start because our
+  # bundled template went missing.
+  exec_claude "$@"
+fi
+# `sed`'s replacement uses `|` as delimiter so the (path-typed) hook
+# arguments don't need escaping.
+settings_json=$(sed \
+  -e "s|@@HOOK@@|$hook_link|g" \
+  -e "s|@@WORKTREE_PRETOOL_HOOK@@|$wt_pretool_hook_link|g" \
+  -e "s|@@APPROVAL_HELPER@@|$approval_helper_link|g" \
+  "$template")
+
+# Expose our own pid as `WEIR_CLAUDE_PID` so the hook can stamp the
+# state.json. Weir uses this for the 30-second PID sweep that
+# clears stale state when Claude crashes without firing Stop.
+# `$$` here is the shim shell's pid; after exec it becomes the real
+# claude process's pid, which is exactly what the hook is run under —
+# unless the handoff goes through tmux, where it becomes the tmux
+# client's instead. The receiver drops the value inside tmux and walks
+# for the agent rather than trusting it.
+export WEIR_CLAUDE_PID="$$"
+
+# We leave CLAUDE_CODE_DISABLE_TERMINAL_TITLE as the person set it. Set, it
+# also stops Claude Code from reporting its status over OSC 7501, which is how
+# a "No" at its own prompt reaches the projection. The titles Claude writes
+# while it reports are left off the tab by the app instead
+# (`PaneProgramStatusStore`), so Rust stays the one automatic title writer.
+
+# Whether a `--settings` value is inline JSON rather than the path of a
+# file. Claude Code tries the value as JSON first, and JSON may start with
+# blanks or a newline, so the first character past them decides.
+is_inline_settings() {
+  [ "$(printf '%s' "$1" | tr -d ' \t\r\n' | cut -c1)" = "{" ]
+}
+
+# Merge our settings with a user-supplied `--settings`, echoing the result.
+# Echoes nothing when either side can't be read, which the caller treats as
+# "leave their invocation alone". Their value may be inline JSON or a path,
+# so we disambiguate the way Claude Code does: parse as JSON, else read it
+# as a file. The merge itself is JavaScript because the two objects have to
+# be combined per hook event, which `plutil` cannot express; `osascript`
+# ships with macOS, and this path only runs when a `--settings` is present.
+merge_settings() {
+  ms_ours="$link_dir/merge-$$-ours.json"
+  ms_theirs="$link_dir/merge-$$-theirs.json"
+  ms_result=""
+  # Single guarded block rather than early returns, so the two scratch
+  # files are removed on every path out of here instead of by the caller.
+  if printf '%s' "$1" > "$ms_ours" 2>/dev/null &&
+    { if is_inline_settings "$2"; then
+      printf '%s' "$2" > "$ms_theirs" 2>/dev/null
+    else
+      cat -- "$2" > "$ms_theirs" 2>/dev/null
+    fi; }
+  then
+    ms_result=$(osascript -l JavaScript -e '
+ObjC.import("Foundation");
+function rd(p) {
+  return ObjC.unwrap($.NSString.stringWithContentsOfFileEncodingError(
+    p, $.NSUTF8StringEncoding, null));
+}
+var ours = JSON.parse(rd("'"$ms_ours"'"));
+var theirs = JSON.parse(rd("'"$ms_theirs"'"));
+var out = {};
+// Their keys win: an explicit choice of theirs outranks our default.
+for (var k in theirs) out[k] = theirs[k];
+for (var k in ours) if (!(k in out)) out[k] = ours[k];
+// Hooks are the exception — both sets have to run, so the per-event
+// arrays concatenate with theirs first.
+var merged = {}, th = theirs.hooks || {}, oh = ours.hooks || {};
+for (var k in th) merged[k] = th[k];
+for (var k in oh) merged[k] = (th[k] || []).concat(oh[k]);
+out.hooks = merged;
+JSON.stringify(out);' 2>/dev/null)
+  fi
+  rm -f "$ms_ours" "$ms_theirs" 2>/dev/null
+  [ -n "$ms_result" ] && printf '%s' "$ms_result"
+}
+
+# `--settings` is last-wins rather than additive, and ours is passed first,
+# so a user-supplied one silently took every Weir hook with it. Detect
+# theirs and fold it into ours instead.
+user_settings=""
+have_user_settings=0
+expect_settings_value=0
+for arg in "$@"; do
+  if [ "$expect_settings_value" = 1 ]; then
+    user_settings="$arg"
+    have_user_settings=1
+    expect_settings_value=0
+    continue
+  fi
+  case "$arg" in
+    --settings) expect_settings_value=1 ;;
+    --settings=*)
+      user_settings="${arg#--settings=}"
+      have_user_settings=1
+      ;;
+  esac
+done
+
+if [ "$have_user_settings" = 1 ]; then
+  merged_settings="$(merge_settings "$settings_json" "$user_settings" || true)"
+  if [ -z "$merged_settings" ]; then
+    # Unreadable or malformed. Launching their claude with their own
+    # settings beats replacing them with ours, so we stay out of the way.
+    exec_claude "$@"
+  fi
+  settings_json="$merged_settings"
+  # The status line relay below takes their `statusLine` slot, so it has
+  # to find theirs where Claude Code would: in this value. A relative path
+  # is made absolute here, for the reason `CLAUDE_CONFIG_DIR` is above.
+  if is_inline_settings "$user_settings"; then
+    WEIR_CLAUDE_USER_SETTINGS="$user_settings"
+  else
+    case "$user_settings" in
+      /*) WEIR_CLAUDE_USER_SETTINGS="$user_settings" ;;
+      *) WEIR_CLAUDE_USER_SETTINGS="$PWD/$user_settings" ;;
+    esac
+  fi
+  export WEIR_CLAUDE_USER_SETTINGS
+  # Drop their flag now that ours carries it; a second one would win.
+  arg_count=$#
+  arg_index=0
+  skip_next=0
+  while [ "$arg_index" -lt "$arg_count" ]; do
+    arg="$1"
+    shift
+    arg_index=$((arg_index + 1))
+    if [ "$skip_next" = 1 ]; then
+      skip_next=0
+      continue
+    fi
+    case "$arg" in
+      --settings)
+        skip_next=1
+        continue
+        ;;
+      --settings=*) continue ;;
+    esac
+    set -- "$@" "$arg"
+  done
+fi
+
+# ----- Status line relay -----
+# Claude Code hands its status line the plan's usage, and that is the one
+# place it gives it out, so when the person has a status line the helper
+# takes its slot: it keeps the usage and then runs theirs in its place, with
+# their options (`padding`) carried over. Without one the slot stays empty,
+# since Claude Code keeps a row even for a status line that prints nothing.
+# The helper writes the setting into the settings document; anything short
+# of a complete answer leaves the document as it was. The command runs under
+# `sh -c`, so a helper reachable only by a path with a space in it is not
+# offered as one. The arguments after the helper are pinned in
+# rust/fixtures/contract/shared-values.json: the Rust side knows its own
+# relay by them and never runs it as the person's.
+if [ -x "$approval_helper" ]; then
+  case "$approval_helper_link" in
+    *' '*) ;;
+    *)
+      with_status_line=$(printf '%s' "$settings_json" |
+        "$approval_helper" statusline claude settings "$approval_helper_link statusline claude" 2>/dev/null) &&
+        [ -n "$with_status_line" ] && settings_json="$with_status_line"
+      ;;
+  esac
+fi
+
+exec_claude --settings "$settings_json" "$@"

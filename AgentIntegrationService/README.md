@@ -7,23 +7,23 @@ before it accepts a connection, then creates a Rust session with a host-selected
 principal.
 
 Signed Debug and Release builds reconcile their own services on launch. In
-Debug, `LIMPID_AGENT_SERVICE_CONTROL` replaces automatic reconciliation with a
+Debug, `WEIR_AGENT_SERVICE_CONTROL` replaces automatic reconciliation with a
 single command, for iterating on the bundled executable:
 
 ```bash
-LIMPID_AGENT_SERVICE_CONTROL=register make dev
-LIMPID_AGENT_SERVICE_CONTROL=status make dev
-LIMPID_AGENT_SERVICE_CONTROL=refresh make dev
-LIMPID_AGENT_SERVICE_CONTROL=unregister make dev
+WEIR_AGENT_SERVICE_CONTROL=register make dev
+WEIR_AGENT_SERVICE_CONTROL=status make dev
+WEIR_AGENT_SERVICE_CONTROL=refresh make dev
+WEIR_AGENT_SERVICE_CONTROL=unregister make dev
 ```
 
 Ad-hoc signed builds cannot become ready because they have no Team ID for the
-peer requirements. Limpid then shows no alert and leaves the providers on
+peer requirements. Weir then shows no alert and leaves the providers on
 their native prompts. `make build` signs Debug with a Team ID when
-`LIMPID_DEVELOPMENT_TEAM` is set (see `CONTRIBUTING.md`). Debug and Release use
+`WEIR_DEVELOPMENT_TEAM` is set (see `CONTRIBUTING.md`). Debug and Release use
 distinct LaunchAgent labels, Mach service names, bundle identifiers, property
 lists, markers, and Application Support directories. Development cleanup must
-target only `dev.limpid.agent-integration-service.dev`.
+target only `com.nekoder.weir.agent-integration-service.dev`.
 
 The signed Hook Helper is embedded in the application's `Contents/MacOS`
 directory and is the only requester accepted by the Release configuration. In
@@ -49,7 +49,7 @@ helper delegates a Codex permission decision, it writes that request's
 lifecycle record itself.
 
 The lifecycle and worktree hooks run in the same helper
-(`hook <provider> [worktree]`, exec'd by the bundled `limpid-hook` wrappers).
+(`hook <provider> [worktree]`, exec'd by the bundled `weir-hook` wrappers).
 The helper is the only receiver of hook events, and those hooks do not need
 the service.
 
@@ -81,6 +81,6 @@ Moving an unchanged app keeps the service, because absolute bundle paths are
 not part of its identity. Running separate production copies at the same time
 is unsupported, because they share one production LaunchAgent registration.
 
-Production cleanup must target only `dev.limpid.agent-integration-service` with
+Production cleanup must target only `com.nekoder.weir.agent-integration-service` with
 the signed disposable app that registered it. Never use a global background-item
-reset for Limpid cleanup.
+reset for Weir cleanup.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prints the LIMPID_CODEX_HOOK_ARGS value the app would hand a pane.
+"""Prints the WEIR_CODEX_HOOK_ARGS value the app would hand a pane.
 
 Usage: scripts/codex-hook-args.py <codex-shim-directory>
 
@@ -61,8 +61,8 @@ def main(argv):
         print(__doc__, file=sys.stderr)
         return 2
     shim_dir = argv[1]
-    lifecycle = "/bin/sh " + shell_quoted(os.path.join(shim_dir, "limpid-hook"))
-    worktree_script = os.path.join(shim_dir, "limpid-pretool-worktree-hook")
+    lifecycle = "/bin/sh " + shell_quoted(os.path.join(shim_dir, "weir-hook"))
+    worktree_script = os.path.join(shim_dir, "weir-pretool-worktree-hook")
     worktree = "/bin/sh " + shell_quoted(worktree_script) if os.path.exists(worktree_script) else None
     helper = os.path.join(shim_dir, "..", "..", "MacOS", "AgentIntegrationHookHelper")
     approval = shell_quoted(helper) + " permission-request codex" if os.access(helper, os.X_OK) else None

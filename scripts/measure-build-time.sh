@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Measures the Debug build time of Limpid so the cost of growing the Rust
+# Measures the Debug build time of Weir so the cost of growing the Rust
 # workspace can be compared against a recorded baseline.
 #
 # Reported figures:
@@ -13,8 +13,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-touched_file="Limpid/Core/Logging/LimpidLogger.swift"
-runs="${LIMPID_MEASURE_RUNS:-3}"
+touched_file="Weir/Core/Logging/WeirLogger.swift"
+runs="${WEIR_MEASURE_RUNS:-3}"
 # Filled by `timed` through `printf -v`.
 elapsed=""
 cargo_cold=""
@@ -61,8 +61,8 @@ done
 cargo_target="$(mktemp -d)"
 trap 'rm -rf "$cargo_target"' EXIT
 export CARGO_TARGET_DIR="$cargo_target"
-timed cargo_cold cargo build --locked --package limpid-rust-bridge --target aarch64-apple-darwin
-timed cargo_noop cargo build --locked --package limpid-rust-bridge --target aarch64-apple-darwin
+timed cargo_cold cargo build --locked --package weir-rust-bridge --target aarch64-apple-darwin
+timed cargo_noop cargo build --locked --package weir-rust-bridge --target aarch64-apple-darwin
 
 echo "runs: $runs"
 echo "clean (s):        ${clean_times[*]} -> median $(median "${clean_times[@]}")"

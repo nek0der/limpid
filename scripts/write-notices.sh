@@ -5,7 +5,7 @@
 # Usage: write-notices.sh <output>
 #
 # The Xcode build calls this after the Rust bridge is built, so the crates it
-# names are already in Cargo's registry and LIMPID_NOTICES_OFFLINE=1 keeps it
+# names are already in Cargo's registry and WEIR_NOTICES_OFFLINE=1 keeps it
 # off the network. Without that variable Cargo may download what is missing.
 set -euo pipefail
 
@@ -27,7 +27,7 @@ export PATH="$cargo_directory:$PATH"
 metadata_arguments=(metadata --format-version 1 --locked
   --manifest-path "$repo_root/Cargo.toml"
   --filter-platform aarch64-apple-darwin)
-if [[ "${LIMPID_NOTICES_OFFLINE:-0}" == 1 ]]; then
+if [[ "${WEIR_NOTICES_OFFLINE:-0}" == 1 ]]; then
   metadata_arguments+=(--offline)
 fi
 

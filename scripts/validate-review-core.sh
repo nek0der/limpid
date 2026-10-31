@@ -16,20 +16,20 @@ cd "$(dirname "$0")/.."
 review_output="$PWD/build/review-validation"
 mkdir -p "$review_output/modules"
 swiftc -Xfrontend -disable-sandbox -emit-module -emit-library \
-    -module-name Limpid -enable-testing -swift-version 6 \
+    -module-name Weir -enable-testing -swift-version 6 \
     -enable-upcoming-feature ExistentialAny \
     -module-cache-path "$review_output/modules" \
-    Limpid/Core/Review/ReviewTerminalProbe.swift \
-    Limpid/Core/Process/ProcessNames.swift Limpid/Core/Process/ProcessLiveness.swift \
-    Limpid/Core/Tmux/TmuxBinding.swift Limpid/Core/Tmux/TmuxClientProbe.swift \
-    Limpid/Core/Tmux/TmuxTopology.swift \
-    Limpid/Core/Tmux/TmuxSocketPath.swift \
-    Limpid/Core/Tmux/TmuxCommand.swift Limpid/Core/Git/ProcessDrain.swift \
-    Limpid/Core/Logging/LimpidLogger.swift \
-    -o "$review_output/libLimpid.dylib"
+    Weir/Core/Review/ReviewTerminalProbe.swift \
+    Weir/Core/Process/ProcessNames.swift Weir/Core/Process/ProcessLiveness.swift \
+    Weir/Core/Tmux/TmuxBinding.swift Weir/Core/Tmux/TmuxClientProbe.swift \
+    Weir/Core/Tmux/TmuxTopology.swift \
+    Weir/Core/Tmux/TmuxSocketPath.swift \
+    Weir/Core/Tmux/TmuxCommand.swift Weir/Core/Git/ProcessDrain.swift \
+    Weir/Core/Logging/WeirLogger.swift \
+    -o "$review_output/libWeir.dylib"
 cat > "$review_output/RunScenarios.swift" <<'SWIFT'
 import Foundation
-@testable import Limpid
+@testable import Weir
 @main struct RunScenarios {
     static func main() throws {
         try ReviewProbeScenarios.foreground()
@@ -40,8 +40,8 @@ import Foundation
 SWIFT
 swiftc -swift-version 6 -enable-upcoming-feature ExistentialAny \
     -module-cache-path "$review_output/modules" \
-    -I "$review_output" -L "$review_output" -lLimpid -Xlinker -rpath -Xlinker "$review_output" \
-    LimpidTests/Support/ReviewValidationFailure.swift \
-    LimpidTests/Support/ReviewProbeScenarios.swift LimpidTests/Support/TestProcess.swift \
+    -I "$review_output" -L "$review_output" -lWeir -Xlinker -rpath -Xlinker "$review_output" \
+    WeirTests/Support/ReviewValidationFailure.swift \
+    WeirTests/Support/ReviewProbeScenarios.swift WeirTests/Support/TestProcess.swift \
     "$review_output/RunScenarios.swift" -o "$review_output/run"
 "$review_output/run" | tee "$review_output/scenarios.log"

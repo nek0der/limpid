@@ -1,5 +1,5 @@
 // AgentIntegrationProbeWire.swift
-// Limpid — development probe messages for the Rust-owned approval protocol.
+// Weir — development probe messages for the Rust-owned approval protocol.
 
 import Foundation
 
@@ -10,7 +10,7 @@ enum AgentIntegrationProbeWire {
             "version": 1,
             "message_id": messageID.uuidString,
             "type": "hello",
-            "body": ["client_version": "limpid-development-probe"]
+            "body": ["client_version": "weir-development-probe"]
         ]), messageID)
     }
 

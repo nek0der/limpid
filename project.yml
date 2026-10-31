@@ -1,6 +1,6 @@
-name: Limpid
+name: Weir
 options:
-  bundleIdPrefix: dev.limpid
+  bundleIdPrefix: com.nekoder.weir
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true
@@ -36,7 +36,7 @@ settings:
     MARKETING_VERSION: "0.1.13" # x-release-please-version
     CURRENT_PROJECT_VERSION: "0.1.13" # x-release-please-version
     # Debug uses ad-hoc signing for fast local iteration; `make build`
-    # signs it with a Team ID when LIMPID_DEVELOPMENT_TEAM is set.
+    # signs it with a Team ID when WEIR_DEVELOPMENT_TEAM is set.
     # Release is signed with the Developer ID Application certificate
     # so the distributable .app can be notarized.
     CODE_SIGN_STYLE: Manual
@@ -45,11 +45,11 @@ settings:
     ARCHS: arm64
     ONLY_ACTIVE_ARCH: YES
     GENERATE_INFOPLIST_FILE: YES
-    # Any target importing Limpid's Swift module must also resolve the Clang
-    # module recorded by the Rust bridge wrapper, including LimpidTests.
+    # Any target importing Weir's Swift module must also resolve the Clang
+    # module recorded by the Rust bridge wrapper, including WeirTests.
     SWIFT_INCLUDE_PATHS:
       - $(inherited)
-      - $(SRCROOT)/rust/limpid-rust-bridge/include
+      - $(SRCROOT)/rust/weir-rust-bridge/include
     OTHER_LDFLAGS:
       - -framework Carbon
       - -framework Metal
@@ -80,30 +80,30 @@ targets:
       - path: AgentIntegrationService/Shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationService
+        PRODUCT_BUNDLE_IDENTIFIER: com.nekoder.weir.AgentIntegrationService
         PRODUCT_NAME: AgentIntegrationService
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_DEBUG_DYLIB: NO
         # Command-line tools default to INSTALL_PATH=/usr/local/bin, so an
-        # archive of the Limpid scheme would also install this product under
+        # archive of the Weir scheme would also install this product under
         # Products/usr/local/bin. Xcode then treats the archive as generic and
         # exportArchive rejects every distribution method, including
-        # developer-id. The tool is only ever embedded into Limpid.app, so it
+        # developer-id. The tool is only ever embedded into Weir.app, so it
         # must not be installed on its own.
         SKIP_INSTALL: YES
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         LIBRARY_SEARCH_PATHS:
           - $(inherited)
-          - $(DERIVED_FILE_DIR)/limpid-rust
+          - $(DERIVED_FILE_DIR)/weir-rust
         OTHER_LDFLAGS:
           - $(inherited)
-          - -llimpid_rust_bridge
+          - -lweir_rust_bridge
       configs:
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationService.dev
-          OTHER_CODE_SIGN_FLAGS: "--identifier dev.limpid.AgentIntegrationService.dev"
+          PRODUCT_BUNDLE_IDENTIFIER: com.nekoder.weir.AgentIntegrationService.dev
+          OTHER_CODE_SIGN_FLAGS: "--identifier com.nekoder.weir.AgentIntegrationService.dev"
         Release:
-          OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier dev.limpid.AgentIntegrationService"
+          OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier com.nekoder.weir.AgentIntegrationService"
     dependencies:
       - sdk: Security.framework
     preBuildScripts:
@@ -121,7 +121,7 @@ targets:
           - $(SRCROOT)/rust-toolchain.toml
           - $(SRCROOT)/scripts/build-rust-bridge.sh
         outputFiles:
-          - $(DERIVED_FILE_DIR)/limpid-rust/liblimpid_rust_bridge.a
+          - $(DERIVED_FILE_DIR)/weir-rust/libweir_rust_bridge.a
 
   AgentIntegrationRequesterProbe:
     type: tool
@@ -131,7 +131,7 @@ targets:
       - path: AgentIntegrationService/Shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationRequesterProbe
+        PRODUCT_BUNDLE_IDENTIFIER: com.nekoder.weir.AgentIntegrationRequesterProbe
         PRODUCT_NAME: AgentIntegrationRequesterProbe
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_DEBUG_DYLIB: NO
@@ -139,10 +139,10 @@ targets:
         SKIP_INSTALL: YES
       configs:
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationRequesterProbe.dev
-          OTHER_CODE_SIGN_FLAGS: "--identifier dev.limpid.AgentIntegrationRequesterProbe.dev"
+          PRODUCT_BUNDLE_IDENTIFIER: com.nekoder.weir.AgentIntegrationRequesterProbe.dev
+          OTHER_CODE_SIGN_FLAGS: "--identifier com.nekoder.weir.AgentIntegrationRequesterProbe.dev"
         Release:
-          OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier dev.limpid.AgentIntegrationRequesterProbe"
+          OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier com.nekoder.weir.AgentIntegrationRequesterProbe"
     dependencies:
       - sdk: Security.framework
 
@@ -155,7 +155,7 @@ targets:
       - path: AgentIntegrationService/ProviderBridge
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationHookHelper
+        PRODUCT_BUNDLE_IDENTIFIER: com.nekoder.weir.AgentIntegrationHookHelper
         PRODUCT_NAME: AgentIntegrationHookHelper
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_DEBUG_DYLIB: NO
@@ -166,16 +166,16 @@ targets:
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         LIBRARY_SEARCH_PATHS:
           - $(inherited)
-          - $(DERIVED_FILE_DIR)/limpid-rust
+          - $(DERIVED_FILE_DIR)/weir-rust
         OTHER_LDFLAGS:
           - $(inherited)
-          - -llimpid_rust_bridge
+          - -lweir_rust_bridge
       configs:
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationHookHelper.dev
-          OTHER_CODE_SIGN_FLAGS: "--identifier dev.limpid.AgentIntegrationHookHelper.dev"
+          PRODUCT_BUNDLE_IDENTIFIER: com.nekoder.weir.AgentIntegrationHookHelper.dev
+          OTHER_CODE_SIGN_FLAGS: "--identifier com.nekoder.weir.AgentIntegrationHookHelper.dev"
         Release:
-          OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier dev.limpid.AgentIntegrationHookHelper"
+          OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier com.nekoder.weir.AgentIntegrationHookHelper"
     dependencies:
       - sdk: Security.framework
     preBuildScripts:
@@ -189,7 +189,7 @@ targets:
           - $(SRCROOT)/rust-toolchain.toml
           - $(SRCROOT)/scripts/build-rust-bridge.sh
         outputFiles:
-          - $(DERIVED_FILE_DIR)/limpid-rust/liblimpid_rust_bridge.a
+          - $(DERIVED_FILE_DIR)/weir-rust/libweir_rust_bridge.a
 
   AgentIntegrationControllerProbe:
     type: tool
@@ -199,7 +199,7 @@ targets:
       - path: AgentIntegrationService/Shared
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationControllerProbe
+        PRODUCT_BUNDLE_IDENTIFIER: com.nekoder.weir.AgentIntegrationControllerProbe
         PRODUCT_NAME: AgentIntegrationControllerProbe
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_DEBUG_DYLIB: NO
@@ -207,18 +207,18 @@ targets:
         SKIP_INSTALL: YES
       configs:
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.AgentIntegrationControllerProbe.dev
-          OTHER_CODE_SIGN_FLAGS: "--identifier dev.limpid.AgentIntegrationControllerProbe.dev"
+          PRODUCT_BUNDLE_IDENTIFIER: com.nekoder.weir.AgentIntegrationControllerProbe.dev
+          OTHER_CODE_SIGN_FLAGS: "--identifier com.nekoder.weir.AgentIntegrationControllerProbe.dev"
         Release:
-          OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier dev.limpid.AgentIntegrationControllerProbe"
+          OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime --identifier com.nekoder.weir.AgentIntegrationControllerProbe"
     dependencies:
       - sdk: Security.framework
 
-  Limpid:
+  Weir:
     type: application
     platform: macOS
     sources:
-      - path: Limpid
+      - path: Weir
         excludes:
           - "Resources/ghostty"
           - "Resources/terminfo"
@@ -228,43 +228,43 @@ targets:
       - path: AgentIntegrationService/Shared
       - path: AgentIntegrationService/ProviderBridge
       - path: AgentIntegrationService/Service/RustApprovalHost.swift
-      - path: AgentIntegrationService/Resources/dev.limpid.agent-integration-service.plist
+      - path: AgentIntegrationService/Resources/com.nekoder.weir.agent-integration-service.plist
         buildPhase:
           copyFiles:
             destination: wrapper
             subpath: Contents/Library/LaunchAgents
-      - path: AgentIntegrationService/Resources/dev.limpid.agent-integration-service.dev.plist
+      - path: AgentIntegrationService/Resources/com.nekoder.weir.agent-integration-service.dev.plist
         buildPhase:
           copyFiles:
             destination: wrapper
             subpath: Contents/Library/LaunchAgents
       # Bundle libghostty's shell-integration scripts + the themes
-      # we ship as Limpid's defaults (Apple System Colors Light/Dark).
+      # we ship as Weir's defaults (Apple System Colors Light/Dark).
       # `type: folder` keeps the directory structure intact under
       # `.app/Contents/Resources/ghostty/`, which is where
       # `GhosttyApp.resolveResourcesDir()` looks first.
-      - path: Limpid/Resources/ghostty
+      - path: Weir/Resources/ghostty
         type: folder
       # libghostty looks for this database beside its `ghostty` resources
       # directory and exports TERMINFO to every pty. Keep the compiled aliases
       # as a folder resource so ncurses' hexadecimal lookup directories survive.
-      - path: Limpid/Resources/terminfo
+      - path: Weir/Resources/terminfo
         type: folder
       # Bundle the Claude Code shim + hook receiver. `type: folder`
       # preserves the executable bit so the scripts stay runnable
-      # inside `.app/Contents/Resources/claude-shim/`. Limpid prepends
+      # inside `.app/Contents/Resources/claude-shim/`. Weir prepends
       # this directory to `PATH` for every pty it spawns so `claude`
       # invocations are intercepted.
-      - path: Limpid/Resources/claude-shim
+      - path: Weir/Resources/claude-shim
         type: folder
       # Bundle the Codex shim + hook receiver, on the same terms: this
       # directory is prepended to `PATH` too, so `codex` invocations are
       # intercepted the way `claude` ones are.
-      - path: Limpid/Resources/codex-shim
+      - path: Weir/Resources/codex-shim
         type: folder
       # Shared POSIX helpers sourced by both agent integrations. Kept as a
       # folder resource so the relative path from each hook stays stable.
-      - path: Limpid/Resources/agent-shim
+      - path: Weir/Resources/agent-shim
         type: folder
       # Ship the license + third-party attribution inside the app bundle so
       # the MIT / GPL notices travel with the distributed .app, satisfying the
@@ -277,18 +277,18 @@ targets:
     # because Sparkle's `SU*` keys aren't on Xcode's INFOPLIST_KEY_*
     # allow-list. XcodeGen fills in the standard CFBundle keys for us.
     info:
-      path: Limpid/Resources/Info.plist
+      path: Weir/Resources/Info.plist
       properties:
         NSPrincipalClass: NSApplication
         NSHighResolutionCapable: YES
-        # Resolves to "Limpid" in Release and "Limpid Dev" in Debug
+        # Resolves to "Weir" in Release and "Weir Dev" in Debug
         # via the per-config PRODUCT_NAME override below.
         CFBundleDisplayName: "$(PRODUCT_NAME)"
-        # Resolves to AppIcon (Release, turquoise) or AppIcon-Dev
-        # (Debug, purple) via ASSETCATALOG_COMPILER_APPICON_NAME so
+        # Resolves to AppIcon (Release, black) or AppIcon-Dev
+        # (Debug, white) via ASSETCATALOG_COMPILER_APPICON_NAME so
         # the two builds are also distinct on the Dock.
         CFBundleIconName: "$(ASSETCATALOG_COMPILER_APPICON_NAME)"
-        # Surfaces under "About Limpid" / Finder / Spotlight / Sparkle's
+        # Surfaces under "About Weir" / Finder / Spotlight / Sparkle's
         # update dialog. Localize via InfoPlist.xcstrings for ja.
         NSHumanReadableCopyright: "© 2026 nek0der. MIT License."
         LSApplicationCategoryType: public.app-category.developer-tools
@@ -298,7 +298,7 @@ targets:
         # notification to dump scrollback and persist state, so the
         # flags must stay off. (Sparkle / Apple's defaults both
         # suggest these, but they assume an app with no save-on-quit
-        # work — which Limpid clearly isn't.)
+        # work — which Weir clearly isn't.)
         NSSupportsAutomaticTermination: NO
         NSSupportsSuddenTermination: NO
         # Reference the MARKETING_VERSION / CURRENT_PROJECT_VERSION
@@ -311,19 +311,19 @@ targets:
         # is likely to touch. macOS shows these strings in the consent
         # prompt; keep them honest and short. Music / Photos are
         # intentionally omitted — a terminal shouldn't be asking.
-        NSDocumentsFolderUsageDescription: "Limpid runs a shell that may access files under your Documents folder."
-        NSDownloadsFolderUsageDescription: "Limpid runs a shell that may access files under your Downloads folder."
-        NSDesktopFolderUsageDescription: "Limpid runs a shell that may access files on your Desktop."
-        NSRemovableVolumesUsageDescription: "Limpid runs a shell that may access removable volumes."
-        NSNetworkVolumesUsageDescription: "Limpid runs a shell that may access network volumes."
+        NSDocumentsFolderUsageDescription: "Weir runs a shell that may access files under your Documents folder."
+        NSDownloadsFolderUsageDescription: "Weir runs a shell that may access files under your Downloads folder."
+        NSDesktopFolderUsageDescription: "Weir runs a shell that may access files on your Desktop."
+        NSRemovableVolumesUsageDescription: "Weir runs a shell that may access removable volumes."
+        NSNetworkVolumesUsageDescription: "Weir runs a shell that may access network volumes."
         # Paired with the entitlements below. The entitlement lets the
         # request reach TCC at all; these strings are what TCC shows when
         # it asks. A command run in a pane is attributed to us, so the
-        # prompt names Limpid rather than the tool the user typed.
-        NSMicrophoneUsageDescription: "Limpid runs a shell that may record audio, such as a voice-input tool."
-        NSAppleEventsUsageDescription: "Limpid runs a shell that may control other apps with AppleScript."
-        # A folder opens as a project (`LimpidAppDelegate.application(_:open:)`):
-        # Finder's Open With lists Limpid for folders, and the Dock icon
+        # prompt names Weir rather than the tool the user typed.
+        NSMicrophoneUsageDescription: "Weir runs a shell that may record audio, such as a voice-input tool."
+        NSAppleEventsUsageDescription: "Weir runs a shell that may control other apps with AppleScript."
+        # A folder opens as a project (`WeirAppDelegate.application(_:open:)`):
+        # Finder's Open With lists Weir for folders, and the Dock icon
         # takes a dropped one. `Alternate` keeps Finder opening folders
         # itself on a double-click.
         CFBundleDocumentTypes:
@@ -337,7 +337,7 @@ targets:
         # SUPublicEDKey is the EdDSA public key paired with the private key
         # held in Keychain (and backed up offline). Lose the private key
         # and existing users can never auto-update again — never lose it.
-        SUFeedURL: "https://nek0der.github.io/limpid/appcast.xml"
+        SUFeedURL: "https://nek0der.github.io/weir/appcast.xml"
         SUPublicEDKey: "TaNB85h5yh8v6GIs4veFHhdkUYlL35jXJbl/NpjhxNs="
         SUEnableAutomaticChecks: YES
         SUScheduledCheckInterval: 86400
@@ -356,20 +356,20 @@ targets:
     # concrete command in mind; each entry widens what a compromised
     # shell could ask for.
     entitlements:
-      path: Limpid/Resources/Limpid.entitlements
+      path: Weir/Resources/Weir.entitlements
       properties:
         com.apple.security.device.audio-input: true
         com.apple.security.automation.apple-events: true
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.Limpid
-        PRODUCT_NAME: Limpid
+        PRODUCT_BUNDLE_IDENTIFIER: com.nekoder.Weir
+        PRODUCT_NAME: Weir
         # Keep the Swift module name stable across configurations so
-        # `@testable import Limpid` keeps working even in Debug where
-        # the product name is "Limpid Dev". Without this, the module
-        # name auto-tracks PRODUCT_NAME → "Limpid_Dev" and the test
+        # `@testable import Weir` keeps working even in Debug where
+        # the product name is "Weir Dev". Without this, the module
+        # name auto-tracks PRODUCT_NAME → "Weir_Dev" and the test
         # target fails to link.
-        PRODUCT_MODULE_NAME: Limpid
+        PRODUCT_MODULE_NAME: Weir
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ENABLE_HARDENED_RUNTIME: YES
         # Cargo reads its rustup-managed toolchain outside the repository, which
@@ -380,24 +380,24 @@ targets:
           - $(PROJECT_DIR)/vendor/ghostty/macos
         LIBRARY_SEARCH_PATHS:
           - $(inherited)
-          - $(DERIVED_FILE_DIR)/limpid-rust
+          - $(DERIVED_FILE_DIR)/weir-rust
         OTHER_LDFLAGS:
           - $(inherited)
-          - -llimpid_rust_bridge
+          - -lweir_rust_bridge
       configs:
         # Debug builds get a distinct bundle id + display name so the
-        # daily-driver dmg (`dev.limpid.Limpid` / "Limpid") and the
+        # daily-driver dmg (`com.nekoder.Weir` / "Weir") and the
         # in-progress Xcode build can coexist on the same Mac. They
         # also branch on this id at runtime to pick a separate
-        # Application Support directory ("Limpid Dev/") — see
-        # `LimpidPaths.applicationSupportDirectoryName`.
+        # Application Support directory ("Weir Dev/") — see
+        # `WeirPaths.applicationSupportDirectoryName`.
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.Limpid.dev
-          PRODUCT_NAME: "Limpid Dev"
+          PRODUCT_BUNDLE_IDENTIFIER: com.nekoder.Weir.dev
+          PRODUCT_NAME: "Weir Dev"
           ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon-Dev
-          EXCLUDED_SOURCE_FILE_NAMES: dev.limpid.agent-integration-service.plist
+          EXCLUDED_SOURCE_FILE_NAMES: com.nekoder.weir.agent-integration-service.plist
         Release:
-          EXCLUDED_SOURCE_FILE_NAMES: dev.limpid.agent-integration-service.dev.plist
+          EXCLUDED_SOURCE_FILE_NAMES: com.nekoder.weir.agent-integration-service.dev.plist
     dependencies:
       - target: AgentIntegrationService
         embed: true
@@ -429,7 +429,7 @@ targets:
           - $(SRCROOT)/rust-toolchain.toml
           - $(SRCROOT)/scripts/build-rust-bridge.sh
         outputFiles:
-          - $(DERIVED_FILE_DIR)/limpid-rust/liblimpid_rust_bridge.a
+          - $(DERIVED_FILE_DIR)/weir-rust/libweir_rust_bridge.a
     postBuildScripts:
       # The settings template belongs to the provider crate, which owns its
       # shape, but the shim reads it from beside itself at run time. Copied
@@ -440,21 +440,21 @@ targets:
         script: |
           set -euo pipefail
           install -m 644 \
-            "$SRCROOT/rust/limpid-provider-claude/resources/settings.template.json" \
+            "$SRCROOT/rust/weir-provider-claude/resources/settings.template.json" \
             "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/claude-shim/settings.template.json"
         # Never skipped: the folder resource copy above replaces the whole
         # shim directory, so an "up to date" output from a previous build
         # says nothing about whether the file is there now.
         basedOnDependencyAnalysis: false
         inputFiles:
-          - $(SRCROOT)/rust/limpid-provider-claude/resources/settings.template.json
+          - $(SRCROOT)/rust/weir-provider-claude/resources/settings.template.json
       # The committed file with its Rust crate section filled in from
       # Cargo.lock, so a dependency bump needs no hand edit. It runs offline:
       # the bridge build before it has put every crate in Cargo's registry.
       - name: Write THIRD-PARTY-NOTICES
         script: |
           set -euo pipefail
-          LIMPID_NOTICES_OFFLINE=1 "$SRCROOT/scripts/write-notices.sh" \
+          WEIR_NOTICES_OFFLINE=1 "$SRCROOT/scripts/write-notices.sh" \
             "$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/THIRD-PARTY-NOTICES"
         inputFiles:
           - $(SRCROOT)/THIRD-PARTY-NOTICES
@@ -464,43 +464,43 @@ targets:
         outputFiles:
           - $(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/THIRD-PARTY-NOTICES
 
-  LimpidTests:
+  WeirTests:
     type: bundle.unit-test
     platform: macOS
     sources:
-      - path: LimpidTests
+      - path: WeirTests
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: dev.limpid.LimpidTests
-        PRODUCT_NAME: LimpidTests
+        PRODUCT_BUNDLE_IDENTIFIER: com.nekoder.WeirTests
+        PRODUCT_NAME: WeirTests
         BUNDLE_LOADER: $(TEST_HOST)
-        # Debug builds rename the product to "Limpid Dev.app" (see the
-        # Debug override on the Limpid target). The test host must
+        # Debug builds rename the product to "Weir Dev.app" (see the
+        # Debug override on the Weir target). The test host must
         # match — without the per-config split the test bundle would
-        # try to link against `Limpid.app` and fail in Debug.
+        # try to link against `Weir.app` and fail in Debug.
       configs:
         Debug:
-          TEST_HOST: $(BUILT_PRODUCTS_DIR)/Limpid Dev.app/Contents/MacOS/Limpid Dev
+          TEST_HOST: $(BUILT_PRODUCTS_DIR)/Weir Dev.app/Contents/MacOS/Weir Dev
         Release:
-          TEST_HOST: $(BUILT_PRODUCTS_DIR)/Limpid.app/Contents/MacOS/Limpid
+          TEST_HOST: $(BUILT_PRODUCTS_DIR)/Weir.app/Contents/MacOS/Weir
     dependencies:
-      - target: Limpid
+      - target: Weir
 
-# Explicit scheme so `xcodebuild -scheme Limpid test` knows about the
-# LimpidTests target. Without this xcodegen's autogenerated scheme can
+# Explicit scheme so `xcodebuild -scheme Weir test` knows about the
+# WeirTests target. Without this xcodegen's autogenerated scheme can
 # drop the test action on some xcodegen versions.
 schemes:
-  Limpid:
+  Weir:
     build:
       targets:
-        Limpid: all
-        LimpidTests: [test]
+        Weir: all
+        WeirTests: [test]
     test:
       # Swift Testing runs the tests in parallel only when the scheme lets it.
       # The width caps how many run at once: at its default, twice the cores,
       # the tests that wait on a deadline or a timer ran late and failed.
       targets:
-        - name: LimpidTests
+        - name: WeirTests
           parallelizable: true
       environmentVariables:
         SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH: "8"

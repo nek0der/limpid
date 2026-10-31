@@ -22,7 +22,7 @@
   ],
   "packages": {
     ".": {
-      "package-name": "limpid",
+      "package-name": "weir",
       "extra-files": [
         {
           "type": "generic",

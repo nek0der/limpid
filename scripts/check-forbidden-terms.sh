@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Limpid guardrail — fail if competitor product names or foreign issue
+# Weir guardrail — fail if competitor product names or foreign issue
 # references appear in tracked source/config. Neutral dependencies and
 # industry conventions (ghostty, tmux, POSIX, AppKit, Terminal.app) are
 # intentionally NOT banned: we describe what we rely on, we just don't frame
@@ -50,7 +50,7 @@ done < <(git grep -nIPi "$pattern" -- \
   ':!scripts/check-forbidden-terms.sh' \
   ':!scripts/test-check-forbidden-terms.sh' \
   ':!.forbidden-terms-allow' \
-  ':!Limpid/Resources/ghostty/shell-integration' \
+  ':!Weir/Resources/ghostty/shell-integration' \
   2>/dev/null || true)
 
 if [[ -n "${hits//[$'\n\t ']/}" ]]; then

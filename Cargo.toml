@@ -1,12 +1,12 @@
 [workspace]
 members = [
-    "rust/limpid-agent-core",
-    "rust/limpid-agent-hook",
-    "rust/limpid-agent-model",
-    "rust/limpid-agent-protocol",
-    "rust/limpid-provider-claude",
-    "rust/limpid-provider-codex",
-    "rust/limpid-rust-bridge",
+    "rust/weir-agent-core",
+    "rust/weir-agent-hook",
+    "rust/weir-agent-model",
+    "rust/weir-agent-protocol",
+    "rust/weir-provider-claude",
+    "rust/weir-provider-codex",
+    "rust/weir-rust-bridge",
 ]
 resolver = "3"
 

@@ -2,11 +2,11 @@
   "written": {
     "path": "a.txt",
     "reason": "keptAside",
-    "keptAt": ".limpid-OP/target/ready-1/a.txt"
+    "keptAt": ".weir-OP/target/ready-1/a.txt"
   },
   "earlier": {
     "path": "c.txt",
-    "reason": "keptAside:.limpid-OP/target/ready-1/c.txt"
+    "reason": "keptAside:.weir-OP/target/ready-1/c.txt"
   },
   "earlierDiagnostic": {
     "path": "d.txt",

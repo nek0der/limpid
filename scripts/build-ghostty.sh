@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build libghostty xcframework for Limpid.
+# Build libghostty xcframework for Weir.
 #
 # Requirements:
 #   - The Zig release named by `minimum_zig_version` in
@@ -14,7 +14,7 @@
 #
 # Output:
 #   vendor/ghostty/macos/GhosttyKit.xcframework
-#   Limpid/Resources/terminfo/{67/ghostty,78/xterm-ghostty}
+#   Weir/Resources/terminfo/{67/ghostty,78/xterm-ghostty}
 #
 # Usage:
 #   ./scripts/build-ghostty.sh
@@ -73,7 +73,7 @@ fi
 # library. ncurses selects the hexadecimal directory from the first character
 # of TERM, so the directory names must survive unchanged.
 TERMINFO_SOURCE="${GHOSTTY_DIR}/zig-out/share/terminfo"
-TERMINFO_DEST="${REPO_ROOT}/Limpid/Resources/terminfo"
+TERMINFO_DEST="${REPO_ROOT}/Weir/Resources/terminfo"
 for entry in "67/ghostty" "78/xterm-ghostty"; do
   if [[ ! -f "${TERMINFO_SOURCE}/${entry}" ]]; then
     echo "Built terminfo entry missing: ${TERMINFO_SOURCE}/${entry}" >&2

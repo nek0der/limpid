@@ -1,7 +1,7 @@
 # Known limitations
 
-Each Limpid window shows one project at a time: a sidebar of worktrees, the
-terminal, and the Changes panel. This page lists what Limpid does not do
+Each Weir window shows one project at a time: a sidebar of worktrees, the
+terminal, and the Changes panel. This page lists what Weir does not do
 yet, what it does on purpose that may surprise you, and what has not been
 checked on a real machine. It describes the current build. Entries go away
 as they are fixed or confirmed.
@@ -24,25 +24,25 @@ as they are fixed or confirmed.
   for `make build`) leaves every approval to the agent's own terminal prompt.
   `CONTRIBUTING.md` explains how to sign a development build.
 - **The approval card holds only requests whose pane you cannot see.** A
-  request from a pane you are looking at while Limpid is in front goes
+  request from a pane you are looking at while Weir is in front goes
   straight to the agent's own prompt there. The card holds a request whose
   pane is out of sight, or whose pane the review tab is covering. When
-  Limpid is not in front, the menu bar can answer a short shell command that
-  is not high-impact; any other request opens Limpid.
+  Weir is not in front, the menu bar can answer a short shell command that
+  is not high-impact; any other request opens Weir.
   While VoiceOver is running, a held request is not handed to the terminal
   on its own when its pane comes into sight. Answer it on the card, or
   choose "Answer in terminal".
 - **Codex questions are answered in the terminal.** While Codex waits on a
-  question, Limpid shows "Needs answer" with the first question's words, but
+  question, Weir shows "Needs answer" with the first question's words, but
   no Codex hook can answer it, so there is no card. A question Codex asks
   without stopping, as it does in its default mode, shows as work in
   progress: the turn goes on, and the question is answered in Codex's own
-  prompt. If it is still open when the turn ends, Limpid shows "Needs
+  prompt. If it is still open when the turn ends, Weir shows "Needs
   answer" without its words.
 - **Some waits show only outside tmux, and without their words.** A sign-in
   the agent needs, and an MCP server's request for input under Codex, send
-  no hook. Limpid reads them from the status the agent reports to the
-  terminal (OSC 7501), which does not reach Limpid from inside tmux, and
+  no hook. Weir reads them from the status the agent reports to the
+  terminal (OSC 7501), which does not reach Weir from inside tmux, and
   which Claude Code does not report with `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`
   set. There the row shows the turn as running, or at rest. Elsewhere it
   shows "Needs answer" or "Needs sign-in" without the server's name or the
@@ -58,23 +58,23 @@ as they are fixed or confirmed.
   say whose request it was.
 - **An approval refused in Claude Code's own dialog can stay listed for a
   while inside tmux.** Claude Code sends no hook when you choose "No" in the
-  terminal. Limpid reads the answer from the status Claude Code reports to
+  terminal. Weir reads the answer from the status Claude Code reports to
   the terminal (OSC 7501), which it does not report inside tmux or with
   `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set. There the row keeps saying
   "Needs approval" until the next prompt in that pane or the end of the
   turn.
 - **No time left is shown after an approval goes to the terminal.** Once a
   request is handed to the agent's own prompt, the agent decides how long it
-  waits, and Limpid cannot read that time.
-- **"Always allow" is the agent's own choice.** Limpid adds no such option and
+  waits, and Weir cannot read that time.
+- **"Always allow" is the agent's own choice.** Weir adds no such option and
   writes nothing to an agent's settings. Use the agent's prompt in the
   terminal.
 
 ## Notifications
 
-- **Limpid cannot tell whether a Focus is on**, so the notification history
+- **Weir cannot tell whether a Focus is on**, so the notification history
   never warns that a Focus may hold banners back. Reading it needs an
-  entitlement and a permission prompt that Limpid does not ask for.
+  entitlement and a permission prompt that Weir does not ask for.
 - **A reset notification you asked for is not kept across a restart.** After
   a restart, a usage-limit stop offers "Notify When It Resets" again.
 - An open All Projects card or Needs Attention list can keep saying that a
@@ -83,11 +83,11 @@ as they are fixed or confirmed.
 
 ## Turn history and restore
 
-- **Restore and Discard do not lock out other programs.** Limpid checks the
+- **Restore and Discard do not lock out other programs.** Weir checks the
   files before and after, and stops if an agent or an editor changed them.
   Another program can still write in between.
-- **A pane with turn snapshots turned off** (`LIMPID_TURN_SNAPSHOT=0` in its
-  environment, which stops Limpid from recording what each turn changed)
+- **A pane with turn snapshots turned off** (`WEIR_TURN_SNAPSHOT=0` in its
+  environment, which stops Weir from recording what each turn changed)
   takes no lock, so its agent can start a turn while another pane of the
   same worktree restores one.
 - **A stalled snapshot can hold a Claude Code or Codex prompt for up to 10
@@ -97,8 +97,8 @@ as they are fixed or confirmed.
 - **A turn that goes on after a failed stop** is recorded as a failed turn
   with only its end, and the turn before keeps the first end.
 - **A turn record larger than 4 MiB is not read.** The turn keeps what
-  Limpid read of it before, or is not listed if Limpid read nothing.
-  Nothing on screen says so; Limpid logs it once (`agent.turn-records`).
+  Weir read of it before, or is not listed if Weir read nothing.
+  Nothing on screen says so; Weir logs it once (`agent.turn-records`).
 - **A turn's tokens are read when it ends**, so a running turn shows none.
   Claude Code's tokens are read from the last 4 MiB of its transcript; a
   turn that began before that, or whose last response was still not
@@ -106,7 +106,7 @@ as they are fixed or confirmed.
   subagent still running when the turn ended counts only what it had used
   by then.
 - **A Claude turn stopped inside tmux can keep showing as running.**
-  Claude sends no hook when you stop its work with Esc or Ctrl+C. Limpid
+  Claude sends no hook when you stop its work with Esc or Ctrl+C. Weir
   reads the stop from the status Claude Code reports to the terminal (OSC
   7501), which it does not report inside tmux or with
   `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` set. There the turn shows as running
@@ -119,24 +119,24 @@ as they are fixed or confirmed.
   shows no tokens, since Codex records none for it. A very long Codex turn
   may count fewer test runs than it ran: its card says so with "…" and its
   tooltip with "at least", while the decision bar's count of failures is
-  the one Limpid read.
+  the one Weir read.
 - **A Codex turn can leave some subagents' tokens out.** Codex keeps each
-  subagent's work in a rollout of its own, which Limpid finds by the
+  subagent's work in a rollout of its own, which Weir finds by the
   thread the turn's rollout names it by. A subagent's own subagents are
-  named only in its rollout, which Limpid does not search, so their tokens
+  named only in its rollout, which Weir does not search, so their tokens
   are not counted. Nor are those of a subagent that only the start of a
-  very long turn named, when Limpid reads only the end of that turn's
+  very long turn named, when Weir reads only the end of that turn's
   rollout.
 - **A turn's card lists only what Claude Code's auto mode refused.** Claude
   Code reports no refusal from `dontAsk` mode, and Codex has no such hook, so
   those leave no line on the card.
 - **A Claude subagent named again in a later turn is counted again**:
-  Limpid reads the subagent's whole transcript at each turn that names it.
-- **A turn record written by an older Limpid and a newer one in turn** can
+  Weir reads the subagent's whole transcript at each turn that names it.
+- **A turn record written by an older Weir and a newer one in turn** can
   show a test count that leaves out the runs the older one recorded.
 - **A turn keeps its last 16 test runs** one by one; the card shows the last
   three, and the tooltip counts all of them.
-- **"Create PR" needs `gh`**, so Limpid does not create a GitLab merge
+- **"Create PR" needs `gh`**, so Weir does not create a GitLab merge
   request.
 
 ## New worktrees
@@ -170,7 +170,7 @@ as they are fixed or confirmed.
   as it can in any `git checkout`. A `git commit` still waiting on its
   message editor in that worktree is not seen: once it finishes, its commit
   shows as undone by staged changes, which `git restore --staged --worktree
-  .` puts right. If Limpid quits while it holds that
+  .` puts right. If Weir quits while it holds that
   worktree's index, Git stops on the `index.lock` left behind until it is
   removed.
 
@@ -223,22 +223,22 @@ as they are fixed or confirmed.
 
 ## Plan usage
 
-- **Claude Code's usage is only as fresh as its last reply in Limpid.**
-  Claude Code gives it to its status line and nowhere else, so Limpid sees it
-  when a Claude Code session in a Limpid pane replies. Use in another
+- **Claude Code's usage is only as fresh as its last reply in Weir.**
+  Claude Code gives it to its status line and nowhere else, so Weir sees it
+  when a Claude Code session in a Weir pane replies. Use in another
   terminal or on claude.ai counts toward the plan but reaches the panel only
-  with the next reply in Limpid.
+  with the next reply in Weir.
 - **Claude Code's usage needs a status line of your own.** Claude Code keeps
-  a row for a status line even when it prints nothing, so Limpid takes the
+  a row for a status line even when it prints nothing, so Weir takes the
   slot only when you have set one up, and runs yours in it.
 - **A status line your organization sets through managed-settings drop-in
-  files or a device management profile is not seen.** Limpid reads
+  files or a device management profile is not seen.** Weir reads
   `managed-settings.json` itself, and otherwise runs the status line from
   your own settings in its place.
 - **One Claude Code account at a time.** Sessions with different
   `CLAUDE_CONFIG_DIR`s write the same record, so the panel shows whichever
   answered last.
-- **Codex's usage is read for the account in `~/.codex`.** Limpid asks
+- **Codex's usage is read for the account in `~/.codex`.** Weir asks
   Codex from its own environment, so a `CODEX_HOME` your shell sets for
   another account does not reach that request, and the panel shows the
   default account, or no plan when that one is signed out.
@@ -249,19 +249,19 @@ as they are fixed or confirmed.
 
 - **A failed Codex turn shows as failed up to ten seconds late.** Codex runs
   no hook when a turn fails (an error from the server, a model it does not
-  have, the plan's usage limit), so Limpid reads the failure from the
+  have, the plan's usage limit), so Weir reads the failure from the
   session's rollout, which it checks every ten seconds.
 - **A resume inside your own tmux is judged by what tmux says.** If your
-  shell starts tmux at its prompt, or the pane was inside tmux when Limpid
-  quit, the resume Limpid types runs inside that tmux. Codex reports nothing
-  until its first prompt, so at the 45-second deadline Limpid asks your tmux
+  shell starts tmux at its prompt, or the pane was inside tmux when Weir
+  quit, the resume Weir types runs inside that tmux. Codex reports nothing
+  until its first prompt, so at the 45-second deadline Weir asks your tmux
   server what is running in the pane its client shows. If the server does
-  not answer within half a second, or Limpid has not yet matched the client
-  to the pane, Limpid treats the resume as successful. A resume that failed
+  not answer within half a second, or Weir has not yet matched the client
+  to the pane, Weir treats the resume as successful. A resume that failed
   there then lists no stop, and only the terminal shows why.
 - **A stop stays over a Codex you start by hand until its first prompt.**
   Starting an agent again in a stopped pane ends the stop once the new
-  agent reports to Limpid. Codex reports nothing until its first prompt, so
+  agent reports to Weir. Codex reports nothing until its first prompt, so
   until then the pane still shows the stop.
 
 ## For contributors: not yet confirmed on a real machine
@@ -269,7 +269,7 @@ as they are fixed or confirmed.
 These need a signed approval service, sleep, or physical input that the
 automated checks cannot provide. They still have to be checked by hand:
 
-- that Claude Code and Codex draw no prompt of their own while Limpid holds
+- that Claude Code and Codex draw no prompt of their own while Weir holds
   an approval, and draw it at once when the pane is opened;
 - the warning shown when the held approvals near their limit of 128;
 - the time left after the Mac sleeps and wakes;

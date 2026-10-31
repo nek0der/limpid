@@ -1,0 +1,28 @@
+#!/bin/sh
+# Weir claude worktree intercept — the second PreToolUse hook the provider
+# calls for its shell tool. Like `weir-hook`, it execs the Hook Helper's
+# `hook claude worktree` subcommand, and says so when the helper is missing.
+
+set -u
+
+hook_path="$0"
+hook_links=0
+while [ -L "$hook_path" ]; do
+  hook_links=$((hook_links + 1))
+  [ "$hook_links" -le 16 ] || exit 0
+  hook_target=$(readlink "$hook_path") || exit 0
+  case "$hook_target" in
+    /*) hook_path="$hook_target" ;;
+    *) hook_path="$(dirname -- "$hook_path")/$hook_target" ;;
+  esac
+done
+hook_dir="$(CDPATH='' cd -- "$(dirname -- "$hook_path")" 2>/dev/null && pwd -P)"
+
+# WEIR_HOOK_HELPER exists for the test suites, which run this script
+# from the source tree where no bundle surrounds it.
+helper="${WEIR_HOOK_HELPER:-$hook_dir/../../MacOS/AgentIntegrationHookHelper}"
+if [ ! -x "$helper" ]; then
+  . "$hook_dir/../agent-shim/runtime-common.sh"
+  weir_hook_helper_missing "$helper"
+fi
+exec "$helper" hook claude worktree

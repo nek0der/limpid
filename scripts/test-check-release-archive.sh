@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Limpid — self-test for `check-release-archive.sh`.
+# Weir — self-test for `check-release-archive.sh`.
 #
 # Builds fake .xcarchive trees that stand in for a distributable archive and
 # for each way one can break, then asserts the checker's verdict. The real
@@ -35,18 +35,18 @@ fails=0
 # on Xcode 26, unsigned, into the directory given as $1.
 make_good_archive() {
   local archive="$1"
-  local app="$archive/Products/Applications/Limpid.app/Contents"
+  local app="$archive/Products/Applications/Weir.app/Contents"
   mkdir -p "$app/MacOS" "$app/Library/LaunchAgents" "$app/Frameworks/Sparkle.framework"
-  for binary in Limpid AgentIntegrationService AgentIntegrationHookHelper; do
+  for binary in Weir AgentIntegrationService AgentIntegrationHookHelper; do
     printf '#!/bin/sh\n' > "$app/MacOS/$binary"
     chmod +x "$app/MacOS/$binary"
   done
-  plutil -create xml1 "$app/Library/LaunchAgents/dev.limpid.agent-integration-service.plist"
-  plutil -insert Label -string dev.limpid.agent-integration-service \
-    "$app/Library/LaunchAgents/dev.limpid.agent-integration-service.plist"
+  plutil -create xml1 "$app/Library/LaunchAgents/com.nekoder.weir.agent-integration-service.plist"
+  plutil -insert Label -string com.nekoder.weir.agent-integration-service \
+    "$app/Library/LaunchAgents/com.nekoder.weir.agent-integration-service.plist"
   plutil -create xml1 "$archive/Info.plist"
   plutil -insert ApplicationProperties -dictionary "$archive/Info.plist"
-  plutil -insert ApplicationProperties.ApplicationPath -string Applications/Limpid.app \
+  plutil -insert ApplicationProperties.ApplicationPath -string Applications/Weir.app \
     "$archive/Info.plist"
 }
 
@@ -56,7 +56,7 @@ run_case() {
   local name="$1" expect="$2"
   shift 2
   local archive
-  archive="$(mktemp -d -p "$TMP")/Limpid.xcarchive"
+  archive="$(mktemp -d -p "$TMP")/Weir.xcarchive"
   make_good_archive "$archive"
   "$@" "$archive"
 
@@ -86,19 +86,19 @@ generic_archive() {
 }
 stray_product() { mkdir -p "$1/Products/usr/local/bin"; }
 no_application_properties() { plutil -remove ApplicationProperties "$1/Info.plist"; }
-missing_service() { rm "$1/Products/Applications/Limpid.app/Contents/MacOS/AgentIntegrationService"; }
-missing_hook_helper() { rm "$1/Products/Applications/Limpid.app/Contents/MacOS/AgentIntegrationHookHelper"; }
-missing_sparkle() { rm -r "$1/Products/Applications/Limpid.app/Contents/Frameworks/Sparkle.framework"; }
+missing_service() { rm "$1/Products/Applications/Weir.app/Contents/MacOS/AgentIntegrationService"; }
+missing_hook_helper() { rm "$1/Products/Applications/Weir.app/Contents/MacOS/AgentIntegrationHookHelper"; }
+missing_sparkle() { rm -r "$1/Products/Applications/Weir.app/Contents/Frameworks/Sparkle.framework"; }
 missing_service_plist() {
-  rm "$1/Products/Applications/Limpid.app/Contents/Library/LaunchAgents/dev.limpid.agent-integration-service.plist"
+  rm "$1/Products/Applications/Weir.app/Contents/Library/LaunchAgents/com.nekoder.weir.agent-integration-service.plist"
 }
 malformed_service_plist() {
   printf 'not a plist' > \
-    "$1/Products/Applications/Limpid.app/Contents/Library/LaunchAgents/dev.limpid.agent-integration-service.plist"
+    "$1/Products/Applications/Weir.app/Contents/Library/LaunchAgents/com.nekoder.weir.agent-integration-service.plist"
 }
 dev_service_plist() {
-  cp "$1/Products/Applications/Limpid.app/Contents/Library/LaunchAgents/dev.limpid.agent-integration-service.plist" \
-    "$1/Products/Applications/Limpid.app/Contents/Library/LaunchAgents/dev.limpid.agent-integration-service.dev.plist"
+  cp "$1/Products/Applications/Weir.app/Contents/Library/LaunchAgents/com.nekoder.weir.agent-integration-service.plist" \
+    "$1/Products/Applications/Weir.app/Contents/Library/LaunchAgents/com.nekoder.weir.agent-integration-service.dev.plist"
 }
 missing_archive() { rm -r "$1"; }
 

@@ -1,5 +1,5 @@
 // AgentIntegrationXPCProtocol.swift
-// Limpid — role-separated discrete-message XPC contract.
+// Weir — role-separated discrete-message XPC contract.
 
 import Foundation
 

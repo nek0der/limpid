@@ -38,7 +38,7 @@ A narrow, versioned C ABI may link a native host to the Rust Core. C is the
 interoperability ABI, not an implementation language. Panics, native object
 layouts, and language-owned errors must not cross it.
 
-The logical Hook CLI is `limpid-agent`, with provider-specific subcommands. It
+The logical Hook CLI is `weir-agent`, with provider-specific subcommands. It
 may link a platform transport shim where peer authentication requires one, but
 it never receives application-controller authority.
 

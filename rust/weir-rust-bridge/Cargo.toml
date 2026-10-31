@@ -1,0 +1,31 @@
+[package]
+name = "weir-rust-bridge"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+weir-agent-core = { path = "../weir-agent-core" }
+weir-agent-hook = { path = "../weir-agent-hook" }
+weir-agent-model = { path = "../weir-agent-model" }
+weir-agent-protocol = { path = "../weir-agent-protocol" }
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+# cbindgen (MPL-2.0) regenerates include/weir_rust_bridge.h on every build so
+# the committed header can never drift from the exported symbols. The default
+# features only serve its command-line binary; leaving them out keeps clap and
+# its dependencies out of every Xcode build.
+[build-dependencies]
+cbindgen = { version = "0.29", default-features = false }
+
+[lints]
+workspace = true

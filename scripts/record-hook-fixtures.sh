@@ -6,7 +6,7 @@
 #            [--tmux-hosted] [--env NAME=VALUE]... [-- <agent args>]
 #
 # The agent runs against the developer's real provider configuration and
-# credentials, because a fresh HOME would not be logged in. Everything Limpid
+# credentials, because a fresh HOME would not be logged in. Everything Weir
 # writes goes to a scratch directory instead: the state, session, and cwd
 # directories are temporary, and the raw payloads land in
 # <record-root>/<provider>/<case-name>/. The working directory is a throwaway git
@@ -63,7 +63,7 @@ case "$case_name" in
 esac
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
-apps=("$HOME"/Library/Developer/Xcode/DerivedData/Limpid-*/Build/Products/Debug/"Limpid Dev.app")
+apps=("$HOME"/Library/Developer/Xcode/DerivedData/Weir-*/Build/Products/Debug/"Weir Dev.app")
 app="${apps[0]}"
 if [[ ! -d "$app" ]]; then
   echo "error: no Debug build found; run make build first" >&2
@@ -80,7 +80,7 @@ fi
 # Recordings hold unscrubbed prompts until the scrub step runs.
 (umask 077 && mkdir -p "$record_dir")
 
-scratch="$(mktemp -d "${TMPDIR:-/tmp}/limpid-record-$case_name.XXXXXX")"
+scratch="$(mktemp -d "${TMPDIR:-/tmp}/weir-record-$case_name.XXXXXX")"
 workdir="$scratch/repo"
 mkdir -p "$workdir"
 git -C "$workdir" init -q -b main
@@ -89,7 +89,7 @@ printf 'fixture\n' > "$workdir/README.md"
 git -C "$workdir" add README.md
 git -C "$workdir" -c user.name=fixture -c user.email=fixture@example.com commit -q -m "add README"
 
-# The user's own shells may already carry an installed Limpid's shim on
+# The user's own shells may already carry an installed Weir's shim on
 # PATH, and a shim treats whatever `command -v` finds next as the real
 # binary. Resolve the agent outside every shim directory and hand it over
 # explicitly so the Debug shim is the only one in the chain.
@@ -103,21 +103,21 @@ for entry in "${path_entries[@]}"; do
   fi
 done
 [[ -n "$real_agent" ]] || { echo "error: $provider not found on PATH outside the shim directories" >&2; exit 1; }
-real_variable="LIMPID_REAL_CLAUDE"
-[[ "$provider" == "codex" ]] && real_variable="LIMPID_REAL_CODEX"
+real_variable="WEIR_REAL_CLAUDE"
+[[ "$provider" == "codex" ]] && real_variable="WEIR_REAL_CODEX"
 
 pane_id="$(uuidgen)"
 session="rec-$provider-$case_name"
 
 env_args=(
-  "LIMPID_HOOK_RECORD_DIR=$record_dir"
-  "LIMPID_PANE_ID=$pane_id"
-  "LIMPID_CLAUDE_HOOK_NAMESPACE=fixture-recording"
-  "LIMPID_AGENT_STATES_DIR=$scratch/agent-states"
-  "LIMPID_SESSIONS_DIR=$scratch/sessions"
-  "LIMPID_CWD_EVENTS_DIR=$scratch/cwd-events"
-  "LIMPID_CODEX_AGENT_STATES_DIR=$scratch/codex-agent-states"
-  "LIMPID_CODEX_SESSIONS_DIR=$scratch/codex-sessions"
+  "WEIR_HOOK_RECORD_DIR=$record_dir"
+  "WEIR_PANE_ID=$pane_id"
+  "WEIR_CLAUDE_HOOK_NAMESPACE=fixture-recording"
+  "WEIR_AGENT_STATES_DIR=$scratch/agent-states"
+  "WEIR_SESSIONS_DIR=$scratch/sessions"
+  "WEIR_CWD_EVENTS_DIR=$scratch/cwd-events"
+  "WEIR_CODEX_AGENT_STATES_DIR=$scratch/codex-agent-states"
+  "WEIR_CODEX_SESSIONS_DIR=$scratch/codex-sessions"
   "PATH=$shim_dir:$PATH"
   "$real_variable=$real_agent"
 )
@@ -127,10 +127,10 @@ fi
 
 if [[ "$provider" == "codex" ]]; then
   hook_args="$(python3 "$repo_root/scripts/codex-hook-args.py" "$shim_dir")" || {
-    echo "error: could not build LIMPID_CODEX_HOOK_ARGS" >&2
+    echo "error: could not build WEIR_CODEX_HOOK_ARGS" >&2
     exit 1
   }
-  env_args+=("LIMPID_CODEX_HOOK_ARGS=$hook_args")
+  env_args+=("WEIR_CODEX_HOOK_ARGS=$hook_args")
 fi
 
 unset_args=(-u CODEX_HOME)

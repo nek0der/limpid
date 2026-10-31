@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Limpid — self-test for `check-localization.sh`.
+# Weir — self-test for `check-localization.sh`.
 #
 # Feeds the checker small catalogs with known-good and known-bad entries,
 # including plural `variations`, a plural nested in a device variation, and
@@ -116,7 +116,7 @@ expect "a substitution with one ja form untranslated fails" fail "$(catalog subs
   } } }
 }")" "ja state is new, translated"
 
-expect "the repository catalog passes" pass "${REPO_ROOT}/Limpid/Resources/Localizable.xcstrings"
+expect "the repository catalog passes" pass "${REPO_ROOT}/Weir/Resources/Localizable.xcstrings"
 
 if [[ $failures -gt 0 ]]; then
   echo "$failures case(s) failed" >&2

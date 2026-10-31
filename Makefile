@@ -1,22 +1,22 @@
 .PHONY: build build-release release-check run dev test test-measure rust-test review-core fmt rust-fmt lint rust-lint rust-header dmg xcodegen ghostty screenshot clean help FORCE
 
-SCHEME  := Limpid
-PROJECT := Limpid.xcodeproj
+SCHEME  := Weir
+PROJECT := Weir.xcodeproj
 PBXPROJ := $(PROJECT)/project.pbxproj
 CONFIG  := Debug
 BUILD_DESTINATION ?= generic/platform=macOS
 
-# Debug is ad-hoc signed unless LIMPID_DEVELOPMENT_TEAM names a Team ID. The
+# Debug is ad-hoc signed unless WEIR_DEVELOPMENT_TEAM names a Team ID. The
 # approval service authenticates its peers by Team ID, so native approvals run
 # only in a build signed this way; CONTRIBUTING.md has the setup.
-LIMPID_CODE_SIGN_IDENTITY ?= Apple Development
-DEBUG_SIGNING = $(if $(LIMPID_DEVELOPMENT_TEAM),CODE_SIGN_IDENTITY='$(LIMPID_CODE_SIGN_IDENTITY)' DEVELOPMENT_TEAM='$(LIMPID_DEVELOPMENT_TEAM)')
+WEIR_CODE_SIGN_IDENTITY ?= Apple Development
+DEBUG_SIGNING = $(if $(WEIR_DEVELOPMENT_TEAM),CODE_SIGN_IDENTITY='$(WEIR_CODE_SIGN_IDENTITY)' DEVELOPMENT_TEAM='$(WEIR_DEVELOPMENT_TEAM)')
 # An incremental build re-signs the helper tools but leaves the copies already
 # embedded in the app untouched, so after a signer change the service rejects
 # them. `build` and `test` share one signer, record it in DEBUG_SIGNING_STAMP,
 # and remove the built app when it changes, so Xcode embeds and signs the
 # tools again while compiled objects stay cached.
-DEBUG_SIGNER = $(if $(LIMPID_DEVELOPMENT_TEAM),$(LIMPID_DEVELOPMENT_TEAM) $(LIMPID_CODE_SIGN_IDENTITY),ad-hoc)
+DEBUG_SIGNER = $(if $(WEIR_DEVELOPMENT_TEAM),$(WEIR_DEVELOPMENT_TEAM) $(WEIR_CODE_SIGN_IDENTITY),ad-hoc)
 DEBUG_SIGNING_STAMP := build/debug-signing
 define debug_signing_guard
 @signer='$(DEBUG_SIGNER)'; \
@@ -41,7 +41,7 @@ RELEASE_APP_PATH = $(shell xcodebuild -project $(PROJECT) -scheme $(SCHEME) -con
   | awk -F' = ' '/ BUILT_PRODUCTS_DIR = /{d=$$2} / FULL_PRODUCT_NAME = /{n=$$2} END{print d"/"n}')
 
 help:
-	@echo "Limpid — common targets"
+	@echo "Weir — common targets"
 	@echo "  make build       Build Debug"
 	@echo "  make run         Launch the built app"
 	@echo "  make dev         build + run"
@@ -54,7 +54,7 @@ help:
 	@echo "  make rust-header Regenerate the bridge C header and fail if it drifted"
 	@echo "  make release-check Archive Release unsigned and check it can be distributed"
 	@echo "  make dmg         Package a release DMG"
-	@echo "  make xcodegen    Regenerate Limpid.xcodeproj from project.yml"
+	@echo "  make xcodegen    Regenerate Weir.xcodeproj from project.yml"
 	@echo "  make ghostty     Build vendored libghostty"
 	@echo "  make screenshot  Regenerate .github/assets/hero.png (demo mode)"
 	@echo "  make clean       Remove DerivedData for this project"
@@ -68,7 +68,7 @@ help:
 # Anything that depends on `$(PBXPROJ)` picks up fresh xcodegen output, so
 # `make build` lands either change without a manual `make xcodegen` step.
 XCODEGEN_INPUTS := build/xcodegen.inputs
-SOURCE_DIRS := Limpid LimpidTests AgentIntegrationService
+SOURCE_DIRS := Weir WeirTests AgentIntegrationService
 REGENERATE_PROJECT = scripts/regenerate-project-if-stale.sh
 
 $(PBXPROJ): FORCE
@@ -90,7 +90,7 @@ build-release: $(PBXPROJ)
 # without the Developer ID certificate, then check the layout that
 # `exportArchive` depends on. RELEASE_CHECK_BUILD_SETTINGS adds build settings;
 # left empty, the archive is optimized as a release is.
-RELEASE_CHECK_ARCHIVE ?= build/ReleaseCheck/Limpid.xcarchive
+RELEASE_CHECK_ARCHIVE ?= build/ReleaseCheck/Weir.xcarchive
 RELEASE_CHECK_BUILD_SETTINGS ?=
 release-check: $(PBXPROJ)
 	scripts/test-check-release-archive.sh
@@ -105,7 +105,7 @@ release-check: $(PBXPROJ)
 run:
 	@app="$(APP_PATH)"; \
 	if [ ! -d "$$app" ]; then echo "App not found: $$app (run 'make build' first)"; exit 1; fi; \
-	osascript -e 'tell application "Limpid Dev" to quit' >/dev/null 2>&1 || true; \
+	osascript -e 'tell application "Weir Dev" to quit' >/dev/null 2>&1 || true; \
 	open "$$app"
 
 dev: build run
@@ -123,9 +123,9 @@ test: rust-test $(PBXPROJ)
 test-measure: $(PBXPROJ)
 	$(debug_signing_guard)
 	cargo test --locked --release --workspace -- --ignored --nocapture
-	TEST_RUNNER_LIMPID_MEASURE=1 xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' \
-		$(DEBUG_SIGNING) -only-testing:LimpidTests/ScrollingCostMeasurements \
-		'-only-testing:LimpidTests/TurnRecordCacheTests/aPassOverAThousandTurns_isTimed()' test
+	TEST_RUNNER_WEIR_MEASURE=1 xcodebuild -project $(PROJECT) -scheme $(SCHEME) -destination 'platform=macOS' \
+		$(DEBUG_SIGNING) -only-testing:WeirTests/ScrollingCostMeasurements \
+		'-only-testing:WeirTests/TurnRecordCacheTests/aPassOverAThousandTurns_isTimed()' test
 
 rust-test:
 	cargo test --locked --workspace --all-targets
@@ -154,8 +154,8 @@ lint: rust-lint
 # The bridge's build script writes the header from the exported Rust items, so
 # a drifted commit shows up as a diff rather than as a Swift link failure.
 rust-header:
-	cargo build --locked --package limpid-rust-bridge
-	@git diff --exit-code -- rust/limpid-rust-bridge/include/limpid_rust_bridge.h \
+	cargo build --locked --package weir-rust-bridge
+	@git diff --exit-code -- rust/weir-rust-bridge/include/weir_rust_bridge.h \
 		|| { echo "error: the generated header differs from the index; review the diff above and stage the header" >&2; exit 1; }
 
 rust-lint: rust-fmt rust-header
@@ -175,7 +175,7 @@ ghostty:
 # Hand the script the Release app this project just built, so it never
 # captures another worktree's newer build from DerivedData.
 screenshot: build-release
-	LIMPID_SCREENSHOT_APP='$(RELEASE_APP_PATH)' ./scripts/screenshot.sh
+	WEIR_SCREENSHOT_APP='$(RELEASE_APP_PATH)' ./scripts/screenshot.sh
 
 clean:
-	rm -rf $(HOME)/Library/Developer/Xcode/DerivedData/Limpid-*
+	rm -rf $(HOME)/Library/Developer/Xcode/DerivedData/Weir-*

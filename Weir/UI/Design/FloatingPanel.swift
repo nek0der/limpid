@@ -1,0 +1,353 @@
+// FloatingPanel.swift
+// Weir — the pieces Weir's floating panels share: the outline, with an
+// arrow for the panels that point back at what opened them, the frame that
+// places the panel below or above it, and the monitor that closes it on
+// Escape or a click elsewhere.
+//
+// The pane rename field, the prompt cache panel, the container color
+// picker, and the supervision title bar's dropdowns are drawn this way, at
+// scene root on the command palette's surface, rather than through
+// `.popover`. A popover's arrow, frame and
+// corner radius cannot be changed, so it could never match the app's
+// other floating panels; and with one open, a click elsewhere only
+// dismissed it (see `PRHoverCard`). Where the panel goes is
+// `FloatingPanelPlacement`'s job; these views lay that out.
+
+import AppKit
+import SwiftUI
+
+/// How Weir's floating panels hang from what opened them.
+extension FloatingPanelPlacement.Style {
+    /// Centered on a small mark and pointing back at it with an arrow, with
+    /// room in the gap for the arrow: the prompt cache panel, the color
+    /// picker.
+    static var arrowed: Self {
+        Self(
+            alignment: .centered,
+            gap: WeirLayout.floatingPanelArrowAnchorGap,
+            arrowInset: WeirLayout.floatingPanelArrowInset
+        )
+    }
+
+    /// Lined up with the leading edge of the header it stands in for, close
+    /// under it and with no arrow: the pane rename field, which reads as the
+    /// header's own name field moved out to where it has room.
+    static var underHeader: Self {
+        Self(alignment: .leading, gap: WeirLayout.paneRenamePanelAnchorGap, arrowInset: nil)
+    }
+}
+
+/// Hosts a floating panel over a whole window: the request's panel while
+/// one is open, nothing otherwise. Owns what every such host
+/// needs and is easy to get subtly wrong: reading the window's frame, an
+/// identity per opening (which restarts the measurement), the fade
+/// (`ModalMotion.floatingPanel`), and reaching past the safe area. Empty regions
+/// pass clicks through to the window, as `PRHoverCardHost`'s do.
+struct FloatingPanelHost<Request: FloatingPanelRequest, Content: View>: View {
+    /// The open panel, or nil.
+    let request: Request?
+    let width: CGFloat
+    /// How the panel hangs from its anchor; every host says.
+    let style: FloatingPanelPlacement.Style
+    /// A mouse button went down outside the panel. The click still reaches
+    /// what it landed on. Nil, as is `onKey`, for a panel whose content
+    /// handles its own keys and clicks (the rename field): a second watcher
+    /// would compete with it.
+    var onPointerPressedOutside: (() -> Void)?
+    /// A key went down. True spends it, so it reaches nothing else.
+    var onKey: ((FloatingPanelKey) -> Bool)?
+    /// Whether a press on the anchor is left to the anchor's own control,
+    /// which then toggles the panel, rather than closing it as a click
+    /// outside. For an anchor that is a button opening this panel; without
+    /// it the press would close the panel and the release reopen it.
+    var isAnchorPressLeftToAnchor = false
+    /// The pointer came onto or left the panel, for a panel that closes
+    /// when the pointer has gone.
+    var onHover: ((Bool) -> Void)?
+    /// Whether the panel fades as it opens and closes. False takes it off
+    /// at once, for a panel that closes as its window moves elsewhere: a
+    /// fade would run while the window draws the new place, and stall.
+    var fades = true
+    @ViewBuilder let content: (Request) -> Content
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        GeometryReader { overlay in
+            if let request {
+                FloatingPanel(
+                    anchor: request.anchor,
+                    container: overlay.frame(in: .global),
+                    width: width,
+                    style: style,
+                    onPointerPressedOutside: onPointerPressedOutside,
+                    onKey: onKey,
+                    isAnchorPressLeftToAnchor: isAnchorPressLeftToAnchor,
+                    onHover: onHover
+                ) {
+                    content(request)
+                }
+                .modalTransition(.floatingPanel, reduceMotion: reduceMotion)
+                .id(request.id)
+            }
+        }
+        .ignoresSafeArea()
+        .animation(fades ? ModalMotion.floatingPanel.animation(reduceMotion: reduceMotion) : nil, value: request?.id)
+    }
+}
+
+/// A floating panel: `content` at `width` on the floating panel surface,
+/// hung below `anchor` as `style` says, or above it near the window's
+/// bottom, clamped into the window, with an arrow pointing back at the
+/// anchor from wherever it ended up when the style has one. Watches the
+/// window's keys and clicks while up, when given something to do with
+/// them. Held back until measured, so a panel near the bottom never
+/// shows below its anchor for a frame and then jumps above it.
+/// `FloatingPanelHost` gives each opening its own identity, which
+/// starts the measurement afresh.
+struct FloatingPanel<Content: View>: View {
+    /// What the panel hangs from, in global coordinates.
+    let anchor: CGRect
+    /// The host overlay's frame in global coordinates: the window's content.
+    let container: CGRect
+    let width: CGFloat
+    let style: FloatingPanelPlacement.Style
+    let onPointerPressedOutside: (() -> Void)?
+    let onKey: ((FloatingPanelKey) -> Bool)?
+    let isAnchorPressLeftToAnchor: Bool
+    let onHover: ((Bool) -> Void)?
+    @ViewBuilder let content: Content
+
+    /// The panel's measured height. Zero until the first layout.
+    @State private var height: CGFloat = 0
+
+    var body: some View {
+        let local = anchor.offsetBy(dx: -container.minX, dy: -container.minY)
+        let size = CGSize(width: width, height: height)
+        // An arrow points at the anchor from wherever the clamping put the
+        // panel, so the panel says where it came from even when it has slid
+        // over the rows or panes beside it.
+        let (origin, arrow) = FloatingPanelPlacement.layout(
+            anchor: local,
+            panelSize: size,
+            container: container.size,
+            margin: WeirLayout.floatingPanelWindowMargin,
+            style: style
+        )
+        content
+            .frame(width: width, alignment: .leading)
+            .onHover { onHover?($0) }
+            // Behind the content and inside the surface's frame, so the
+            // monitor's bounds are the panel's own.
+            .background {
+                if onPointerPressedOutside != nil || onKey != nil {
+                    FloatingPanelEventMonitor(
+                        onPointerPressedOutside: { onPointerPressedOutside?() },
+                        onKey: { onKey?($0) ?? false },
+                        anchorInPanel: isAnchorPressLeftToAnchor
+                            ? local.offsetBy(dx: -origin.x, dy: -origin.y)
+                            : nil
+                    )
+                }
+            }
+            .floatingPanelSurface(in: FloatingPanelShape(
+                cornerRadius: WeirLayout.floatingPanelCornerRadius,
+                arrow: arrow,
+                arrowHeight: WeirLayout.floatingPanelArrowHeight
+            ))
+            .pointerStyle(.default)
+            .fixedSize()
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+            .opacity(height > 0 ? 1 : 0)
+            .offset(x: origin.x, y: origin.y)
+    }
+}
+
+/// A floating panel's outline: its rounded rectangle with an arrow on the
+/// edge that faces its anchor, drawn as one closed path so the surface fills
+/// and strokes it as one piece, with no seam where the arrow meets the edge.
+/// The arrow stands outside the panel's frame, in the gap left for it.
+/// Without an arrow it is exactly the continuous rounded rectangle that
+/// `floatingPanelSurface(cornerRadius:)` draws, so an arrow-less panel looks
+/// the same either way.
+struct FloatingPanelShape: Shape {
+    let cornerRadius: CGFloat
+    /// Nil draws the plain rounded rectangle.
+    let arrow: FloatingPanelPlacement.Arrow?
+    /// How far the tip stands out, which is also the half-width of its base,
+    /// as for a square turned 45 degrees.
+    let arrowHeight: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        guard let arrow else {
+            return RoundedRectangle(cornerRadius: cornerRadius, style: .continuous).path(in: rect)
+        }
+        let radius = min(cornerRadius, rect.width / 2, rect.height / 2)
+        let topArrowX = arrow.edge == .top ? rect.minX + arrow.offset : nil
+        let bottomArrowX = arrow.edge == .bottom ? rect.minX + arrow.offset : nil
+        let leadingArrowY = arrow.edge == .leading ? rect.minY + arrow.offset : nil
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + radius, y: rect.minY))
+        if let x = topArrowX {
+            path.addLine(to: CGPoint(x: x - arrowHeight, y: rect.minY))
+            path.addLine(to: CGPoint(x: x, y: rect.minY - arrowHeight))
+            path.addLine(to: CGPoint(x: x + arrowHeight, y: rect.minY))
+        }
+        path.addArc(
+            tangent1End: CGPoint(x: rect.maxX, y: rect.minY),
+            tangent2End: CGPoint(x: rect.maxX, y: rect.maxY),
+            radius: radius
+        )
+        path.addArc(
+            tangent1End: CGPoint(x: rect.maxX, y: rect.maxY),
+            tangent2End: CGPoint(x: rect.minX, y: rect.maxY),
+            radius: radius
+        )
+        if let x = bottomArrowX {
+            path.addLine(to: CGPoint(x: x + arrowHeight, y: rect.maxY))
+            path.addLine(to: CGPoint(x: x, y: rect.maxY + arrowHeight))
+            path.addLine(to: CGPoint(x: x - arrowHeight, y: rect.maxY))
+        }
+        path.addArc(
+            tangent1End: CGPoint(x: rect.minX, y: rect.maxY),
+            tangent2End: CGPoint(x: rect.minX, y: rect.minY),
+            radius: radius
+        )
+        if let y = leadingArrowY {
+            path.addLine(to: CGPoint(x: rect.minX, y: y + arrowHeight))
+            path.addLine(to: CGPoint(x: rect.minX - arrowHeight, y: y))
+            path.addLine(to: CGPoint(x: rect.minX, y: y - arrowHeight))
+        }
+        path.addArc(
+            tangent1End: CGPoint(x: rect.minX, y: rect.minY),
+            tangent2End: CGPoint(x: rect.maxX, y: rect.minY),
+            radius: radius
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// A key press while a floating panel is up, as the panel's monitor saw it.
+struct FloatingPanelKey: Equatable {
+    /// Escape with no modifier.
+    let isEscape: Bool
+    /// The key goes to a terminal, which is typing at a prompt, rather than
+    /// to the panel's own controls.
+    let isTypingInTerminal: Bool
+}
+
+/// Watches the window's keys and clicks while a floating panel is up. An
+/// AppKit monitor because the keyboard usually stays with the terminal
+/// while the panel is up, so SwiftUI's own key handling would not see the
+/// keys; a panel that does take the keyboard (a title bar dropdown's
+/// search field) still gets Escape here first, wherever focus is inside it.
+/// Placed as the panel's background, so its bounds are the panel's.
+struct FloatingPanelEventMonitor: NSViewRepresentable {
+    /// A mouse button went down outside the panel. The click still reaches
+    /// what it landed on.
+    let onPointerPressedOutside: () -> Void
+    /// A key went down. True spends it, so it reaches nothing else.
+    let onKey: (FloatingPanelKey) -> Bool
+    /// The anchor in the panel's own coordinates (top-left origin), when a
+    /// press on it is left to the anchor; nil when it counts as outside.
+    var anchorInPanel: CGRect?
+
+    func makeNSView(context: Context) -> MonitorView {
+        let view = MonitorView()
+        updateNSView(view, context: context)
+        return view
+    }
+
+    func updateNSView(_ view: MonitorView, context _: Context) {
+        view.onPointerPressedOutside = onPointerPressedOutside
+        view.onKey = onKey
+        view.anchorInPanel = anchorInPanel
+    }
+
+    static func dismantleNSView(_ view: MonitorView, coordinator _: ()) {
+        view.removeMonitor()
+    }
+
+    /// Whether a press at `location`, in the monitor's own coordinates,
+    /// lands on `anchor`, given in the panel's coordinates, which run down
+    /// from the top. The monitor's run up from the bottom unless the view is
+    /// flipped, so the press is turned over first.
+    nonisolated static func isPress(
+        at location: CGPoint,
+        onAnchor anchor: CGRect,
+        panelHeight: CGFloat,
+        isFlipped: Bool
+    ) -> Bool {
+        let fromTop = isFlipped ? location : CGPoint(x: location.x, y: panelHeight - location.y)
+        return anchor.contains(fromTop)
+    }
+
+    @MainActor final class MonitorView: NSView {
+        var onPointerPressedOutside: (() -> Void)?
+        var onKey: ((FloatingPanelKey) -> Bool)?
+        var anchorInPanel: CGRect?
+        private var monitor: Any?
+
+        /// Never the target of a click: a press on the panel's padding
+        /// belongs to the panel, not to this watcher behind it.
+        override func hitTest(_: NSPoint) -> NSView? {
+            nil
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window == nil {
+                removeMonitor()
+            } else {
+                installMonitor()
+            }
+        }
+
+        private func installMonitor() {
+            guard monitor == nil else { return }
+            monitor = NSEvent.addLocalMonitorForEvents(
+                matching: [.keyDown, .leftMouseDown, .rightMouseDown]
+            ) { [weak self] event in
+                guard let self, let window, event.window === window else { return event }
+                guard event.type == .keyDown else {
+                    // A click on the panel itself is for its controls. Asked
+                    // of the panel's frame rather than of any hover state: a
+                    // panel that opened under a pointer that never moved has
+                    // had no hover, and closing it here would eat the click
+                    // before the control sees it.
+                    let location = convert(event.locationInWindow, from: nil)
+                    let isOnAnchor = anchorInPanel.map { anchor in
+                        FloatingPanelEventMonitor.isPress(
+                            at: location,
+                            onAnchor: anchor,
+                            panelHeight: bounds.height,
+                            isFlipped: isFlipped
+                        )
+                    } ?? false
+                    if !bounds.contains(location), !isOnAnchor {
+                        onPointerPressedOutside?()
+                    }
+                    return event
+                }
+                // An input method composing text owns its keys, Escape
+                // included.
+                if let input = window.firstResponder as? any NSTextInputClient, input.hasMarkedText() {
+                    return event
+                }
+                let key = FloatingPanelKey(
+                    isEscape: event.namedKey == .escape
+                        && event.modifierFlags.isDisjoint(with: [.command, .control, .option, .shift]),
+                    isTypingInTerminal: window.firstResponder is SurfaceView
+                )
+                return onKey?(key) == true ? nil : event
+            }
+        }
+
+        func removeMonitor() {
+            guard let monitor else { return }
+            NSEvent.removeMonitor(monitor)
+            self.monitor = nil
+        }
+    }
+}

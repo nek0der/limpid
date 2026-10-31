@@ -3,7 +3,7 @@ excluded:
   - build
   - .build
   - .claude
-  - Limpid.xcodeproj
+  - Weir.xcodeproj
 
 line_length:
   warning: 140
@@ -49,7 +49,7 @@ disabled_rules:
 # switches Display Language in Settings. Models carry
 # `LocalizedStringResource`, views hand it to SwiftUI, and text that has to be
 # a `String` goes through `resolved(in:)` with the environment or app locale
-# (`Limpid/Core/Localization/LocalizedStringResource+Resolved.swift`, the one
+# (`Weir/Core/Localization/LocalizedStringResource+Resolved.swift`, the one
 # file allowed the raw lookup). A deliberate launch-language lookup (the
 # `NSOpenPanel` prompts) says why beside a
 # `swiftlint:disable:next launch_language_lookup`. The bare `.init(localized:`
@@ -59,7 +59,7 @@ custom_rules:
   launch_language_lookup:
     name: "Launch-language string lookup"
     regex: '\b(?:String|AttributedString)(?:\.init)?\(\s*localized:|(?<![\w.])\.init\(\s*localized:|\bNSLocalizedString\(|\.localizedString\(forKey:|\bByteCountFormatter\(\)'
-    excluded: 'Limpid/Core/Localization/LocalizedStringResource\+Resolved\.swift$'
+    excluded: 'Weir/Core/Localization/LocalizedStringResource\+Resolved\.swift$'
     excluded_match_kinds:
       - comment
       - comment.mark
@@ -87,7 +87,7 @@ custom_rules:
   layer_ui_framework_import:
     name: "UI framework below the UI layer"
     regex: '^\s*(?:@\w+(?:\([^)]*\))?\s+)*import\s+(?:(?:struct|class|enum|protocol|typealias|func|var|let)\s+)?(?:AppKit|SwiftUI|SwiftUICore|Cocoa)\b'
-    included: 'Limpid/(?:Core|Presentation)/'
+    included: 'Weir/(?:Core|Presentation)/'
     excluded_match_kinds:
       - comment
       - comment.mark
@@ -96,27 +96,27 @@ custom_rules:
       - doccomment.field
       - string
     excluded:
-      - 'Limpid/Core/Actions/PaneActions\.swift$'
-      - 'Limpid/Core/Agent/AgentIntegrationServiceRegistrar\.swift$'
-      - 'Limpid/Core/Clipboard/ClipboardConfirmationCoordinator\.swift$'
-      - 'Limpid/Core/Files/FileOpener\.swift$'
-      - 'Limpid/Core/GhosttyActionRouter\.swift$'
-      - 'Limpid/Core/GhosttyApp\.swift$'
-      - 'Limpid/Core/GhosttyEventCoordinator\.swift$'
-      - 'Limpid/Core/Git/GitSyncCoordinator\.swift$'
-      - 'Limpid/Core/Git/PRStatusSyncer\.swift$'
-      - 'Limpid/Core/Links/TerminalLinkOpener\.swift$'
-      - 'Limpid/Core/Notifications/LimpidNotificationManager\.swift$'
-      - 'Limpid/Core/Notifications/NotificationDelegate\.swift$'
-      - 'Limpid/Core/QuickTerminal/QuickTerminalHotKeyCenter\.swift$'
-      - 'Limpid/Core/Review/ReviewFileAction\.swift$'
-      - 'Limpid/Core/SecureInputManager\.swift$'
-      - 'Limpid/Core/Settings/KeyboardShortcut\+Capture\.swift$'
-      - 'Limpid/Core/Settings/KeyboardShortcut\.swift$'
-      - 'Limpid/Core/Settings/ReduceTransparencyResolver\.swift$'
-      - 'Limpid/Core/SurfaceRegistry\.swift$'
-      - 'Limpid/Core/Updates/LimpidUpdateDriver\.swift$'
-      - 'Limpid/Core/Updates/LimpidWindowRole\.swift$'
+      - 'Weir/Core/Actions/PaneActions\.swift$'
+      - 'Weir/Core/Agent/AgentIntegrationServiceRegistrar\.swift$'
+      - 'Weir/Core/Clipboard/ClipboardConfirmationCoordinator\.swift$'
+      - 'Weir/Core/Files/FileOpener\.swift$'
+      - 'Weir/Core/GhosttyActionRouter\.swift$'
+      - 'Weir/Core/GhosttyApp\.swift$'
+      - 'Weir/Core/GhosttyEventCoordinator\.swift$'
+      - 'Weir/Core/Git/GitSyncCoordinator\.swift$'
+      - 'Weir/Core/Git/PRStatusSyncer\.swift$'
+      - 'Weir/Core/Links/TerminalLinkOpener\.swift$'
+      - 'Weir/Core/Notifications/WeirNotificationManager\.swift$'
+      - 'Weir/Core/Notifications/NotificationDelegate\.swift$'
+      - 'Weir/Core/QuickTerminal/QuickTerminalHotKeyCenter\.swift$'
+      - 'Weir/Core/Review/ReviewFileAction\.swift$'
+      - 'Weir/Core/SecureInputManager\.swift$'
+      - 'Weir/Core/Settings/KeyboardShortcut\+Capture\.swift$'
+      - 'Weir/Core/Settings/KeyboardShortcut\.swift$'
+      - 'Weir/Core/Settings/ReduceTransparencyResolver\.swift$'
+      - 'Weir/Core/SurfaceRegistry\.swift$'
+      - 'Weir/Core/Updates/WeirUpdateDriver\.swift$'
+      - 'Weir/Core/Updates/WeirWindowRole\.swift$'
     message: >-
       Core and Presentation do not import AppKit or SwiftUI. Put the AppKit
       or SwiftUI part in App/ or UI/ and pass values or a port in.
@@ -128,7 +128,7 @@ custom_rules:
   domain_foundation_only:
     name: "Domain imports Foundation only"
     regex: '^\s*(?:@\w+(?:\([^)]*\))?\s+)*import\s+(?!(?:(?:struct|class|enum|protocol|typealias|func|var|let)\s+)?Foundation\b)\w+'
-    included: 'Limpid/Core/Domain/'
+    included: 'Weir/Core/Domain/'
     excluded_match_kinds:
       - comment
       - comment.mark
@@ -143,7 +143,7 @@ custom_rules:
   domain_side_effect:
     name: "Side effect in Domain"
     regex: '\b(?:Process|FileManager|URLSession)\b'
-    included: 'Limpid/Core/Domain/'
+    included: 'Weir/Core/Domain/'
     excluded_match_kinds:
       - comment
       - comment.mark
@@ -164,7 +164,7 @@ custom_rules:
   core_names_presentation_type:
     name: "Core names a Presentation type"
     regex: '\b(?:ProjectWindowState|WindowRegistry|SessionRowFactText|SessionSidebarModel|NeedsAttentionListModel|DecisionBarModel|TurnPromptText|TurnReplyText)\b'
-    included: 'Limpid/Core/'
+    included: 'Weir/Core/'
     # Code only: a doc comment may explain how a Core value relates to the
     # display state built on top of it.
     excluded_match_kinds:
@@ -186,12 +186,12 @@ custom_rules:
   # callers take a Core value in their place. Do not add a file here.
   core_names_ui_type:
     name: "Core names a UI type"
-    regex: '\b(?:LimpidLayout|SupervisionTokens|StateGlyph|ContainerSymbol|DropPosition)\b'
-    included: 'Limpid/Core/'
+    regex: '\b(?:WeirLayout|SupervisionTokens|StateGlyph|ContainerSymbol|DropPosition)\b'
+    included: 'Weir/Core/'
     excluded:
-      - 'Limpid/Core/CommandPalette/CommandPaletteCatalog\.swift$'
-      - 'Limpid/Core/Models/WorkspaceSession\.swift$'
-      - 'Limpid/Core/Models/WorkspaceSession\+Worktree\.swift$'
+      - 'Weir/Core/CommandPalette/CommandPaletteCatalog\.swift$'
+      - 'Weir/Core/Models/WorkspaceSession\.swift$'
+      - 'Weir/Core/Models/WorkspaceSession\+Worktree\.swift$'
     excluded_match_kinds:
       - comment
       - comment.mark
@@ -211,10 +211,10 @@ custom_rules:
   # and its protection takes turn ids instead of `ReviewTurnRange`.
   domain_names_core_type:
     name: "Domain names a Core type"
-    regex: '\b(?:TurnRetentionSettings|ReviewTurnRange|AgentIntegrationApprovalWire|PRInfo|WorkspaceSession|SettingsStore|LimpidSettings|ApprovalPresentation|AgentRuntimePresentation)\b'
-    included: 'Limpid/Core/Domain/'
+    regex: '\b(?:TurnRetentionSettings|ReviewTurnRange|AgentIntegrationApprovalWire|PRInfo|WorkspaceSession|SettingsStore|WeirSettings|ApprovalPresentation|AgentRuntimePresentation)\b'
+    included: 'Weir/Core/Domain/'
     excluded:
-      - 'Limpid/Core/Domain/TurnRetention\.swift$'
+      - 'Weir/Core/Domain/TurnRetention\.swift$'
     excluded_match_kinds:
       - comment
       - comment.mark
@@ -238,8 +238,8 @@ custom_rules:
       - comment
       - doccomment
     excluded:
-      - 'Limpid/Core/Git/PRInfo\.swift$'
-      - 'LimpidTests/CatalogWordingTests\.swift$'
+      - 'Weir/Core/Git/PRInfo\.swift$'
+      - 'WeirTests/CatalogWordingTests\.swift$'
     message: >-
       Comments use US spelling: canceled, signaling, acknowledgment,
       initialize, modeled, recognize, behavior, normalize, synchronize, gray.

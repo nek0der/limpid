@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
   - name: Questions & Discussions
-    url: https://github.com/nek0der/limpid/discussions
+    url: https://github.com/nek0der/weir/discussions
     about: For general questions, ideas, or showing off your setup.
   - name: Security vulnerabilities
-    url: https://github.com/nek0der/limpid/security/advisories/new
+    url: https://github.com/nek0der/weir/security/advisories/new
     about: Report privately, not in public issues.

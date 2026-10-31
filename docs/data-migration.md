@@ -1,9 +1,9 @@
 # Migrating saved data
 
-Limpid keeps its state in files under `~/Library/Application Support/Limpid/`
-(`Limpid Dev/` for a Debug build), and keeps a few more in each repository's
+Weir keeps its state in files under `~/Library/Application Support/Weir/`
+(`Weir Dev/` for a Debug build), and keeps a few more in each repository's
 Git directory. When the shape of a versioned file changes, its version goes
-up and Limpid brings the file forward at launch. This document describes how
+up and Weir brings the file forward at launch. This document describes how
 that works, lists every file the supervision window's release changes or adds,
 and says how to go back one release after a migration.
 
@@ -17,13 +17,13 @@ release that came just before the change being described.
 ## How it works
 
 - `VersionedDocumentMigrator`
-  (`Limpid/Core/Persistence/VersionedDocumentMigrator.swift`) reads a file's
+  (`Weir/Core/Persistence/VersionedDocumentMigrator.swift`) reads a file's
   version and runs the steps that bring it to the current one. Each document
   describes the key that holds its version (`version` or `schemaVersion`), its
   current version, and one step per older version (`DocumentMigrationStep`).
 - The migrator only reports what it found. What happens to a file it cannot
   bring forward is up to each document. For `state.json`, the file is renamed
-  with its contents unchanged and Limpid opens a fresh window:
+  with its contents unchanged and Weir opens a fresh window:
   - written by a newer build, or too old for any step:
     `state.json.bak-version-mismatch-<unix>`
   - a step failed: `state.json.bak-migration-failed-<unix>`
@@ -32,28 +32,28 @@ release that came just before the change being described.
   - the migrated file does not decode: `state.json.bak-decode-failed-<unix>`
   - the file is there but cannot be read (its permissions, an I/O error):
     `state.json.bak-read-failed-<unix>`. Only a file that is not there at
-    all starts Limpid as a first launch, with nothing to report. A file in
+    all starts Weir as a first launch, with nothing to report. A file in
     a folder that cannot be searched is not taken for a missing one. It
-    cannot be moved either, so Limpid stops saving for the launch.
+    cannot be moved either, so Weir stops saving for the launch.
 
   For `settings.json`:
   - A file that is there but cannot be read is renamed
-    `settings.json.bak-read-failed-<unix>`, and Limpid starts from the
+    `settings.json.bak-read-failed-<unix>`, and Weir starts from the
     defaults. As for `state.json`, only a missing file counts as none, and
     one in a folder that cannot be searched stops saving for the launch.
   - A file written by a newer build is still read, so rolling back through
     Sparkle does not reset the settings. One that does not decode here (the
     newer build changed the type of a key this build knows) stays where it
-    is, unrenamed. Limpid runs on the defaults for that launch and does not
+    is, unrenamed. Weir runs on the defaults for that launch and does not
     save them over it.
   - A file that cannot be copied before its migration is read as it was and
     not written. The next launch tries again. Changes made in that launch are
-    not saved, and Limpid says so at launch and at the top of
+    not saved, and Weir says so at launch and at the top of
     Settings → General.
   - A file that is not newer than this build (or whose version cannot be
     read) and that neither moves to the current format nor reads as it
     stands is renamed
-    `settings.json.bak-decode-failed-<unix>`. Limpid then starts from
+    `settings.json.bak-decode-failed-<unix>`. Weir then starts from
     the defaults and saves them.
 
   For a review draft (`reviews/<hash>.json`):
@@ -67,17 +67,17 @@ release that came just before the change being described.
   - A migrated draft that would exceed the 2 MB limit is renamed
     `<hash>.json.bak-migration-too-large-<unix>`.
 - Sometimes this build cannot use a `state.json` or `settings.json` and cannot
-  rename it aside either (a read-only folder, an immutable file). Limpid then
+  rename it aside either (a read-only folder, an immutable file). Weir then
   leaves the file in place and does not save it for the rest of that launch,
   so the only copy is never overwritten. Changes made in that launch are not
-  kept. Limpid says so at launch: in the alert that the session was not
+  kept. Weir says so at launch: in the alert that the session was not
   restored, or in an alert of its own for `settings.json`. It also says so at
   the top of Settings → General for as long as saving stays stopped. A review
   draft in that position is handled the same way: the review starts empty, is
   not saved, and loses its changes when it closes. Opening it again tries the
   file afresh.
 - Before a migrated file is written, `MigrationBackup`
-  (`Limpid/Core/Persistence/MigrationBackup.swift`) copies the original to
+  (`Weir/Core/Persistence/MigrationBackup.swift`) copies the original to
   `<name>.pre-v<N>` beside it. `<N>` is the version the file moves to, and the
   copy is readable by the user only (0600). If the copy cannot be written, the
   file is not migrated. An existing copy is reused only after it is read back
@@ -88,13 +88,13 @@ release that came just before the change being described.
   counts the migration as written only if the file holds exactly those bytes.
   If that first write fails, the migrated document stays in use from memory,
   and the first save that reaches disk finishes the ledger with the bytes it
-  wrote (`state.json`, `settings.json` and review drafts alike). If Limpid
+  wrote (`state.json`, `settings.json` and review drafts alike). If Weir
   ends after the write but before the ledger update, the next read of the
   file finds exactly the recorded bytes and finishes the ledger. The ledger
   stops at `written`: nothing on screen reports a migration, and only the log
   records it. `acknowledged`, which earlier builds wrote once they had told
   the person, is kept only so that the ledgers they left still read.
-- The ledger also records the original file's SHA-256. If Limpid ends anywhere
+- The ledger also records the original file's SHA-256. If Weir ends anywhere
   between the copy and the ledger update, the next launch finds the same copy
   (through the ledger, or by comparing the copies' contents) instead of taking
   another one. A new generation, `<name>.pre-v<N>.<unix>`, is taken only when
@@ -133,7 +133,7 @@ release that came just before the change being described.
 ### `state.json`: version 5 to 6
 
 The step is `SessionSnapshotV5`
-(`Limpid/Core/Persistence/SessionSnapshotV5.swift`):
+(`Weir/Core/Persistence/SessionSnapshotV5.swift`):
 
 - Groups are no longer written. Their tabs become scratch tabs, after the
   scratch tabs that were there, in group order and then tab order. Each tab
@@ -231,7 +231,7 @@ key skips it:
 - A project's `mainHeadSHA`, the commit its main folder has checked out, is
   read with `decodeIfPresent` (`Project.init(from:)` in `SidebarItem.swift`).
   A file without it reads as no commit until the next sync fills it in.
-  Limpid uses it to keep offering the worktree menu for a main checkout on a
+  Weir uses it to keep offering the worktree menu for a main checkout on a
   detached HEAD. A build without it skips the key.
 - A tab's `conversationName`, the name of the first agent conversation that
   ran in it, names the tab's session row (`Tab.swift`). A file without it
@@ -249,7 +249,7 @@ key skips it:
   would fail to read the whole session. That build shows a clean, even tree
   until its own sync runs.
 - A worktree's `admission` (`containers[].project.worktrees[].admission`)
-  says how it became a sidebar row: `"created"` (Limpid made it), `"opened"`
+  says how it became a sidebar row: `"created"` (Weir made it), `"opened"`
   (the person opened it), or `"discovered"` (Git only reported it). A
   discovered worktree with no tab is listed among the other worktrees rather
   than the working rows (`Worktree` in `SidebarItem.swift`,
@@ -266,7 +266,7 @@ key skips it:
   - A value this build does not know, or a value of another type, reads as
     no admission and is not written back. The row is placed again as above.
   - A worktree a hook routed to the project's own placement sits where
-    Limpid puts its own, so its path does not tell it apart. It stays
+    Weir puts its own, so its path does not tell it apart. It stays
     `"opened"`.
   - The build before skips the key and drops it when it saves. Coming back
     to this build places the worktrees again, so a row that was only
@@ -341,8 +341,8 @@ Some keys of version 6 are still read but no longer written new:
   saves them, and hands each to its pane's first agent launch, so an
   instruction staged before the update is not lost. The release after this
   one removes the key from `Tab.CodingKeys`, after which it is skipped.
-  `InitialPromptFile`, the shim's `limpid_take_initial_prompt`, and the
-  `unsetenv` and `removeOrphans` calls in `LimpidApp` go with it. The build
+  `InitialPromptFile`, the shim's `weir_take_initial_prompt`, and the
+  `unsetenv` and `removeOrphans` calls in `WeirApp` go with it. The build
   before reads and writes the key as this build does.
 
 Some keys of version 6 are no longer read or written:
@@ -392,7 +392,7 @@ The previous release sets the file aside as
 ### `settings.json`: schema 1 to 2
 
 `settings.json` moves from schema 1 to 2 (`VersionedDocumentMigrator.settings`,
-`Limpid/Core/Settings/SettingsMigration.swift`) for the supervision window's
+`Weir/Core/Settings/SettingsMigration.swift`) for the supervision window's
 shortcuts. Two rules apply:
 
 - A binding on ⌘⏎, which the decision bar now reserves, moves to
@@ -445,7 +445,7 @@ is folded into New Worktree… (`newWorktree`), whose default is now ⌘N
 
 Move Project Up (`moveProjectUp`) and Move Project Down (`moveProjectDown`)
 are new, with ⌥⌘↑ and ⌥⌘↓, the keys Focus Pane Above and Below have too
-(`LimpidShortcutAction.sharesKeys`). The two pairs may share keys, because
+(`WeirShortcutAction.sharesKeys`). The two pairs may share keys, because
 the sidebar takes them only while it has focus. A person's own
 binding on those keys for any other action gives both defaults up
 (`keyboard.unbound`), as for any new action.
@@ -679,7 +679,7 @@ New. Each agent's hook writes one record per turn in the provider's state
 directory, `agent-states/turns/<turn-id>.turn.json` or
 `codex-agent-states/turns/<turn-id>.turn.json` (schema 1). It numbers a
 conversation's turns from `turns/<hash>.counter`, which only grows. In the
-repository, `refs/limpid/turns/<turn-id>/begin` and `/end` pin the turn's two
+repository, `refs/weir/turns/<turn-id>/begin` and `/end` pin the turn's two
 snapshot trees. `docs/agent-integration-protocol.md` describes the record.
 
 A record a newer schema wrote is read when its shape allows, and is never
@@ -744,7 +744,7 @@ tree. An older build ignores the key and drops it when it saves.
 
 `viewed-lines.json` (`ViewedLineStore`) keeps each conversation's viewed line,
 what was viewed of the changes outside turns, and the spans of deleted turns.
-Each line also moves an auxiliary ref, `refs/limpid/reviewed/<hash>`, in the
+Each line also moves an auxiliary ref, `refs/weir/reviewed/<hash>`, in the
 conversation's repository.
 
 `viewed-lines.json` also keeps, under `restoreMoves`, how each applied
@@ -757,7 +757,7 @@ worktree's journals lists the restore as undone, by whatever undo, its moves
 are taken back, except a move a later move of its line stands over. The entry
 is dropped when that reading lists the restore as aborted, or when the reading
 of its own worktree no longer lists it while the worktree is there; a worktree
-Limpid cannot find (a volume not mounted) reads as one with no journal, and
+Weir cannot find (a volume not mounted) reads as one with no journal, and
 its entries stay. A restore at any other stage keeps its entry. A reading that
 could not read some journals settles nothing. A move also goes once it is
 taken back on its own ("Unmark as Viewed"), or with its line. Each entry
@@ -812,7 +812,7 @@ The file is `{"schemaVersion": 1, "records": [...], "dismissed": [...]}`.
 
 A resume still under way at quit is written as if none were under way. The
 shell it was typed into ended with the launch, so the stop offers the resume
-afresh. The resumes Limpid types at launch are never written. While one
+afresh. The resumes Weir types at launch are never written. While one
 is under way, a stop of the same session in the pane says it is resuming. If
 that resume fails, the launch's own stop replaces it, so a pane never holds
 two stops of one conversation.
@@ -837,7 +837,7 @@ stop after a relaunch, and the file stays as this release last wrote it.
 
 New, `schemaVersion` 1 (`AgentForgottenHintFile`), beside `state.json`. It
 holds the resume hints of sessions the person ended ("Start New
-Conversation") that Limpid could not delete yet, because a hook held the
+Conversation") that Weir could not delete yet, because a hook held the
 hint's lock or the file could not be removed. Only the person knows they
 moved on from a conversation. Nothing else on disk says so at the next
 launch, whose rules would otherwise resume the session.
@@ -845,7 +845,7 @@ launch, whose rules would otherwise resume the session.
 The file is `{"schemaVersion": 1, "hints": [...]}`. Each entry names the
 `provider`, the pane (`pane`), and the `sessionID` the hint must still name.
 A hint that a newer session has written since belongs to that pane and is
-left alone. Limpid tries each hint again before every pass and at quit, keeps
+left alone. Weir tries each hint again before every pass and at quit, keeps
 it from the rules meanwhile, and removes the file once none is left. If a
 write of the file fails (a folder that will not take it), the write is tried
 again before every pass and at quit, even if the list has not changed since.
@@ -927,15 +927,15 @@ The previous release does not know the file and leaves it alone.
 
 ### Codex's `config.toml`
 
-Not Limpid's file: the person's own `~/.codex/config.toml`, which Codex
+Not Weir's file: the person's own `~/.codex/config.toml`, which Codex
 edits too (`CodexUserConfig`, `CodexHookInstaller`). Earlier builds kept a
 `[hooks.state."<key>"]` table in it for each hook they passed Codex, with two
-keys, `enabled = true` and `trusted_hash`, between `# BEGIN limpid …` and
-`# END limpid`. This release passes that trust in the `-c` flags that carry
+keys, `enabled = true` and `trusted_hash`, between `# BEGIN weir …` and
+`# END weir`. This release passes that trust in the `-c` flags that carry
 the hooks, and at launch takes out what the earlier builds wrote:
 
-- In a table whose header is one Limpid wrote (`/<session-flags>/config.toml`
-  keys for the events Limpid subscribes to), wherever it stands in the file,
+- In a table whose header is one Weir wrote (`/<session-flags>/config.toml`
+  keys for the events Weir subscribes to), wherever it stands in the file,
   the `enabled` and `trusted_hash` lines go. The header goes too when only
   blank lines are left under it; a key Codex added to it, or a comment,
   keeps it. A trust table with any other key stays, even of the same form.
@@ -953,7 +953,7 @@ the hooks, and at launch takes out what the earlier builds wrote:
   not load once edited. The file is written only when something of ours is
   in it, so this happens once.
 
-Limpid takes no copy before writing: the lines it removes are its own, and
+Weir takes no copy before writing: the lines it removes are its own, and
 a `trusted_hash` left in the file only names a hook command of an earlier
 build.
 
@@ -963,17 +963,17 @@ and this release takes the tables out again at its next launch.
 
 ### Git directories
 
-In each repository Limpid works in:
+In each repository Weir works in:
 
-- `refs/limpid/turns/<turn-id>/{begin,end}` (turn records, above) and
-  `refs/limpid/reviewed/<hash>` (viewed lines) are new.
+- `refs/weir/turns/<turn-id>/{begin,end}` (turn records, above) and
+  `refs/weir/reviewed/<hash>` (viewed lines) are new.
 - Restore Code keeps a journal per operation in the worktree's
-  `<git-dir>/limpid/restores/`. It pins trees with `refs/limpid/undo/<op>`
-  and `refs/limpid/undo-<kind>/<op>`, and lists the refs an operation may
-  hold under `<common-dir>/limpid/restore-refs/`.
+  `<git-dir>/weir/restores/`. It pins trees with `refs/weir/undo/<op>`
+  and `refs/weir/undo-<kind>/<op>`, and lists the refs an operation may
+  hold under `<common-dir>/weir/restore-refs/`.
   - A journal is kept 30 days once nothing can take it back. A restore that
     can still be undone is kept however old it is.
-  - A journal's age is checked when Limpid reads the worktree's journals: at
+  - A journal's age is checked when Weir reads the worktree's journals: at
     launch, and after each restore, discard, or undo there. In a worktree
     where nobody restores, a journal therefore stays past its 30 days until
     the next launch. A journal that is there but cannot be read (its
@@ -986,10 +986,10 @@ In each repository Limpid works in:
     the reason (`keptAside:<place>`). They are still read, and are written
     the new way when next written. No release wrote a journal, so no
     released build reads the new form.
-- `<git-dir>/limpid/turn-<pane>.index` and `turn-<pane>.end.index` are the
+- `<git-dir>/weir/turn-<pane>.index` and `turn-<pane>.end.index` are the
   private indexes the snapshots are taken through; the real index is never
   touched. The hook removes them when the session ends.
-- `refs/limpid/turn/<pane>`, which the previous release moved at every prompt
+- `refs/weir/turn/<pane>`, which the previous release moved at every prompt
   for its "This turn" review, is no longer written. When a session ends, the
   hook still removes it, along with the `turn-<pane>.read.index` that review
   wrote.
@@ -999,7 +999,7 @@ not touch the refs and files above.
 
 ## Going back to an earlier build
 
-1. Quit Limpid.
+1. Quit Weir.
 2. Replace each migrated file with its copy. The copy the last migration
    started from is the one named by `backupFileName` in the file's ledger.
    - `state.json.pre-v6` (or the name in `state.json.migration.json`) to

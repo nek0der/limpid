@@ -10,7 +10,7 @@ Icon?
 # Xcode
 build/
 DerivedData/
-# XcodeGen generates Limpid.xcodeproj — don't commit it
+# XcodeGen generates Weir.xcodeproj — don't commit it
 *.xcodeproj/
 *.xcworkspace/
 *.xcodeproj/xcuserdata/
@@ -33,6 +33,9 @@ Packages/
 
 # Cargo
 /target/
+
+# Python bytecode from the repo scripts
+__pycache__/
 
 # CocoaPods / Carthage
 Pods/

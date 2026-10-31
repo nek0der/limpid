@@ -30,9 +30,9 @@ body:
       required: true
 
   - type: input
-    id: limpid-version
+    id: weir-version
     attributes:
-      label: Limpid version
+      label: Weir version
       placeholder: e.g. v0.1.0 or commit SHA
     validations:
       required: true

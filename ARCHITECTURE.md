@@ -1,8 +1,8 @@
-# Limpid architecture
+# Weir architecture
 
 A one-page map of what owns what, the invariants the code depends on,
 and the places we deliberately have not refactored yet. Read it
-before touching `Limpid/Core/Models/`, the FFI boundary, or any
+before touching `Weir/Core/Models/`, the FFI boundary, or any
 persistence store. Those are the load-bearing surfaces.
 
 For coding conventions (language, comments, lint discipline), see
@@ -13,8 +13,8 @@ For coding conventions (language, comments, lint discipline), see
 ## Module map
 
 ```
-Limpid/
-  App/           entry point (LimpidApp), AppState, window controllers, menu commands
+Weir/
+  App/           entry point (WeirApp), AppState, window controllers, menu commands
   Core/          models, settings, FFI glue, persistence, git, agents
     Domain/      plain values and pure rules (Foundation only)
   Presentation/  @MainActor @Observable stores that shape state for display
@@ -31,23 +31,23 @@ AgentIntegrationService/
   Shared/         role-specific XPC contracts, identifiers, and signing policy
   Resources/      Debug and Release LaunchAgent property lists
 rust/
-  limpid-agent-model/     portable provider-neutral events and records
-  limpid-agent-core/      provider-neutral lifecycle and approval rules
-  limpid-agent-hook/      hook runtime, record writes, and provider registry; also the
+  weir-agent-model/     portable provider-neutral events and records
+  weir-agent-core/      provider-neutral lifecycle and approval rules
+  weir-agent-hook/      hook runtime, record writes, and provider registry; also the
                           Git work the app calls through the bridge: restore and discard
                           (restore, restore_journal, restore_pins, restore_apply,
                           restore_write, and restore_discard), hunks, turn GC,
                           and the worktree lock
-  limpid-provider-claude/ Claude adapter and approval translation
-  limpid-provider-codex/  Codex adapter and approval translation
-  limpid-agent-protocol/  versioned wire messages and authenticated sessions
-  limpid-rust-bridge/     Rust entry points exposed through a stable C ABI
+  weir-provider-claude/ Claude adapter and approval translation
+  weir-provider-codex/  Codex adapter and approval translation
+  weir-agent-protocol/  versioned wire messages and authenticated sessions
+  weir-rust-bridge/     Rust entry points exposed through a stable C ABI
 ```
 
 Swift dependencies flow from **App → UI → Presentation → Core → external
 boundaries** (the layers are described below). The libghostty boundary lives
-in `FFI/`. The Rust boundary lives behind `Core/Rust/LimpidRustBridge.swift`
-and the C header in `rust/limpid-rust-bridge/include/`. Rust stays independent
+in `FFI/`. The Rust boundary lives behind `Core/Rust/WeirRustBridge.swift`
+and the C header in `rust/weir-rust-bridge/include/`. Rust stays independent
 of Swift and Apple frameworks. UI may consume Core models but never reaches
 into their private state. Core keeps AppKit and SwiftUI out; "Layers and
 dependency direction" below lists the files that predate the rule. The two
@@ -77,7 +77,7 @@ Domain          plain value types and pure rules (Foundation only):
                 (its wire form is Infrastructure's, ApprovalResolution+Wire),
                 RepositoryPath, PromptWaitText, WorktreeTimeline, …
 Infrastructure  persistence, git processes, XPC, notifications, GhosttyFFI,
-                LimpidRustBridge, and the ports they are reached through
+                WeirRustBridge, and the ports they are reached through
 ```
 
 Domain holds no ports. A seam (a dependency that a test or the app swaps in)
@@ -90,14 +90,14 @@ behind a pane, `Core/SurfaceRegistry.swift` and
 (`Core/Actions/WindowCommand.swift`, answered by `WindowRegistry`). Some
 seams are a struct of closures instead (`WorktreeChanges.Git` with `.live`
 and `.inert`, `RepositoryRoots`' top level), and a few older ones are static
-hooks (`CloseConfirmer.gate`, `LimpidNotificationDelegate.onTap` and
+hooks (`CloseConfirmer.gate`, `WeirNotificationDelegate.onTap` and
 `isSourceSeen`, `GhosttyActionRouter.sink`). A new seam is a protocol at the
 Infrastructure edge, or a closure handed in for a single call, never a static
 hook.
 
-New Presentation code goes in `Limpid/Presentation/`, new Domain code in
-`Limpid/Core/Domain/`, and new Infrastructure code in the rest of
-`Limpid/Core/`, which today still holds older display stores and AppKit
+New Presentation code goes in `Weir/Presentation/`, new Domain code in
+`Weir/Core/Domain/`, and new Infrastructure code in the rest of
+`Weir/Core/`, which today still holds older display stores and AppKit
 coordinators. Core never refers to a Presentation type: what a window saves is
 the Core value `WindowSelection`, and Presentation adds its display-only state
 on top. Domain receives facts as its own small values rather than
@@ -130,7 +130,7 @@ stated condition:
 | `core_names_ui_type` | `Core/CommandPalette/CommandPaletteCatalog.swift` (`ContainerSymbol`) | the symbol moves below UI, or the catalog takes a Core value the palette maps |
 | `core_names_ui_type` | `Core/Models/WorkspaceSession.swift`, `WorkspaceSession+Worktree.swift` (`DropPosition`) | the drop position moves below UI, or the moves take a Core value |
 | `domain_names_core_type` | `Core/Domain/TurnRetention.swift` (`TurnRetentionSettings`, `ReviewTurnRange`) | the rule takes the days and turns as its own value, and its protection takes turn ids |
-| none (kept by review) | Core naming UI's `SurfaceView`: `GhosttyActionRouter`, `GhosttyEventCoordinator`, `SurfaceRegistry`, `GhosttyApp`, `SecureInputManager`, `ClipboardConfirmationCoordinator`, `GhosttyConfigBridge`, `LimpidNotificationDelegate` | each reaches the terminal through `SurfaceViewProviding` or a port App implements, as the scrollback capture does (`ScrollbackWriting`, `App/SurfaceRegistry+Scrollback.swift`) |
+| none (kept by review) | Core naming UI's `SurfaceView`: `GhosttyActionRouter`, `GhosttyEventCoordinator`, `SurfaceRegistry`, `GhosttyApp`, `SecureInputManager`, `ClipboardConfirmationCoordinator`, `GhosttyConfigBridge`, `WeirNotificationDelegate` | each reaches the terminal through `SurfaceViewProviding` or a port App implements, as the scrollback capture does (`ScrollbackWriting`, `App/SurfaceRegistry+Scrollback.swift`) |
 
 One edge goes up rather than down: UI views read `AppState`, the composition
 root, for the app's stores. The actions of the changes panel, the review tab,
@@ -152,7 +152,7 @@ finished Japanese translation.
 
 Every main window is a supervision window. No SwiftUI scene hosts one: the
 app owns its windows so that closing the last one hides it rather than
-ending it, and so that only Limpid restores them.
+ending it, and so that only Weir restores them.
 
 - `AppState.presentSupervisionWindows` (`App/AppState+SupervisionWindows.swift`)
   hands each window to `ProjectWindowPresenter`, which makes one
@@ -171,8 +171,8 @@ ending it, and so that only Limpid restores them.
 
 The root is `UI/Supervision/SupervisionWindowView.swift`. The table lists its
 parts top to bottom and left to right. View paths are under
-`Limpid/UI/Supervision/` unless they start with `UI/`. The display state is in
-`Limpid/Presentation/`, except `WorkspaceSession`, `SurfaceRegistry`,
+`Weir/UI/Supervision/` unless they start with `UI/`. The display state is in
+`Weir/Presentation/`, except `WorkspaceSession`, `SurfaceRegistry`,
 `ReviewSession`, and `WorktreeTimeline`, which are in Core:
 
 | Part | View | Display state |
@@ -200,12 +200,12 @@ request that could not come up from blocking the next or opening later.
 card (`UI/ApprovalCardHost.swift`, `ApprovalCardModel`).
 
 Outside every window is the menu bar extra
-(`MenuBar/SupervisionMenuBar.swift`, `MenuBarModel`), a scene of `LimpidApp`.
+(`MenuBar/SupervisionMenuBar.swift`, `MenuBarModel`), a scene of `WeirApp`.
 It draws the Needs Attention list's rows with the list's own
 `Attention/NeedsAttentionRowView.swift`. Its icon (`MenuBarLabelModel`) is a
-lamp that shows the attention state but no count: an empty ring, a ring with
-a dot for unread turns, or a filled disc when something is blocked on the
-person, all in the menu bar's own ink.
+lamp that shows the attention state but no count: the app's mark alone, the
+mark with a dot at its corner for unread turns, or with an exclamation mark
+there when something is blocked on the person, all in the menu bar's own ink.
 
 A view reads its model. A `+Session` extension beside the model builds it
 from the session, the attention list, and the window
@@ -290,9 +290,9 @@ shortcuts, or the window's own rails is a `WindowCommand`
 (`WindowCommandChannel`). The view that carries a command out takes it
 (`View.onWindowCommand`). A command that no view took, or that names a window
 no longer open, is logged and reported as not run. `NotificationCenter`
-carries only what does not belong to one window: `limpidOpenSettings` (the app's one Settings
-scene), `limpidCommandPaletteFocus` (one palette is open at a time),
-`limpidSearchFocus` (addressed to a pane), and `limpidGitSyncRequested`
+carries only what does not belong to one window: `weirOpenSettings` (the app's one Settings
+scene), `weirCommandPaletteFocus` (one palette is open at a time),
+`weirSearchFocus` (addressed to a pane), and `weirGitSyncRequested`
 (addressed to a project, for `GitSyncCoordinator`).
 
 Two stores ask Git about a worktree once and share the answer with every
@@ -324,7 +324,7 @@ the turns, and the commands for the app to perform.
   is in sight, and `TurnReadStore` keeps those reads in `turn-reads.json`. A
   turn that changed files stays unread until the viewed line passes it
   (`ViewedLine`, kept by `ViewedLineStore` in `viewed-lines.json`, with an
-  auxiliary ref `refs/limpid/reviewed/<hash>` per conversation). Each
+  auxiliary ref `refs/weir/reviewed/<hash>` per conversation). Each
   conversation keeps its own line. The turns of every conversation in a
   worktree form one timeline, `WorktreeTimeline` (`Core/Domain`), built from
   `TurnHistory` alone. It holds their order by `startedAt`, the turn that
@@ -370,10 +370,10 @@ the turns, and the commands for the app to perform.
 - **Retention.** `AppState+TurnRetention.swift` tells the projection which
   turns a person may still need (`TurnProtection`). The projection's sweep
   returns `deleteTurn` commands, and `TurnGarbageCollector` deletes each
-  record with its refs through `LimpidTurnBridge`. The limits come from
+  record with its refs through `WeirTurnBridge`. The limits come from
   `TurnRetentionLimits` and Settings → Advanced, which asks first when a
   narrower limit would delete records, with the count the sweep itself
-  makes without deleting (`limpid_projection_engine_turns_taken_v1`).
+  makes without deleting (`weir_projection_engine_turns_taken_v1`).
 - **A turn the person stopped.** Claude sends no hook when the person
   declines its question or permission prompt, with Esc or with "No", nor
   when they stop its work with Esc or Ctrl+C. Claude does report its status
@@ -385,7 +385,7 @@ the turns, and the commands for the app to perform.
   transcript the run record names, and its badge shows the turn stopped at
   once (`waitDeclined` or `interrupted`). The same pass returns an
   `endStoppedTurn` command, and `StoppedTurnCloser` hands it to Rust
-  (`LimpidTurnBridge.endStoppedTurn`), off the main actor: once when the
+  (`WeirTurnBridge.endStoppedTurn`), off the main actor: once when the
   write settles, and up to three times for a write that does not. Under the
   record lock, Rust ends the run record and its turn as the hook's idle
   prompt would, with what the transcript says the turn used, so the Changes
@@ -403,9 +403,9 @@ the turns, and the commands for the app to perform.
   bar, and the notification, and is counted on its own.
 - **Restore Code** ("Restore Code to Before This Turn…" on a changes panel
   row and in the decision bar's ⋯ menu) runs through `RestoreCoordinator` into
-  Rust (`LimpidRestoreBridge`). Rust journals each operation under the
-  worktree's `<git-dir>/limpid/restores/` and pins the trees it may need with
-  `refs/limpid/undo*/<op>`. `AppState+Restore.swift` asks `RestoreGate`
+  Rust (`WeirRestoreBridge`). Rust journals each operation under the
+  worktree's `<git-dir>/weir/restores/` and pins the trees it may need with
+  `refs/weir/undo*/<op>`. `AppState+Restore.swift` asks `RestoreGate`
   whether a restore may run, and recovers a restore that a quit cut short.
   An undo cut short whose restore or discard cannot be read yet keeps its
   launch notice in `restore-pending-stops.json` (`RestorePendingStopFile`)
@@ -430,47 +430,47 @@ conversation again as its surface mounts (`AgentResumeCommandBuilder`).
 
 | File | Owns |
 |---|---|
-| `Limpid/App/LimpidApp.swift` | Scene tree, command menu, and `AppState` — the process-wide singleton holding the session, the window registry, the stores, and the agent projection adapter |
-| `Limpid/App/ProjectWindowPresenter.swift` + `ProjectWindowController.swift` | The app-owned main windows: made, shown, hidden, and closed through the registry |
-| `Limpid/UI/Supervision/SupervisionWindowView.swift` | The supervision window's root: title bar, rails, sidebar, session area, changes panel, status band |
-| `Limpid/Core/Models/WorkspaceSession.swift` | Projects, worktrees, tabs, and every window's selection, shared by all windows; the source of truth |
-| `Limpid/Core/Models/WindowSelection.swift` | What one window has selected and how it is laid out (saved as `WindowRecord`) |
-| `Limpid/Presentation/Window/WindowRegistry.swift` + `ProjectWindowState.swift` | The windows, which one commands act on, and each window's unsaved display state |
-| `Limpid/Core/Models/Tab.swift` + `SplitTree.swift` | Per-tab structure (kind, working directory, split tree, agent sessions) and `ContainerID` |
-| `Limpid/Core/Persistence/SessionSnapshot.swift` | The on-disk shape of `state.json`, with its forward-compatible sidecar |
-| `Limpid/Core/Persistence/SessionSnapshotV5.swift` + `VersionedDocumentMigrator.swift` + `MigrationBackup.swift` | Moving saved files between versions, with a copy of the original (`docs/data-migration.md`) |
-| `Limpid/Presentation/Attention/AttentionQueueStore.swift` | The app's one attention list: ⌘J, Needs Attention, the decision bars, the menu bar |
-| `Limpid/Core/Agent/ApprovalPresentationStore.swift` + `ApprovalLedger.swift` | The approval service's requests as the app holds them, and how each request ended |
-| `Limpid/Presentation/Approval/WindowApprovalCard.swift` | One window's approval card and the frames of the request rows it stands beside |
-| `Limpid/Core/Actions/WindowCommand.swift` + `Presentation/Window/WindowCommandChannel.swift` | What one window is asked to do, and its delivery to the view of that window that does it |
-| `Limpid/Core/Agent/TurnHistory.swift` | Every recorded turn, by conversation, as the last projection pass read them |
-| `Limpid/Core/Domain/WorktreeTimeline.swift` | Every conversation's turns of a worktree as one timeline, which the changes panel and the review read |
-| `Limpid/Core/Rust/LimpidProjectionBridge.swift` | The projection pass over the records, through the Rust bridge (`ProjectionPassing`) |
-| `Limpid/Presentation/Window/RepositoryRoots.swift` + `WorktreeChanges.swift` | Each folder's Git top level, and what each worktree's turns changed and do not account for |
-| `Limpid/Presentation/Review/ReviewTabModel.swift` | `ReviewTabState`, what one window's review tab reads, and the rules that open, change, and close it |
-| `Limpid/Core/Persistence/TurnReadStore.swift` + `ViewedLineStore.swift` | Which turns are read, and how far each conversation has been viewed |
-| `Limpid/Core/Settings/LimpidSettings.swift` | The settings model and its section structs, all `Codable` |
-| `Limpid/Core/Settings/GhosttyConfigBridge.swift` | Generates the libghostty config string and the forced-override keys |
-| `Limpid/Core/GhosttyApp.swift` | Wraps `ghostty_app_t`, runtime callbacks, lifecycle |
-| `Limpid/Core/Rust/LimpidRustBridge.swift` | The typed Swift entry point for the versioned Rust C ABI |
-| `Limpid/Core/Agent/AgentIntegrationServiceRegistrar.swift` | Registering, verifying, and replacing the bundled LaunchAgent on launch, plus the Debug-only `LIMPID_AGENT_SERVICE_CONTROL` commands |
+| `Weir/App/WeirApp.swift` | Scene tree, command menu, and `AppState` — the process-wide singleton holding the session, the window registry, the stores, and the agent projection adapter |
+| `Weir/App/ProjectWindowPresenter.swift` + `ProjectWindowController.swift` | The app-owned main windows: made, shown, hidden, and closed through the registry |
+| `Weir/UI/Supervision/SupervisionWindowView.swift` | The supervision window's root: title bar, rails, sidebar, session area, changes panel, status band |
+| `Weir/Core/Models/WorkspaceSession.swift` | Projects, worktrees, tabs, and every window's selection, shared by all windows; the source of truth |
+| `Weir/Core/Models/WindowSelection.swift` | What one window has selected and how it is laid out (saved as `WindowRecord`) |
+| `Weir/Presentation/Window/WindowRegistry.swift` + `ProjectWindowState.swift` | The windows, which one commands act on, and each window's unsaved display state |
+| `Weir/Core/Models/Tab.swift` + `SplitTree.swift` | Per-tab structure (kind, working directory, split tree, agent sessions) and `ContainerID` |
+| `Weir/Core/Persistence/SessionSnapshot.swift` | The on-disk shape of `state.json`, with its forward-compatible sidecar |
+| `Weir/Core/Persistence/SessionSnapshotV5.swift` + `VersionedDocumentMigrator.swift` + `MigrationBackup.swift` | Moving saved files between versions, with a copy of the original (`docs/data-migration.md`) |
+| `Weir/Presentation/Attention/AttentionQueueStore.swift` | The app's one attention list: ⌘J, Needs Attention, the decision bars, the menu bar |
+| `Weir/Core/Agent/ApprovalPresentationStore.swift` + `ApprovalLedger.swift` | The approval service's requests as the app holds them, and how each request ended |
+| `Weir/Presentation/Approval/WindowApprovalCard.swift` | One window's approval card and the frames of the request rows it stands beside |
+| `Weir/Core/Actions/WindowCommand.swift` + `Presentation/Window/WindowCommandChannel.swift` | What one window is asked to do, and its delivery to the view of that window that does it |
+| `Weir/Core/Agent/TurnHistory.swift` | Every recorded turn, by conversation, as the last projection pass read them |
+| `Weir/Core/Domain/WorktreeTimeline.swift` | Every conversation's turns of a worktree as one timeline, which the changes panel and the review read |
+| `Weir/Core/Rust/WeirProjectionBridge.swift` | The projection pass over the records, through the Rust bridge (`ProjectionPassing`) |
+| `Weir/Presentation/Window/RepositoryRoots.swift` + `WorktreeChanges.swift` | Each folder's Git top level, and what each worktree's turns changed and do not account for |
+| `Weir/Presentation/Review/ReviewTabModel.swift` | `ReviewTabState`, what one window's review tab reads, and the rules that open, change, and close it |
+| `Weir/Core/Persistence/TurnReadStore.swift` + `ViewedLineStore.swift` | Which turns are read, and how far each conversation has been viewed |
+| `Weir/Core/Settings/WeirSettings.swift` | The settings model and its section structs, all `Codable` |
+| `Weir/Core/Settings/GhosttyConfigBridge.swift` | Generates the libghostty config string and the forced-override keys |
+| `Weir/Core/GhosttyApp.swift` | Wraps `ghostty_app_t`, runtime callbacks, lifecycle |
+| `Weir/Core/Rust/WeirRustBridge.swift` | The typed Swift entry point for the versioned Rust C ABI |
+| `Weir/Core/Agent/AgentIntegrationServiceRegistrar.swift` | Registering, verifying, and replacing the bundled LaunchAgent on launch, plus the Debug-only `WEIR_AGENT_SERVICE_CONTROL` commands |
 | `AgentIntegrationService/Service/main.swift` | Role-separated XPC listeners and authenticated principal creation |
 | `AgentIntegrationService/Service/RustApprovalHost.swift` | Ownership-safe Swift wrapper around the Rust approval service and session C ABI |
 | `AgentIntegrationService/Shared/AgentIntegrationConfiguration.swift` | Debug/Release identifiers and Team ID-bound peer requirements |
 | `scripts/build-rust-bridge.sh` | Builds the architecture-specific Rust static library into Xcode DerivedData |
-| `Limpid/Core/SurfaceRegistry.swift` | The `[UUID: SurfaceView]` map that owns the lifetime of every pane's surface (the quick terminal's surface lives outside it) |
-| `Limpid/UI/QuickTerminal/QuickTerminalController.swift` | The quick terminal panel: show / hide choreography, activation hand-back, and the lifetime of its one surface outside the registry |
-| `Limpid/Core/QuickTerminal/QuickTerminalHotKeyCenter.swift` | Keeps the quick terminal's global hotkey registered to match the setting, the keyboard layout, and the Settings recorders |
-| `Limpid/UI/SurfaceView.swift` | The `NSView` subclass that owns the libghostty surface and its Metal layer |
-| `Limpid/UI/Pane/PaneHostView.swift` | The `NSViewRepresentable` that bridges `SurfaceRegistry` and `SplitTree` |
-| `Limpid/Core/Git/PRStatusSyncer.swift` | Schedules forge CLI lookups per sidebar row, at each row's own interval and as an agent's turn ends there (`TurnEndPRRefresh`), and writes them into `PRStatusStore` (no setting; whatever `gh` / `glab` can read) |
-| `Limpid/Core/Review/ReviewSession.swift` | One view's review: its scope, list and open diff, and the comment lifecycle (written → inserted → resolved) |
-| `Limpid/Core/Review/ReviewDraftWriter.swift` | The draft one worktree's reviews share: comments, read marks, and the file it restores from |
-| `Limpid/Core/Review/ReviewGitCommand.swift` | Every Git read the review makes, and the patch bytes both the change poll and the diff hash |
-| `Limpid/Core/Git/ProcessDrain.swift` | The one runner of a bounded child process: its pipes read while it runs, its timeout, its output cap, SIGTERM then SIGKILL (`GitProcess`, the forge tools, the review's Git, the tmux client) |
-| `Limpid/Core/Actions/ReviewInsertion.swift` | The order an insert happens in: resolve the pane, validate, deliver, then record |
-| `Limpid/Core/Review/ReviewPresentation.swift` | Where review sits in a window, and which terminal it delivers to — following the focused pane until the reader pins one |
-| `Limpid/Core/Updates/SparkleUpdater.swift` | Sparkle integration: the one `@Observable` updater the app and Settings share |
+| `Weir/Core/SurfaceRegistry.swift` | The `[UUID: SurfaceView]` map that owns the lifetime of every pane's surface (the quick terminal's surface lives outside it) |
+| `Weir/UI/QuickTerminal/QuickTerminalController.swift` | The quick terminal panel: show / hide choreography, activation hand-back, and the lifetime of its one surface outside the registry |
+| `Weir/Core/QuickTerminal/QuickTerminalHotKeyCenter.swift` | Keeps the quick terminal's global hotkey registered to match the setting, the keyboard layout, and the Settings recorders |
+| `Weir/UI/SurfaceView.swift` | The `NSView` subclass that owns the libghostty surface and its Metal layer |
+| `Weir/UI/Pane/PaneHostView.swift` | The `NSViewRepresentable` that bridges `SurfaceRegistry` and `SplitTree` |
+| `Weir/Core/Git/PRStatusSyncer.swift` | Schedules forge CLI lookups per sidebar row, at each row's own interval and as an agent's turn ends there (`TurnEndPRRefresh`), and writes them into `PRStatusStore` (no setting; whatever `gh` / `glab` can read) |
+| `Weir/Core/Review/ReviewSession.swift` | One view's review: its scope, list and open diff, and the comment lifecycle (written → inserted → resolved) |
+| `Weir/Core/Review/ReviewDraftWriter.swift` | The draft one worktree's reviews share: comments, read marks, and the file it restores from |
+| `Weir/Core/Review/ReviewGitCommand.swift` | Every Git read the review makes, and the patch bytes both the change poll and the diff hash |
+| `Weir/Core/Git/ProcessDrain.swift` | The one runner of a bounded child process: its pipes read while it runs, its timeout, its output cap, SIGTERM then SIGKILL (`GitProcess`, the forge tools, the review's Git, the tmux client) |
+| `Weir/Core/Actions/ReviewInsertion.swift` | The order an insert happens in: resolve the pane, validate, deliver, then record |
+| `Weir/Core/Review/ReviewPresentation.swift` | Where review sits in a window, and which terminal it delivers to — following the focused pane until the reader pins one |
+| `Weir/Core/Updates/SparkleUpdater.swift` | Sparkle integration: the one `@Observable` updater the app and Settings share |
 
 ---
 
@@ -528,8 +528,8 @@ being dereferenced in freed memory.
 ### Rust ABI boundary
 
 Swift imports Rust only through the C declarations in
-`rust/limpid-rust-bridge/include/`. Exported functions use fixed-width C types,
-and `limpid_rust_abi_version()` is the compatibility contract checked by the
+`rust/weir-rust-bridge/include/`. Exported functions use fixed-width C types,
+and `weir_rust_abi_version()` is the compatibility contract checked by the
 Swift smoke test. Do not expose Rust layout, ownership, or panic behavior
 across this boundary.
 
@@ -577,7 +577,7 @@ The top-level stores (`SessionStore`, `SettingsStore`,
 so their JSON shapes stay consistent, and debounce with
 `PersistenceTiming.interactive` / `.coalescing`. All but `SettingsStore`
 encode with `PersistenceCoders.makeEncoder()`. `SettingsStore` encodes
-with `LimpidSettings.makeFileEncoder()`, which always pretty-prints,
+with `WeirSettings.makeFileEncoder()`, which always pretty-prints,
 because `settings.json` is the one file the user is expected to open in
 an editor. The review coalesces its navigation metadata on a serial write
 queue, but a comment edit waits for storage, so a failed save keeps the
@@ -589,7 +589,7 @@ covers and how to go back.
 ### Turn review snapshots
 
 At `UserPromptSubmit`, each agent hook copies the worktree's real index into
-`<git-dir>/limpid/turn-<pane>.index`, runs `git add -A` against that private
+`<git-dir>/weir/turn-<pane>.index`, runs `git add -A` against that private
 index, and writes its tree. The private index is separate from the real one;
 user staging state and `git status` remain untouched.
 
@@ -602,7 +602,7 @@ agent's transcript records them (and, for Codex, the checks it ran). A stop that
 hook asked for (`stop_hook_active`) takes the end again, since the turn went
 on; any other stop of an ended turn, or an end with no turn, writes an
 end-only record that reads as incomplete. Each tree is pinned by
-`refs/limpid/turns/<turn-id>/{begin,end}`. These refs keep the otherwise
+`refs/weir/turns/<turn-id>/{begin,end}`. These refs keep the otherwise
 unreachable trees out of Git's garbage collection without adding a commit or
 changing history. They outlive the session: they go with the turn, not with
 the pane. A
@@ -610,7 +610,7 @@ conversation's turns are numbered from `<state>/turns/<hash>.counter`, which
 only grows, so a deleted turn's number is never given again. Untracked files
 over 5 MiB are left out of both trees and listed on the record.
 
-Earlier builds also moved a per-pane `refs/limpid/turn/<pane>` at every
+Earlier builds also moved a per-pane `refs/weir/turn/<pane>` at every
 prompt for a "This turn" review scope. Nothing writes that ref now. When a
 session ends, the hook still removes it, along with the
 `turn-<pane>.read.index` that review wrote, so repositories those builds left
@@ -629,7 +629,7 @@ the loaded diff can change.
 
 Agent lifecycle stores are runtime-scoped: one UUID per shim invocation, plus
 tmux socket, server-generation, and pane metadata when a multiplexer sits
-between the agent and Limpid. Hooks never query tmux. `TmuxTopology` resolves
+between the agent and Weir. Hooks never query tmux. `TmuxTopology` resolves
 current pane membership (including linked windows), and `TmuxPanePresence`
 joins clients to surface ttys. An unresolved tmux record never falls back to a
 launch pane or a saved restore binding. What runs in front of a pane is read in
@@ -647,7 +647,7 @@ they write tiny records on the hot path and several hooks can be in flight at
 once.
 
 The Rust hook runtime inside the signed Hook Helper
-(`hook <provider> [worktree]`) writes the records; the bundled `limpid-hook`
+(`hook <provider> [worktree]`) writes the records; the bundled `weir-hook`
 wrappers exec it. It is the only receiver. A wrapper that finds no helper says
 so on stderr and in the system log and fails the call, and the app logs a
 fault at launch. Neither records the run some other way that would write no
@@ -666,9 +666,9 @@ Forward-compatible persistence:
 
 - Defensive `init(from:)` for every `Codable` enum with an
   `unknownFallback` case (`Tab.Kind`, `ConfirmPolicy`, `ContainerID`)
-- `LimpidJSONValue` sidecar carrying unknown fields through round
+- `WeirJSONValue` sidecar carrying unknown fields through round
   trips (`SessionSnapshot` with its `Tab`, `Project`, and `Worktree`,
-  `LimpidSettings` and section structs). Other nested records do not keep
+  `WeirSettings` and section structs). Other nested records do not keep
   unknown keys; `docs/data-migration.md` says which and why
 - `tabs: {UUID: Tab}` + `tabOrder: [UUID]` shape on `SessionSnapshot`
   so a reorder doesn't churn the whole tab block
@@ -699,19 +699,19 @@ build that reads a newer file degrades cleanly.
   `GhosttyActionRouter.swift` and decode it there, then handle it in
   `GhosttyEventCoordinator.dispatch(_:)`.
 - **New settings section** — add a `Codable` struct in
-  `LimpidSettings.swift` with `unknownFields` and `CodingKeys: CaseIterable`,
-  add its property to `LimpidSettings`, put its pane in
+  `WeirSettings.swift` with `unknownFields` and `CodingKeys: CaseIterable`,
+  add its property to `WeirSettings`, put its pane in
   `UI/Settings/Panes/`, register the pane in `SettingsScene`, and add every
   searchable row to `SettingsSearchCatalog` with the same stable anchor ID
   its view uses.
-- **New keyboard shortcut** — add a case to `LimpidShortcutAction` (five
+- **New keyboard shortcut** — add a case to `WeirShortcutAction` (five
   compiler-enforced spots: `defaultShortcut`, `localizedTitle`,
   `category`, `iconName`, `ghosttyAction`), a menu bar `Button` in the
   `Commands` type of its menu (`App/TabCommands.swift`,
-  `App/SupervisionCommands.swift`, …, listed in `LimpidApp`'s `.commands`),
+  `App/SupervisionCommands.swift`, …, listed in `WeirApp`'s `.commands`),
   and a case in `TabActions.dispatch<Category>Action`.
 - **New agent CLI** — add a provider crate at
-  `rust/limpid-provider-<agent>/` (descriptor, install recipe, `normalize`),
+  `rust/weir-provider-<agent>/` (descriptor, install recipe, `normalize`),
   recorded fixtures under `rust/fixtures/<agent>/`, and an adapter entry in the
   hook's provider registry. The application projection (`project`, `on_launch`,
   `on_terminate`) runs in Rust and branches on capabilities, so the rules need

@@ -1,8 +1,8 @@
 // RustStatusLineBridge.swift
-// Limpid — Swift wrapper around the status line relay's C ABI, for the Hook Helper.
+// Weir — Swift wrapper around the status line relay's C ABI, for the Hook Helper.
 
 import Foundation
-import LimpidRustBridge
+import WeirRustBridge
 
 /// The status line calls of the Rust bridge: the relay itself and the setting
 /// the shim launches the provider with. Only the Hook Helper makes them; the
@@ -18,7 +18,7 @@ enum RustStatusLineBridge {
         // project (an empty document), and only the usage goes unread.
         let text = String(bytes: input, encoding: .utf8) ?? "{}"
         let request: [String: Any] = ["provider": provider, "input": text, "environment": environment]
-        let answer = try call(JSONSerialization.data(withJSONObject: request), limpid_status_line_run_v1)
+        let answer = try call(JSONSerialization.data(withJSONObject: request), weir_status_line_run_v1)
         return answer["command"] as? String
     }
 
@@ -37,7 +37,7 @@ enum RustStatusLineBridge {
             "workingDirectory": workingDirectory,
             "relayCommand": relayCommand
         ]
-        let answer = try call(JSONSerialization.data(withJSONObject: request), limpid_status_line_setting_v1)
+        let answer = try call(JSONSerialization.data(withJSONObject: request), weir_status_line_setting_v1)
         switch answer["statusLine"] {
         case let setting as [String: Any]: return setting
         case is NSNull: return nil
@@ -58,8 +58,8 @@ enum RustStatusLineBridge {
         }
         guard let out else { throw AgentIntegrationError.rustFailure(status) }
         // The bytes are ours whatever the status turned out to be.
-        defer { limpid_approval_bytes_free_v1(out, outCount) }
-        guard status == Int32(LIMPID_USAGE_OK.rawValue) else {
+        defer { weir_approval_bytes_free_v1(out, outCount) }
+        guard status == Int32(WEIR_USAGE_OK.rawValue) else {
             throw AgentIntegrationError.rustFailure(status)
         }
         guard let object = try JSONSerialization.jsonObject(with: Data(bytes: out, count: outCount)) as? [String: Any]

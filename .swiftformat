@@ -4,7 +4,7 @@
 --swiftversion 6.0
 
 # Paths
---exclude vendor,build,.build,Limpid.xcodeproj,DerivedData
+--exclude vendor,build,.build,Weir.xcodeproj,DerivedData
 
 # Formatting
 --indent 4

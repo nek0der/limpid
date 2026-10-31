@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # spike-codex-shadow.sh
-# Limpid — minimum viable test for the shadow CODEX_HOME hook injection pattern.
+# Weir — minimum viable test for the shadow CODEX_HOME hook injection pattern.
 #
 # Validates four conditions:
 #   1. Codex launches cleanly with CODEX_HOME pointing at a symlinked shadow dir.
-#   2. A Limpid-managed hooks.json in the shadow dir fires hook commands
+#   2. A Weir-managed hooks.json in the shadow dir fires hook commands
 #      (using --dangerously-bypass-hook-trust; proper trust hashes come later).
 #   3. codex resume --last sees the user's prior sessions via symlinked sessions/.
 #   4. Codex's writes (sessions, history.jsonl, state DBs) reach the user's
@@ -14,10 +14,10 @@
 
 set -euo pipefail
 
-SHADOW_DIR="${TMPDIR:-/tmp}/limpid-codex-shadow.$$"
+SHADOW_DIR="${TMPDIR:-/tmp}/weir-codex-shadow.$$"
 USER_CODEX="$HOME/.codex"
-MARKER_DIR="${TMPDIR:-/tmp}/limpid-codex-markers.$$"
-LIMPID_PANE_ID="spike-pane-$(date +%s)"
+MARKER_DIR="${TMPDIR:-/tmp}/weir-codex-markers.$$"
+WEIR_PANE_ID="spike-pane-$(date +%s)"
 
 cleanup() {
   rm -rf "$SHADOW_DIR" "$MARKER_DIR"
@@ -28,7 +28,7 @@ mkdir -p "$SHADOW_DIR" "$MARKER_DIR"
 
 echo "==> Spike dir: $SHADOW_DIR"
 echo "==> Marker dir: $MARKER_DIR"
-echo "==> Pane id: $LIMPID_PANE_ID"
+echo "==> Pane id: $WEIR_PANE_ID"
 echo
 
 # ------------------------------------------------------------------------------
@@ -60,7 +60,7 @@ cp "$USER_CODEX/config.toml" "$SHADOW_DIR/config.toml"
 SHADOW_HOOKS_PATH="$(cd "$SHADOW_DIR" && pwd -P)/hooks.json"
 cat >>"$SHADOW_DIR/config.toml" <<TOML
 
-# Limpid spike: register shadow-dir hooks.json so codex considers them enabled.
+# Weir spike: register shadow-dir hooks.json so codex considers them enabled.
 [hooks.state."${SHADOW_HOOKS_PATH}:session_start:0:0"]
 trusted_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 [hooks.state."${SHADOW_HOOKS_PATH}:user_prompt_submit:0:0"]
@@ -70,7 +70,7 @@ trusted_hash = "sha256:000000000000000000000000000000000000000000000000000000000
 TOML
 
 # ------------------------------------------------------------------------------
-# Step 3: Write Limpid-managed hooks.json — one touch-marker per event.
+# Step 3: Write Weir-managed hooks.json — one touch-marker per event.
 #         User's hooks.json is not merged in this spike (kept minimal).
 # ------------------------------------------------------------------------------
 echo "==> Step 3: writing shadow hooks.json"
@@ -104,7 +104,7 @@ echo
 echo "==> Step 5: launching codex (shadow CODEX_HOME)"
 echo "----------------------------------------------"
 CODEX_HOME="$SHADOW_DIR" \
-LIMPID_PANE_ID="$LIMPID_PANE_ID" \
+WEIR_PANE_ID="$WEIR_PANE_ID" \
 codex exec \
   --dangerously-bypass-hook-trust \
   --skip-git-repo-check \

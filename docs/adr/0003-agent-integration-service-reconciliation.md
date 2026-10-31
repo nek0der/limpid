@@ -5,7 +5,7 @@
 
 ## Context
 
-The approval service outlives the Limpid GUI. Ordinary quit and relaunch must
+The approval service outlives the Weir GUI. Ordinary quit and relaunch must
 therefore preserve its process, epoch, and pending requests. A Sparkle update,
 rollback, or interrupted replacement can instead leave an `SMAppService`
 registration or process associated with a different bundled executable.
@@ -20,7 +20,7 @@ re-registration is safe.
 
 ## Decision
 
-Limpid fingerprints the SHA-256 content of its bundled service executable and
+Weir fingerprints the SHA-256 content of its bundled service executable and
 LaunchAgent property list. The service computes the same identity at process
 startup and retains it in memory. It returns the identity through the controller
 session bootstrap, after XPC has authenticated the service's Team ID and signing

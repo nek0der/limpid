@@ -76,7 +76,7 @@ opening the authenticated requester session.
 
 The approval key is `(ServiceEpoch, RunID, RequestID)`. Claude Code and current
 Codex `PermissionRequest` inputs do not provide a stable tool-call ID, so the
-Limpid provider adapter must generate `RequestID`. A pane ID, session ID, PID,
+Weir provider adapter must generate `RequestID`. A pane ID, session ID, PID,
 or title is never part of authorization.
 
 Each current `PermissionRequest` starts a short-lived signed Hook Helper,
@@ -172,12 +172,12 @@ the field, keep the shape above. Each question has these fields:
 
 The body may also carry `agent_run_id`, a UUID naming the agent run whose
 hook asked. The Hook Helper reads it from the run's environment
-(`LIMPID_AGENT_RUN_ID`, set by the Limpid launcher). It is correlation data
+(`WEIR_AGENT_RUN_ID`, set by the Weir launcher). It is correlation data
 like `session_id`, never authority: it is not part of the approval key, and
 the service grants nothing by it. When a conversation is resumed in a second
 run, that run keeps the session ID. The application uses `agent_run_id` to
 tell one run's request from the other's. The field is omitted when the Hook
-Helper runs outside a Limpid run. A value that is not a UUID makes the
+Helper runs outside a Weir run. A value that is not a UUID makes the
 message malformed, as any other mistyped field does. The service advertises
 the field as the `approval.agent_run` capability, and `approval.get` and
 `approval.wait` return it unchanged under `request.agent_run_id`.
@@ -302,8 +302,8 @@ behavior in non-interactive sessions remains provider-owned.
 
 ## Current implementation boundary
 
-`limpid-agent-core` contains the portable approval broker.
-`limpid-agent-protocol` contains wire types, framing, the authenticated stream
+`weir-agent-core` contains the portable approval broker.
+`weir-agent-protocol` contains wire types, framing, the authenticated stream
 session, a discrete-message session for XPC, and a blocking wait primitive.
 Unix tests connect independent requester and controller streams through a real
 socket pair. The versioned Rust C ABI exposes opaque broker and session handles
@@ -330,19 +330,19 @@ service from an older build therefore fails closed and is replaced.
 Turn records are not protocol messages. The Hook Helper writes them as files,
 and the application reads them through the Rust projection; nothing about
 them crosses the service. They are described here because the Hook Helper
-and the application share their shape, which `limpid-agent-model`
+and the application share their shape, which `weir-agent-model`
 (`turn.rs`, `TurnRecord`) owns.
 
 A provider whose descriptor has the `turn_snapshot` capability (Claude Code
 and Codex today) records turns. Its hook events map to provider-neutral
 events, and those decide what is written (`turn_step` in
-`limpid-agent-core`):
+`weir-agent-core`):
 
 | Provider hook | Event | Effect on the turn |
 |---|---|---|
 | `UserPromptSubmit`, and the first Codex hook of a turn Codex began itself (below) | `PromptSubmitted` | begins a turn: a begin snapshot, the counter's next number, a new record with the provider's own id for the turn (`providerTurnId`: Claude's `prompt_id`, Codex's `turn_id`) |
 | `Stop` | `TurnFinished` | ends the turn as `finished` with an end snapshot and the difference, and the tokens it used read from the transcript (`usage`); for Codex, also every check it ran (`checks`, `checkCount`, `lastCheck`) |
-| Claude `StopFailure`, a failed Codex turn Limpid's watcher reports from the rollout (the usage limit among others) | `Failed` | ends it as `failed`; Claude's reads `usage` as `Stop` does |
+| Claude `StopFailure`, a failed Codex turn Weir's watcher reports from the rollout (the usage limit among others) | `Failed` | ends it as `failed`; Claude's reads `usage` as `Stop` does |
 | Codex `Interrupt` | `Interrupted` | ends it as `interrupted`, with `usage` and the checks read from the rollout as `Stop` reads them; a command still running when the turn stopped is not counted |
 | Claude `Notification` (`idle_prompt`) | `AwaitingPrompt` | for a run working after its turn's `Stop`, takes that turn's end snapshot and difference again and keeps how it ended; for a turn open at least 55 seconds, ends it as `interrupted`, a turn waiting on a question or permission only when the transcript shows the awaited call ended: every call of the latest assistant message has a result, or an interrupt line follows it (`awaited_call_ended`); otherwise nothing (docs/adr/0004-provider-adapter-contract.md, "Work outside a turn") |
 | Claude `PostToolUse` / `PostToolUseFailure` of a check command | — | sets the turn's `lastCheck`, adds a mark to `checks`, and counts it in `checkCount` (and in `failureCount` when it failed) |
@@ -502,9 +502,9 @@ The files live in the provider's state directory, under `turns/`:
   turn with no response to wait for. Codex's is the turn's last
   `token_usage_record` in its rollout, read at the turn's `Stop` or
   `Interrupt`, whose `input_tokens` counts the cached and cache-written
-  input, which Limpid takes out of `inputTokens`.
+  input, which Weir takes out of `inputTokens`.
   Its subagents keep rollouts of their own: the turn's `SubAgentActivity`
-  items name each one's thread, Limpid finds the rollout by that name
+  items name each one's thread, Weir finds the rollout by that name
   (`rollout-…-<thread>.jsonl`) in the day folders under Codex's
   `sessions`, newest first, and adds each of its requests whose record
   names the turn as `root_turn_id`. A subagent whose rollout is not found,
@@ -517,7 +517,7 @@ The files live in the provider's state directory, under `turns/`:
   partial reading with fewer runs does not replace the turn's. A `Stop`
   that ends no open turn reads from the last prompt, and records nothing
   when that prompt is the ended turn's own. Neither transcript shape is
-  documented by its provider; a line Limpid cannot read is left out rather
+  documented by its provider; a line Weir cannot read is left out rather
   than guessed at.
 
 - `<hash>.counter`, one per conversation, from which turns are numbered. The
@@ -525,10 +525,10 @@ The files live in the provider's state directory, under `turns/`:
 
 The run record names the run's current turn in `currentTurnId`, written only
 after the turn's record is. Each snapshot tree is pinned in the repository by
-`refs/limpid/turns/<turn-id>/begin` and `/end`, which go with the record when
+`refs/weir/turns/<turn-id>/begin` and `/end`, which go with the record when
 the retention sweep deletes it.
 
-Earlier builds also moved a per-pane `refs/limpid/turn/<pane>` at every
+Earlier builds also moved a per-pane `refs/weir/turn/<pane>` at every
 prompt, for a review of "This turn" that no build offers now. The Hook Helper
 no longer writes it; it still removes it, with the private index files, when
 the session ends.

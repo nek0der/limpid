@@ -24,10 +24,10 @@ import os
 import re
 import sys
 
-BRIDGE = "limpid-rust-bridge"
+BRIDGE = "weir-rust-bridge"
 MARKER = (
-    "[The crates and their license texts are filled in from Cargo.lock when Limpid"
-    " is built; the copy inside Limpid.app and on its disk image carries them.]"
+    "[The crates and their license texts are filled in from Cargo.lock when Weir"
+    " is built; the copy inside Weir.app and on its disk image carries them.]"
 )
 RULE = "-" * 64
 MIT_GRANT = "Permission is hereby granted, free of charge, to any person obtaining a copy"

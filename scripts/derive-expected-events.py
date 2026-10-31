@@ -91,7 +91,7 @@ def content_blocks(message):
 
 
 def transcript_awaited_call_ended(path):
-    """Mirrors `limpid-provider-claude`'s `awaited`: whether every tool call
+    """Mirrors `weir-provider-claude`'s `awaited`: whether every tool call
     of the latest assistant message that made one has a result, or an
     interrupt line follows that message."""
     if path is None or not os.path.exists(path):
@@ -168,7 +168,7 @@ def is_main_user_line(line):
 
 
 def transcript_cache(path):
-    """Mirrors `limpid-provider-claude`'s cache estimate for the golden."""
+    """Mirrors `weir-provider-claude`'s cache estimate for the golden."""
     if not os.path.exists(path):
         return None
     with open(path, encoding="utf-8") as handle:
@@ -431,7 +431,7 @@ CODEX_TITLE_INDEX_EVENTS = {"SessionStart", "UserPromptSubmit", "Stop"}
 
 
 def codex_indexed_titles(obj, path):
-    """Mirrors `limpid-provider-codex`'s `titles`: the latest non-blank
+    """Mirrors `weir-provider-codex`'s `titles`: the latest non-blank
     `thread_name` the index gives the payload's session."""
     if string(obj, "hook_event_name") not in CODEX_TITLE_INDEX_EVENTS:
         return None

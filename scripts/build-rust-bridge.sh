@@ -63,15 +63,15 @@ export PATH="$cargo_bin_directory:$PATH"
 # workspace once; Cargo's own lock serializes the phases when Xcode runs
 # them in parallel. DERIVED_FILE_DIR would give each target its own copy.
 cargo_target_directory="${OBJROOT:-$DERIVED_FILE_DIR}/cargo-target"
-library_output_directory="$DERIVED_FILE_DIR/limpid-rust"
-library_name="liblimpid_rust_bridge.a"
+library_output_directory="$DERIVED_FILE_DIR/weir-rust"
+library_name="libweir_rust_bridge.a"
 
 mkdir -p "$library_output_directory"
 
 build_arguments=(
   build
   --locked
-  --package limpid-rust-bridge
+  --package weir-rust-bridge
   --target "$rust_target"
 )
 if [[ -n "$cargo_profile_flag" ]]; then

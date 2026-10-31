@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Limpid — self-test for `check-forbidden-terms.sh`.
+# Weir — self-test for `check-forbidden-terms.sh`.
 #
 # Spawns a throwaway git repo, copies the guardrail in, plants fixtures with
 # known-forbidden / known-allowed / vendored-excluded content, runs the
@@ -181,18 +181,18 @@ run_case "allow-list suppresses a neutral lazygit mention" pass bash -c '
   echo "src/demo.swift:lazygit" > .forbidden-terms-allow
 '
 
-# Vendored upstream path: pattern matches inside `Limpid/Resources/ghostty/
+# Vendored upstream path: pattern matches inside `Weir/Resources/ghostty/
 # shell-integration/` must be ignored — the guardrail hard-codes this exclude.
 run_case "vendored ghostty shell-integration is excluded" pass bash -c '
-  mkdir -p Limpid/Resources/ghostty/shell-integration
-  echo "Based on Kitty" > Limpid/Resources/ghostty/shell-integration/note.bash
+  mkdir -p Weir/Resources/ghostty/shell-integration
+  echo "Based on Kitty" > Weir/Resources/ghostty/shell-integration/note.bash
 '
 
 # A forbidden term in a non-excluded path under the same project tree still
 # fails — exclude scope is path-narrow, not the whole repo.
 run_case "Kitty outside the vendored tree is still caught" fail bash -c '
-  mkdir -p Limpid/UI
-  echo "// Mirrors Kitty" > Limpid/UI/note.swift
+  mkdir -p Weir/UI
+  echo "// Mirrors Kitty" > Weir/UI/note.swift
 '
 
 # Summary --------------------------------------------------------------------
