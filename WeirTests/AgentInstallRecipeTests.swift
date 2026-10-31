@@ -40,6 +40,33 @@ struct AgentInstallRecipeTests {
         #expect(codex.values.contains("/usage") == false)
     }
 
+    /// A variable a shim does not hand to tmux takes the server's value, and a
+    /// Dev agent on a Release server would then write into Release's folders.
+    /// The two left out are read before the agent starts, so tmux never needs them.
+    @Test("a tmux-hosted agent gets every variable its recipe exports", .disabled(if: !RepoFixture.hasLocalRepo), arguments: [
+        ("claude", "claude-shim/claude", ["WEIR_CLAUDE_HOOK_NAMESPACE"]),
+        ("codex", "codex-shim/codex", ["WEIR_CODEX_HOOK_ARGS"])
+    ])
+    func hostedEnvironment_coversTheRecipe(provider: String, shim: String, readBeforeStart: [String]) throws {
+        let root = try #require(RepoFixture.weirRoot)
+        let script = try String(
+            contentsOf: root.appending(path: "Weir/Resources/\(shim)"),
+            encoding: .utf8
+        )
+        let line = try #require(script.split(separator: "\n").first { $0.hasPrefix("hosted_env_names=") })
+        let hosted = Set(
+            line.dropFirst("hosted_env_names=".count)
+                .trimmingCharacters(in: ["\""])
+                .split(separator: " ")
+                .map(String.init)
+        )
+        let recipe = try #require(AgentProviderRegistry.recipes[provider])
+
+        let names = recipe.environment.map(\.name)
+        #expect(!names.isEmpty)
+        #expect(Set(names).subtracting(readBeforeStart).subtracting(hosted).isEmpty)
+    }
+
     @Test("only the provider whose hook takes arguments names a variable for them")
     func hookArgumentsVariable_isCodexOnly() {
         #expect(AgentProviderRegistry.hookArgumentsVariable(for: "codex") == "WEIR_CODEX_HOOK_ARGS")
