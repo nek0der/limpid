@@ -1,0 +1,63 @@
+#!/bin/sh
+# weir — opens folders in the Weir this script ships inside, as `code .` does.
+#
+# We hand the folders to macOS rather than talk to the app: `open` starts Weir
+# if it isn't running, and the app already opens what it receives that way as
+# a project. The app is found from this script's own location, so a link on
+# PATH keeps meaning this copy of Weir, and a Debug build never opens the
+# installed one.
+
+set -u
+
+bundled_path=/Contents/Resources/cli/weir
+name=${0##*/}
+
+usage() {
+    cat <<EOF
+Usage: $name [folder ...]
+
+Opens each folder in Weir as a project. With no folder, brings Weir forward.
+EOF
+}
+
+fail() {
+    printf '%s: %s\n' "$name" "$1" >&2
+    exit 1
+}
+
+self=$(realpath "$0") || fail "cannot find this script's location"
+app=${self%"$bundled_path"}
+[ "$app" != "$self" ] || fail "this script must stay inside Weir.app"
+[ -d "$app" ] || fail "cannot find the app at $app"
+
+count=$#
+are_options_over=false
+while [ "$count" -gt 0 ]; do
+    argument=$1
+    shift
+    count=$((count - 1))
+    if [ "$are_options_over" = false ]; then
+        case $argument in
+            -h | --help)
+                usage
+                exit 0
+                ;;
+            --)
+                are_options_over=true
+                continue
+                ;;
+            -*)
+                usage >&2
+                fail "unknown option: $argument"
+                ;;
+        esac
+    fi
+    [ -e "$argument" ] || fail "no such folder: $argument"
+    [ -d "$argument" ] || fail "not a folder: $argument"
+    # An absolute path, because `open` would read a name starting with a dash
+    # as an option of its own. CDPATH is cleared so `cd` cannot land elsewhere.
+    folder=$(CDPATH='' cd -- "$argument" && pwd) || fail "cannot read folder: $argument"
+    set -- "$@" "$folder"
+done
+
+exec open -a "$app" "$@"

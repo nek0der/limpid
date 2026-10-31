@@ -176,6 +176,15 @@ enum SettingsSearchCatalog {
                 technicalAliases: ["tmux"],
                 order: 3
             ),
+            makeEntry(
+                "integrations.shell-command",
+                .integrations,
+                "Shell Command",
+                "Install shell command",
+                keywords: ["Open from the terminal"],
+                technicalAliases: ["weir", "CLI", "PATH"],
+                order: 4
+            ),
 
             makeEntry(
                 "review.jump-opens-turn-review",
@@ -384,6 +393,10 @@ enum SettingsSearchCatalog {
 
     static var hostsAgentsInTmux: SettingsSearchEntry {
         requiredEntry("integrations.tmux")
+    }
+
+    static var shellCommand: SettingsSearchEntry {
+        requiredEntry("integrations.shell-command")
     }
 
     static var turnRetentionDays: SettingsSearchEntry {

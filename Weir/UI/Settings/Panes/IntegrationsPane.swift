@@ -16,6 +16,19 @@ struct IntegrationsPane: View {
     @State private var isConfigUnread = false
     /// Whether a tmux is installed where agents look for one.
     @State private var isTmuxFound = true
+    /// What is at the shell command's place on PATH; nil when this bundle
+    /// has no script to link. Read up front so that the section is there for
+    /// a search result to scroll to on the first frame.
+    @State private var shellCommandStatus = Self.shellCommand?.status()
+    /// Whether an install or uninstall is running, which may be for as long
+    /// as the administrator prompt stays up.
+    @State private var isChangingShellCommand = false
+    /// The last install or uninstall's failure, shown until the next try.
+    @State private var shellCommandError: DisplayText?
+    @Environment(\.locale) private var locale
+
+    private static let shellCommand = ShellCommandInstaller.forThisApp
+    private static let isAppOnReadOnlyVolume = shellCommand?.isOnReadOnlyVolume ?? false
 
     /// The file facts the pane shows, read once rather than on every redraw.
     private func refresh() {
@@ -23,6 +36,33 @@ struct IntegrationsPane: View {
         configFile = file
         isConfigUnread = file.map(Self.isUnread) ?? false
         isTmuxFound = TmuxClientProbe.locateTmux() != nil
+        shellCommandStatus = Self.shellCommand?.status()
+    }
+
+    private func changeShellCommand(_ change: @escaping () async throws -> Void) {
+        isChangingShellCommand = true
+        shellCommandError = nil
+        Task {
+            do {
+                try await change()
+            } catch {
+                shellCommandError = DisplayText(error: error)
+            }
+            isChangingShellCommand = false
+            refresh()
+        }
+    }
+
+    private func perform(_ action: ShellCommandRow.Action, on installer: ShellCommandInstaller) {
+        let prompt = ShellCommandInstaller.administratorPrompt.resolved(in: locale)
+        switch action {
+        case .install, .repair:
+            changeShellCommand { try await installer.install(prompt: prompt) }
+        case .uninstall:
+            changeShellCommand { try await installer.uninstall(prompt: prompt) }
+        case .showInFinder:
+            NSWorkspace.shared.activateFileViewerSelecting([installer.link])
+        }
     }
 
     /// Whether `file` changed after libghostty last read the user config.
@@ -149,6 +189,54 @@ struct IntegrationsPane: View {
                     """
                 )
             }
+
+            if let installer = Self.shellCommand, let shellCommandStatus {
+                shellCommandSection(installer, status: shellCommandStatus)
+            }
+        }
+    }
+
+    private func shellCommandSection(_ installer: ShellCommandInstaller, status: ShellCommandStatus) -> some View {
+        let row = ShellCommandRow(
+            status: status,
+            path: installer.link.path,
+            isAppOnReadOnlyVolume: Self.isAppOnReadOnlyVolume
+        )
+        return Section {
+            HStack(spacing: 12) {
+                Text(display: row.statusText)
+                    .settingsSearchTarget(SettingsSearchCatalog.shellCommand.id)
+                Spacer(minLength: 12)
+                ForEach(row.actions, id: \.self) { action in
+                    Button {
+                        perform(action, on: installer)
+                    } label: {
+                        Text(action.title)
+                    }
+                    .accessibilityLabel(Text(action.accessibilityLabel))
+                    .disabled(isChangingShellCommand)
+                }
+            }
+            .settingsControlRow()
+            if let shellCommandError {
+                Label {
+                    Text(display: shellCommandError)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(SupervisionTokens.stoppedText.color)
+                }
+                .font(.caption)
+            }
+        } header: {
+            Text("Shell Command")
+        } footer: {
+            SettingsFootnote(
+                """
+                Adds the `\(installer.commandName)` command to the terminal: \
+                `\(installer.commandName) .` opens the current folder in Weir as a project. \
+                Installing or uninstalling may ask for an administrator password.
+                """
+            )
         }
     }
 }
